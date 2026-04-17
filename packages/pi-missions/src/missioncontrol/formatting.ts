@@ -19,6 +19,8 @@ import { truncateToWidth } from "@oh-my-pi/pi-tui";
 
 import { type ParsedTask, parseDependencyReference } from "./discovery";
 import {
+	type DiscoveryResult,
+	FATAL_DISCOVERY_CODES,
 	getTaskDurationMinutes,
 	type LaneAssignment,
 	type MissionBatchRuntimeState,
@@ -151,6 +153,66 @@ export function formatDependencyGraph(
 		lines.push("  ○ Independent (no dependencies, nothing depends on them):");
 		for (const task of independentTasks) {
 			lines.push(`    ${task.taskId} [${task.size}] ${task.taskName}`);
+		}
+	}
+
+	return lines.join("\n");
+}
+
+/**
+ * Format a DiscoveryResult for terminal display.
+ *
+ * Ported from taskplane `discovery.ts:1749`. Groups pending tasks by area
+ * (deterministic: areas + tasks sorted alphabetically/by id), shows dependency
+ * + repo suffixes when present, and splits errors into fatal (via
+ * FATAL_DISCOVERY_CODES) + warnings.
+ */
+export function formatDiscoveryResults(result: DiscoveryResult): string {
+	const lines: string[] = [];
+
+	lines.push("📋 Discovery Results");
+	lines.push(`   Pending tasks:   ${result.pending.size}`);
+	lines.push(`   Completed tasks: ${result.completed.size}`);
+	lines.push("");
+
+	if (result.pending.size > 0) {
+		const byArea = new Map<string, ParsedTask[]>();
+		for (const task of result.pending.values()) {
+			const area = task.areaName ?? "";
+			const existing = byArea.get(area) ?? [];
+			existing.push(task);
+			byArea.set(area, existing);
+		}
+
+		lines.push("Pending Tasks:");
+		const sortedAreas = [...byArea.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+		for (const [area, tasks] of sortedAreas) {
+			lines.push(`  ${area}:`);
+			const sortedTasks = [...tasks].sort((a, b) => a.taskId.localeCompare(b.taskId));
+			for (const task of sortedTasks) {
+				const deps = task.dependencies.length > 0 ? ` → depends on: ${task.dependencies.join(", ")}` : "";
+				const repo = task.resolvedRepoId ? ` → repo: ${task.resolvedRepoId}` : "";
+				lines.push(`    ${task.taskId} [${task.size}] ${task.taskName}${deps}${repo}`);
+			}
+		}
+		lines.push("");
+	}
+
+	if (result.errors.length > 0) {
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		const fatalErrors = result.errors.filter(e => fatalCodes.has(e.code));
+		const warnings = result.errors.filter(e => !fatalCodes.has(e.code));
+
+		if (fatalErrors.length > 0) {
+			lines.push("❌ Errors:");
+			for (const err of fatalErrors) lines.push(`  [${err.code}] ${err.message}`);
+			lines.push("");
+		}
+
+		if (warnings.length > 0) {
+			lines.push("⚠️  Warnings:");
+			for (const err of warnings) lines.push(`  [${err.code}] ${err.message}`);
+			lines.push("");
 		}
 	}
 
@@ -692,4 +754,56 @@ export function createMissionWidget(
 			invalidate() {},
 		};
 	};
+}
+
+// ── Model validation rendering ───────────────────────────────────────
+
+/**
+ * Result row produced by `validateModelAvailability` — one per configured
+ * role (Worker / Reviewer / Merger / Supervisor).
+ *
+ * - `inherit` — role left blank, inherits the session model.
+ * - `found`   — explicit override resolved cleanly against the registry.
+ * - `not-found` — override string does not map to any registered model.
+ */
+export interface ModelCheckResult {
+	role: string;
+	modelStr: string;
+	status: "inherit" | "found" | "not-found";
+	resolvedName?: string;
+}
+
+/**
+ * Format `ModelCheckResult[]` for display by the `/mission-settings`
+ * command and the bootup preflight.
+ *
+ * Ports `formatModelValidation` from
+ * `taskplane/extensions/taskplane/extension.ts:901-923`:
+ *   - product/config strings renamed (`.pi/taskplane-config.json` →
+ *     `.omp/mission.json`, `/taskplane-settings` → `/mission-settings`)
+ *   - behaviour otherwise byte-for-byte (role column padded to 12,
+ *     `✅` / `❌` glyphs, fix hint appended only when any row failed).
+ */
+export function formatModelValidation(results: ModelCheckResult[]): string {
+	const lines: string[] = ["Model Configuration:"];
+	let hasFailure = false;
+
+	for (const r of results) {
+		if (r.status === "inherit") {
+			lines.push(`  ✅ ${r.role.padEnd(12)} inherit → ${r.resolvedName}`);
+		} else if (r.status === "found") {
+			lines.push(`  ✅ ${r.role.padEnd(12)} ${r.modelStr} → ${r.resolvedName}`);
+		} else {
+			lines.push(`  ❌ ${r.role.padEnd(12)} ${r.modelStr} — NOT FOUND in model registry`);
+			hasFailure = true;
+		}
+	}
+
+	if (hasFailure) {
+		lines.push("");
+		lines.push("  Fix: update the model in .omp/mission.json or /mission-settings,");
+		lines.push("  or remove the override to inherit the session model.");
+	}
+
+	return lines.join("\n");
 }

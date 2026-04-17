@@ -28,7 +28,14 @@ import { logger } from "@oh-my-pi/pi-utils";
 import { registerMissionCommands } from "./commands";
 import { resolvePhaseRole } from "./config";
 import { detectMilestonePhases, detectPhaseTransition, detectProposedPhases } from "./detector";
-import { createEngine, MISSION_MESSAGES, reviewerExtension } from "./missioncontrol";
+import {
+	buildMissionDepsReport,
+	createEngine,
+	formatMissionSessions,
+	listMissionSessions,
+	MISSION_MESSAGES,
+	reviewerExtension,
+} from "./missioncontrol";
 import { maybeSwitchModel } from "./model-switch";
 import { buildMissionProtocol, buildMissionStatus } from "./protocol";
 import { addProgressEvent, advancePhase, expandPhases, restoreMissionState, saveMissionState } from "./state";
@@ -339,6 +346,22 @@ export default function missionExtension(pi: ExtensionAPI): void {
 			const next = await engine.handlers.pause();
 			if (next) updateWidget(ctx, next);
 			ctx.ui.notify(MISSION_MESSAGES.pauseActivated(current.batch.batchId), "info");
+		},
+	});
+
+	pi.registerCommand("mission-sessions", {
+		description: "List active mission lanes",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			const sessions = listMissionSessions(getState());
+			ctx.ui.notify(formatMissionSessions(sessions), "info");
+		},
+	});
+
+	pi.registerCommand("mission-deps", {
+		description: "Show dependency graph: /mission-deps <areas|all> [--task <id>]",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			const report = buildMissionDepsReport(process.cwd(), args, getState());
+			ctx.ui.notify(report.message, report.level);
 		},
 	});
 

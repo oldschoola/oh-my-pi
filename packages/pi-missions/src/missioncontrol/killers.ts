@@ -14,21 +14,6 @@
 import { execLog } from "./log";
 
 /**
- * Kill a lane's Runtime V2 worker + reviewer agents (stub).
- *
- * Real impl lives in `execution.ts`: consults `RuntimeRegistry` for
- * agent PIDs, sends SIGTERM/SIGKILL, updates manifest status.
- */
-export function killV2LaneAgents(
-	baseSessionName: string,
-	options?: { stateRoot?: string; batchId?: string; logContext?: string },
-): void {
-	execLog(options?.logContext ?? "killer", options?.batchId ?? "-", `kill lane agents: ${baseSessionName} (stub)`, {
-		stateRoot: options?.stateRoot ?? "",
-	});
-}
-
-/**
  * Kill a single merge agent by session name (stub).
  *
  * Real impl lives in `merge.ts`: looks up merge agent PID by session,

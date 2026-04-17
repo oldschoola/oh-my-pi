@@ -15,7 +15,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { killAllMergeAgentsV2, killMergeAgentV2, killV2LaneAgents } from "./killers";
+import { killV2LaneAgents } from "./execution";
+import { killAllMergeAgentsV2, killMergeAgentV2 } from "./killers";
 import { execLog } from "./log";
 import { deleteBatchState, persistRuntimeState } from "./persistence";
 import { resolveCanonicalTaskPaths } from "./task-paths";

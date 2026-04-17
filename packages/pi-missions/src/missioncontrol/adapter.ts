@@ -40,6 +40,26 @@ export function missionTelemetryDir(cwd: string, missionId: string): string {
 	return path.join(projectDir(cwd), "mission-telemetry", missionId);
 }
 
+/** Directory holding the unified supervisor event stream (`events.jsonl`). */
+export function supervisorDir(cwd: string): string {
+	return path.join(projectDir(cwd), "supervisor");
+}
+
+/** Full path to the unified supervisor events JSONL file. */
+export function supervisorEventsPath(cwd: string): string {
+	return path.join(supervisorDir(cwd), "events.jsonl");
+}
+
+/** Path to `.omp/mission-history.json` (rolling batch-summary log). */
+export function missionHistoryPath(cwd: string): string {
+	return path.join(projectDir(cwd), "mission-history.json");
+}
+
+/** Legacy taskplane path `.pi/batch-history.json` — read-only fallback. */
+export function legacyBatchHistoryPath(cwd: string): string {
+	return path.join(cwd, ".pi", "batch-history.json");
+}
+
 export function legacyBatchPath(cwd: string): string {
 	return path.join(cwd, ".pi", "batch-state.json");
 }

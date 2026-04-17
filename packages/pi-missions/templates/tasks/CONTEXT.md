@@ -21,7 +21,7 @@ parallel batch execution or `/mission-batch <path/to/PROMPT.md>` for a single ta
 | Category | Path |
 |----------|------|
 | Tasks | `{{tasks_root}}/` |
-| Config | `.pi/mission.json` |
+| Config | `.omp/mission.json` |
 
 ---
 

@@ -4,6 +4,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-
 import { logger } from "@oh-my-pi/pi-utils";
 import type { MissionControlCallbacks, MissionControlResult } from "./mission-control";
 import { showMissionControl } from "./mission-control";
+import { buildMissionStatusReport } from "./missioncontrol";
 import { maybeSwitchModel } from "./model-switch";
 import { runMissionPlanner } from "./planner";
 import {
@@ -177,6 +178,12 @@ export function registerMissionCommands(
 						dur = ` (${formatDuration(Date.now() - new Date(p.startedAt).getTime())} elapsed)`;
 					}
 					lines.push(`  ${icon} Phase ${i + 1}: ${p.emoji} ${p.name}${dur}`);
+				}
+
+				if (state.batch) {
+					const batchReport = buildMissionStatusReport(state);
+					lines.push("");
+					for (const line of batchReport.message.split("\n")) lines.push(line);
 				}
 
 				await ctx.ui.select("Mission Status", lines);

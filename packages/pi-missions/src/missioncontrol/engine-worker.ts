@@ -136,7 +136,7 @@ export function deserializeWorkspaceConfig(
 }
 
 /** Extract serializable batch state for sync back to the main thread. */
-export function serializeBatchState(state: MissionBatchRuntimeState): SerializedBatchState {
+export function serializeBatchForWorker(state: MissionBatchRuntimeState): SerializedBatchState {
 	return {
 		phase: state.phase,
 		batchId: state.batchId,

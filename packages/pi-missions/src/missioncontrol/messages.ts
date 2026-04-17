@@ -20,7 +20,7 @@
  *   orch branch → mission branch
  */
 
-import type { AbortMode } from "./types";
+import type { AbortMode, IntegrateCleanupRepoFindings, IntegrateCleanupResult } from "./types";
 
 export const MISSION_MESSAGES = {
 	// /mission-batch
@@ -185,3 +185,84 @@ export const MISSION_MESSAGES = {
 		return lines.join("\n");
 	},
 } as const;
+
+/**
+ * Compute the /mission-integrate cleanup verdict from per-repo findings.
+ *
+ * Pure — no I/O. The acceptance criteria:
+ *   1. No lane worktrees remain registered under any workspace repo.
+ *   2. No lane branches remain (`task/{opId}-lane-*`).
+ *   3. No mission branches remain (`orch/{opId}-{batchId}`) — skipped
+ *      in PR mode where callers intentionally preserve the branch.
+ *   4. No batch-scoped autostash entries remain.
+ *   5. No non-empty `.worktrees/` containers remain.
+ */
+export function computeIntegrateCleanupResult(repoFindings: IntegrateCleanupRepoFindings[]): IntegrateCleanupResult {
+	const dirtyRepos = repoFindings.filter(
+		r =>
+			r.staleWorktrees.length > 0 ||
+			r.staleLaneBranches.length > 0 ||
+			r.staleOrchBranches.length > 0 ||
+			r.staleAutostashEntries.length > 0 ||
+			r.nonEmptyWorktreeContainers.length > 0,
+	);
+
+	if (dirtyRepos.length === 0) {
+		return {
+			clean: true,
+			notifyLevel: "info",
+			dirtyRepos: [],
+			report: "🧹 Cleanup verified: no stale worktrees, branches, or autostash entries remain.",
+		};
+	}
+
+	const details: string[] = [];
+	for (const repo of dirtyRepos) {
+		const label = repo.repoId ?? "(default)";
+		const issues: string[] = [];
+		if (repo.staleWorktrees.length > 0) {
+			issues.push(`${repo.staleWorktrees.length} stale worktree(s)`);
+		}
+		if (repo.staleLaneBranches.length > 0) {
+			issues.push(`${repo.staleLaneBranches.length} lane branch(es)`);
+		}
+		if (repo.staleOrchBranches.length > 0) {
+			issues.push(`${repo.staleOrchBranches.length} mission branch(es)`);
+		}
+		if (repo.staleAutostashEntries.length > 0) {
+			issues.push(`${repo.staleAutostashEntries.length} autostash entr(ies)`);
+		}
+		if (repo.nonEmptyWorktreeContainers.length > 0) {
+			issues.push(`${repo.nonEmptyWorktreeContainers.length} non-empty .worktrees/ container(s)`);
+		}
+		details.push(`  ${label}: ${issues.join(", ")}`);
+	}
+
+	const recovery: string[] = [];
+	for (const repo of dirtyRepos) {
+		const label = repo.repoId ?? "default";
+		for (const wt of repo.staleWorktrees) {
+			recovery.push(`  git worktree remove --force "${wt}"  # repo: ${label}`);
+		}
+		for (const br of repo.staleLaneBranches) {
+			recovery.push(`  git branch -D "${br}"  # repo: ${label}`);
+		}
+		for (const br of repo.staleOrchBranches) {
+			recovery.push(`  git branch -D "${br}"  # repo: ${label}`);
+		}
+		for (const entry of repo.staleAutostashEntries) {
+			recovery.push(`  git stash drop "${entry}"  # repo: ${label}`);
+		}
+	}
+
+	const report =
+		`⚠️ Cleanup incomplete — residual artifacts found:\n${details.join("\n")}` +
+		(recovery.length > 0 ? `\n  Manual cleanup:\n${recovery.join("\n")}` : "");
+
+	return {
+		clean: false,
+		notifyLevel: "warning",
+		dirtyRepos,
+		report,
+	};
+}

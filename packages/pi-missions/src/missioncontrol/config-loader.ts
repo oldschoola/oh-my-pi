@@ -40,6 +40,7 @@ import {
 	type TaskRunnerSection,
 	type WorkspaceSectionConfig,
 } from "./config-schema";
+import type { OrchestratorConfig, TaskArea, TaskRunnerConfig } from "./types";
 import { type PointerResolution, WORKSPACE_CONFIG_FILENAME } from "./types";
 import { loadWorkspaceConfig, resolvePointer } from "./workspace";
 
@@ -901,4 +902,188 @@ export function resolveTaskRunnerPointer(): PointerResolution | null {
 /** @internal */
 export function _resetPointerWarning(): void {
 	_pointerWarningLogged = false;
+}
+
+// ── Backward-Compatible Adapters ─────────────────────────────────────
+//
+// Convert unified camelCase MissionProjectConfig back to the snake_case
+// legacy shapes (`OrchestratorConfig`, `TaskRunnerConfig`) expected by the
+// engine and task-runner consumers.
+
+/**
+ * Adapter: produce the legacy `OrchestratorConfig` (snake_case) from unified config.
+ *
+ * Uses explicit field mapping instead of generic recursive key conversion
+ * to preserve record/dictionary keys verbatim (e.g., sizeWeights S/M/L,
+ * preWarm.commands keys, etc.).
+ */
+export function toOrchestratorConfig(config: MissionProjectConfig): OrchestratorConfig {
+	const o = config.orchestrator;
+	return {
+		orchestrator: {
+			max_lanes: o.orchestrator.maxLanes,
+			worktree_location: o.orchestrator.worktreeLocation,
+			worktree_prefix: o.orchestrator.worktreePrefix,
+			batch_id_format: o.orchestrator.batchIdFormat,
+			spawn_mode: o.orchestrator.spawnMode,
+			sessionPrefix: o.orchestrator.sessionPrefix,
+			operator_id: o.orchestrator.operatorId,
+			integration: o.orchestrator.integration,
+		},
+		dependencies: {
+			source: o.dependencies.source,
+			cache: o.dependencies.cache,
+		},
+		assignment: {
+			strategy: o.assignment.strategy,
+			size_weights: { ...o.assignment.sizeWeights },
+		},
+		pre_warm: {
+			auto_detect: o.preWarm.autoDetect,
+			commands: { ...o.preWarm.commands },
+			always: [...o.preWarm.always],
+		},
+		merge: {
+			model: o.merge.model,
+			tools: o.merge.tools,
+			thinking: o.merge.thinking,
+			verify: [...o.merge.verify],
+			order: o.merge.order,
+			timeout_minutes: o.merge.timeoutMinutes ?? 90,
+		},
+		failure: {
+			on_task_failure: o.failure.onTaskFailure,
+			on_merge_failure: o.failure.onMergeFailure,
+			stall_timeout: o.failure.stallTimeout,
+			max_worker_minutes: o.failure.maxWorkerMinutes,
+			abort_grace_period: o.failure.abortGracePeriod,
+		},
+		monitoring: {
+			poll_interval: o.monitoring.pollInterval,
+		},
+		verification: {
+			enabled: o.verification.enabled,
+			mode: o.verification.mode,
+			flaky_reruns: o.verification.flakyReruns,
+		},
+	};
+}
+
+/**
+ * Adapter: produce the legacy `TaskRunnerConfig` (snake_case subset) from unified config.
+ *
+ * Special handling for `repoId`: whitespace-only values are treated as undefined,
+ * and non-empty values are trimmed — matching the original YAML loader behavior.
+ */
+export function toTaskRunnerConfig(config: MissionProjectConfig): TaskRunnerConfig {
+	const taskAreas: Record<string, TaskArea> = {};
+	for (const [name, area] of Object.entries(config.taskRunner.taskAreas)) {
+		const ta: TaskArea = {
+			path: area.path,
+			prefix: area.prefix,
+			context: area.context,
+		};
+		if (area.repoId && typeof area.repoId === "string" && area.repoId.trim()) {
+			ta.repoId = area.repoId.trim();
+		}
+		taskAreas[name] = ta;
+	}
+
+	const testingCommands = config.taskRunner.testing?.commands;
+	const hasTestingCommands = testingCommands && Object.keys(testingCommands).length > 0;
+
+	return {
+		task_areas: taskAreas,
+		reference_docs: { ...config.taskRunner.referenceDocs },
+		...(hasTestingCommands ? { testing_commands: { ...testingCommands } } : {}),
+		model_fallback: config.taskRunner.modelFallback ?? "inherit",
+		reviewer: {
+			model: config.taskRunner.reviewer.model,
+			thinking: config.taskRunner.reviewer.thinking,
+			tools: config.taskRunner.reviewer.tools,
+		},
+	};
+}
+
+/**
+ * Adapter: produce the legacy task-runner `TaskConfig` (snake_case) from unified config.
+ *
+ * The task-runner extension has its own `TaskConfig` interface with snake_case
+ * keys. This adapter maps the unified shape back to that contract.
+ */
+export function toTaskConfig(config: MissionProjectConfig): {
+	project: { name: string; description: string };
+	paths: { tasks: string; architecture?: string };
+	testing: { commands: Record<string, string> };
+	standards: { docs: string[]; rules: string[] };
+	standards_overrides: Record<string, { docs?: string[]; rules?: string[] }>;
+	task_areas: Record<string, { path: string; [key: string]: unknown }>;
+	worker: { model: string; tools: string; thinking: string; spawn_mode?: "subprocess" };
+	reviewer: { model: string; tools: string; thinking: string };
+	context: {
+		worker_context_window: number;
+		warn_percent: number;
+		kill_percent: number;
+		max_worker_iterations: number;
+		max_review_cycles: number;
+		no_progress_limit: number;
+		max_worker_minutes?: number;
+	};
+	quality_gate: {
+		enabled: boolean;
+		review_model: string;
+		max_review_cycles: number;
+		max_fix_cycles: number;
+		pass_threshold: "no_critical" | "no_important" | "all_clear";
+	};
+} {
+	const tr = config.taskRunner;
+
+	const stdOverrides: Record<string, { docs?: string[]; rules?: string[] }> = {};
+	for (const [key, val] of Object.entries(tr.standardsOverrides)) {
+		stdOverrides[key] = { docs: val.docs, rules: val.rules };
+	}
+
+	const taskAreas: Record<string, { path: string; [key: string]: unknown }> = {};
+	for (const [key, val] of Object.entries(tr.taskAreas)) {
+		const entry: { path: string; [key: string]: unknown } = {
+			path: val.path,
+			prefix: val.prefix,
+			context: val.context,
+		};
+		if (val.repoId) entry.repo_id = val.repoId;
+		taskAreas[key] = entry;
+	}
+
+	return {
+		project: { ...tr.project },
+		paths: { ...tr.paths },
+		testing: { commands: { ...tr.testing.commands } },
+		standards: { docs: [...tr.standards.docs], rules: [...tr.standards.rules] },
+		standards_overrides: stdOverrides,
+		task_areas: taskAreas,
+		worker: {
+			model: tr.worker.model,
+			tools: tr.worker.tools,
+			thinking: tr.worker.thinking,
+			spawn_mode: tr.worker.spawnMode,
+		},
+		reviewer: { model: tr.reviewer.model, tools: tr.reviewer.tools, thinking: tr.reviewer.thinking },
+		context: {
+			worker_context_window: tr.context.workerContextWindow,
+			warn_percent: tr.context.warnPercent,
+			kill_percent: tr.context.killPercent,
+			max_worker_iterations: tr.context.maxWorkerIterations,
+			max_review_cycles: tr.context.maxReviewCycles,
+			no_progress_limit: tr.context.noProgressLimit,
+			max_worker_minutes: tr.context.maxWorkerMinutes,
+		},
+		quality_gate: {
+			enabled: tr.qualityGate.enabled,
+			review_model: tr.qualityGate.reviewModel,
+			max_review_cycles: tr.qualityGate.maxReviewCycles,
+			max_fix_cycles: tr.qualityGate.maxFixCycles,
+			pass_threshold: tr.qualityGate.passThreshold,
+		},
+	};
 }

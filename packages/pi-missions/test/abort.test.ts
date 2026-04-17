@@ -106,8 +106,10 @@ function mkTaskRecord(overrides: Partial<PersistedTaskRecord> = {}): PersistedTa
 function mkPersistedBatch(overrides: Partial<PersistedBatchState> = {}): PersistedBatchState {
 	return {
 		batchId: "b-test",
+		phase: "paused",
 		lanes: [mkLaneRecord()],
 		tasks: [mkTaskRecord()],
+		wavePlan: [],
 		...overrides,
 	};
 }

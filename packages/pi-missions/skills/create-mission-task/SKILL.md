@@ -27,16 +27,17 @@ hosting, no TMUX).
 
 ## Prerequisites
 
-**If `.pi/mission.json` does not exist** (and `.omp/mission.json`
+**If `.omp/mission.json` does not exist** (and legacy `.pi/mission.json`
 is also absent), the project has not been initialized. Tell the user to run
 `mission init` first — the skill cannot create tasks without knowing where
 task areas live.
 
 ## Configuration
 
-**Read `.pi/mission.json` first** (JSON, canonical). Fall back to
-`.omp/mission.json` only if the JSON config does not exist. Use canonical
-JSON keys when documenting behavior; YAML keys are compatibility aliases.
+**Read `.omp/mission.json` first** (JSON, canonical). Fall back to
+legacy `.pi/mission.json` only if the primary config does not exist. Use
+canonical JSON keys when documenting behavior; YAML keys are compatibility
+aliases.
 
 Primary keys to read:
 - `taskRunner.taskAreas` (legacy alias: `task_areas`) — folder paths, prefixes, CONTEXT.md locations per area

@@ -2,30 +2,36 @@
  * Canonical task-path resolution — translates a task folder path into
  * its worktree-relative equivalent for `.DONE`/`STATUS.md` detection.
  *
- * Ported (minimal) from `taskplane/execution.ts:resolveCanonicalTaskPaths`.
- * Workspace-mode cross-repo fallback + archive lookup are deferred until
- * the full `execution.ts` port lands; abort + resume only need the
- * repo-mode translation path today.
+ * Ported from `taskplane/execution.ts:resolveCanonicalTaskPaths`.
+ * Handles three cases:
+ *
+ * 1. **Repo mode** (`taskFolder` inside `repoRoot`): rewrite to the
+ *    equivalent path under `worktreePath`. Worktrees mirror the repo
+ *    structure, so the relative path is the same.
+ * 2. **Workspace mode** (cross-repo task folder): fall back to
+ *    `worktreePath/.mission-tasks/<basename>/` where the supervisor
+ *    copied the task files. (Rename of legacy `.taskplane-tasks/`.)
+ * 3. **Absolute fallback**: task folder lives outside the repo and
+ *    must be addressed directly.
+ *
+ * Both branches probe an archive fallback: during "Documentation &
+ * Delivery" the worker may move the task folder to
+ * `<parent>/archive/<taskDirName>/`. If `.DONE` or `STATUS.md` lives
+ * there, return the archive paths instead.
  */
 
+import { existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
 export interface ResolvedTaskPaths {
+	/** Absolute path to the resolved task folder (worktree-relative or external). */
 	taskFolderResolved: string;
+	/** Absolute path to the `.DONE` marker file. */
 	donePath: string;
+	/** Absolute path to the `STATUS.md` file. */
 	statusPath: string;
 }
 
-/**
- * Resolve a task folder inside a lane worktree.
- *
- * - Repo mode: if `taskFolder` is inside `repoRoot`, rewrite to the
- *   equivalent path under `worktreePath`.
- * - Workspace mode (cross-repo): fall back to
- *   `worktreePath/.mission-tasks/<basename>/` (rename of legacy
- *   `.taskplane-tasks/` used by taskplane).
- * - Otherwise: return the task folder absolute path unchanged.
- */
 export function resolveCanonicalTaskPaths(
 	taskFolder: string,
 	worktreePath: string,
@@ -52,9 +58,37 @@ export function resolveCanonicalTaskPaths(
 		resolvedFolder = resolve(taskFolder);
 	}
 
+	const primaryDone = join(resolvedFolder, ".DONE");
+	const primaryStatus = join(resolvedFolder, "STATUS.md");
+	if (existsSync(primaryDone) || existsSync(primaryStatus)) {
+		return {
+			taskFolderResolved: resolvedFolder,
+			donePath: primaryDone,
+			statusPath: primaryStatus,
+		};
+	}
+
+	// Archive fallback: worker may have relocated the folder under
+	// `<parent>/archive/<taskDirName>/` during delivery.
+	const resolvedNorm = resolve(resolvedFolder).replace(/\\/g, "/");
+	const parts = resolvedNorm.split("/");
+	const taskDirName = parts[parts.length - 1];
+	const parentDir = parts.slice(0, -1).join("/");
+	const archiveFolder = join(parentDir, "archive", taskDirName);
+	const archiveDone = join(archiveFolder, ".DONE");
+	const archiveStatus = join(archiveFolder, "STATUS.md");
+
+	if (existsSync(archiveDone) || existsSync(archiveStatus)) {
+		return {
+			taskFolderResolved: archiveFolder,
+			donePath: archiveDone,
+			statusPath: archiveStatus,
+		};
+	}
+
 	return {
 		taskFolderResolved: resolvedFolder,
-		donePath: join(resolvedFolder, ".DONE"),
-		statusPath: join(resolvedFolder, "STATUS.md"),
+		donePath: primaryDone,
+		statusPath: primaryStatus,
 	};
 }

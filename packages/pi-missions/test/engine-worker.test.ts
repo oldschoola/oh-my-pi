@@ -13,7 +13,7 @@ import {
 	deserializeWorkspaceConfig,
 	type SerializedBatchState,
 	type SerializedWorkspaceConfig,
-	serializeBatchState,
+	serializeBatchForWorker,
 	serializeWorkspaceConfig,
 } from "../src/missioncontrol/engine-worker";
 import {
@@ -93,7 +93,7 @@ describe("deserializeWorkspaceConfig", () => {
 	});
 });
 
-describe("serializeBatchState", () => {
+describe("serializeBatchForWorker", () => {
 	test("produces snapshot with all display fields", () => {
 		const state = freshMissionBatchState();
 		state.phase = "executing";
@@ -111,7 +111,7 @@ describe("serializeBatchState", () => {
 		state.endedAt = null;
 		state.errors = ["oops"];
 
-		const s = serializeBatchState(state);
+		const s = serializeBatchForWorker(state);
 		expect(s.phase).toBe("executing");
 		expect(s.batchId).toBe("b-1");
 		expect(s.baseBranch).toBe("main");
@@ -129,7 +129,7 @@ describe("serializeBatchState", () => {
 	test("defensively copies errors array", () => {
 		const state = freshMissionBatchState();
 		state.errors = ["a"];
-		const s = serializeBatchState(state);
+		const s = serializeBatchForWorker(state);
 		state.errors.push("b");
 		expect(s.errors).toEqual(["a"]);
 	});
