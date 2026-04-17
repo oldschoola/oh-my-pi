@@ -29,3 +29,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `BatchState` + `MissionKind` types on `MissionState` so simple phase missions and multi-lane batch missions share a single persistence shape.
 - `dashboard-api.ts` reads `.omp/missions/*.json` and `.omp/mission-batch.json` and exposes `listMissions` / `getMission` / `getMissionEvents` / `getMissionTelemetrySummary` helpers.
 - `omp mission` CLI subcommand (shipped from `@oh-my-pi/pi-coding-agent`) with `dashboard` (default), `init`, `doctor`, `list` — mirrors the `omp stats` pattern and opens the browser on launch.
+- MissionControl engine runtime (`src/missioncontrol/`) — 41 modules ported from taskplane covering state machine, lane runner, wave scheduler, supervisor, merge, discovery, quality gate, agent host, worktree, and telemetry pipeline. Engine is inert until a mission is promoted to `kind: "batch"`.
+- `createEngine` factory (`src/missioncontrol/runtime.ts`) returning `{ handlers, hooks, status, config }`; session lifecycle hooks wired through `pi.on("session:start" | "message:end" | "session:end", …)` in `src/index.ts`.
+- Slash commands `/mission-batch`, `/mission-abort`, `/mission-batch-pause`, `/mission-batch-resume` alongside the existing `/mission*` family.
+- Dashboard control endpoints: `POST /api/mission/:id/pause`, `/resume`, `/abort` route through the engine.
+- Adapter shim (`src/missioncontrol/adapter.ts`) bridging `@oh-my-pi/pi-coding-agent` RPC + `@oh-my-pi/pi-ai` `ModelRegistry.getApiKey` in place of taskplane's `pi --mode rpc` spawn. Honors `OMP_MISSION_STUB_AGENT=1` for deterministic test mode.
+- `executeWave`, `executeLaneV2`, `executeWithStopAll`, `commitTaskArtifacts`, `allocateLanes`, `monitorLanes` exported from `src/missioncontrol/`.
+- Legacy-path migration: `loadActiveBatch` reads `.pi/batch-state.json`, persists a copy to `.omp/mission-batch.json`, and leaves the legacy file in place (non-destructive).
+- Test coverage: `adapter-spawn.test.ts` (stub-mode handle), `engine-runtime-surface.test.ts` (inert engine, promote-to-batch, pause/abort, session rehydration), `persistence-legacy-migrate.test.ts` (four cases including malformed JSON + dual-file preference).
