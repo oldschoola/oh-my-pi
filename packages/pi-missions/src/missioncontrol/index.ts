@@ -1,0 +1,461 @@
+/**
+ * MissionControl public surface — imported by `../index.ts` to wire the
+ * engine into the pi-missions extension.
+ */
+
+export {
+	discoverAbortSessionNames,
+	executeAbort,
+	killOrchSessions,
+	planAbortActions,
+	selectAbortTargetSessions,
+	waitForSessionExit,
+	writeWrapUpFiles,
+} from "./abort";
+export type { SpawnAgentHandle, SpawnAgentOpts } from "./adapter";
+export { missionBatchPath, missionsDir, missionTelemetryDir, projectDir, spawnAgent } from "./adapter";
+export type {
+	LogRotationResult,
+	PostIntegrateCleanupResult,
+	PreflightCleanupResult,
+	PreflightSweepResult,
+	PriorBatchCleanupResult,
+	SizeCapResult,
+	SweepDeps,
+} from "./cleanup";
+export {
+	cleanupPostIntegrate,
+	cleanupPriorBatchArtifacts,
+	enforceTelemetrySizeCap,
+	formatLogRotation,
+	formatPostIntegrateCleanup,
+	formatPreflightCleanup,
+	formatPreflightSweep,
+	formatPriorBatchCleanup,
+	formatSizeCap,
+	LOG_ROTATION_THRESHOLD_BYTES,
+	rotateSupervisorLogs,
+	runPreflightCleanup,
+	STALE_ARTIFACT_MAX_AGE_MS,
+	sweepStaleArtifacts,
+	TELEMETRY_SIZE_CAP_BYTES,
+} from "./cleanup";
+export type { ConfigLoadErrorCode, GlobalPreferencesLoadResult } from "./config-loader";
+export {
+	_resetMigrationGuard,
+	_resetPointerWarning,
+	applyGlobalPreferences,
+	ConfigLoadError,
+	hasConfigFiles,
+	loadGlobalPreferences,
+	loadGlobalPreferencesWithMeta,
+	loadLayer1Config,
+	loadProjectConfig,
+	loadProjectOverrides,
+	resolveConfigRoot,
+	resolveGlobalPreferencesPath,
+	resolveTaskRunnerPointer,
+} from "./config-loader";
+export type {
+	AssignmentConfig,
+	ContextConfig,
+	DeepPartial,
+	DependenciesConfig,
+	FailureConfig,
+	GlobalPreferences,
+	InitAgentDefaultsPreferences,
+	MergeConfig,
+	MissionProjectConfig,
+	ModelFallbackMode,
+	MonitoringConfig,
+	OrchestratorCoreConfig,
+	OrchestratorSection,
+	PassThreshold,
+	PathsConfig,
+	PreWarmConfig,
+	ProjectMetadataConfig,
+	QualityGateConfig,
+	ReviewerConfig,
+	SelfDocTarget,
+	StandardsConfig,
+	StandardsOverride,
+	SupervisorSectionConfig,
+	TaskAreaConfig,
+	TaskRunnerSection,
+	TestingConfig,
+	VerificationConfig,
+	WorkerConfig,
+	WorkspaceRepoSectionConfig,
+	WorkspaceRoutingSectionConfig,
+	WorkspaceSectionConfig,
+} from "./config-schema";
+export {
+	CONFIG_VERSION,
+	DEFAULT_BOOTSTRAP_GLOBAL_PREFERENCES,
+	DEFAULT_GLOBAL_PREFERENCES,
+	DEFAULT_ORCHESTRATOR_SECTION,
+	DEFAULT_PROJECT_CONFIG,
+	DEFAULT_TASK_RUNNER_SECTION,
+	GLOBAL_PREFERENCES_FILENAME,
+	GLOBAL_PREFERENCES_SUBDIR,
+	PROJECT_CONFIG_FILENAME,
+} from "./config-schema";
+export { FALLBACK_CONTEXT_WINDOW, resolveContextWindow } from "./context-window";
+export type { DiagnosticEvent, DiagnosticReportInput } from "./diagnostic-reports";
+export {
+	assembleDiagnosticInput,
+	buildDiagnosticEvents,
+	buildMarkdownReport,
+	diagnosticsDir,
+	emitDiagnosticReports,
+	eventsToJsonl,
+} from "./diagnostic-reports";
+export type {
+	DiagnosticExitSummary,
+	DiagnosticRetryRecord,
+	ExitClassification,
+	ExitClassificationInput,
+	SessionTokenCounts,
+	TaskExitDiagnostic,
+} from "./diagnostics";
+export {
+	CONTEXT_OVERFLOW_THRESHOLD_PCT,
+	classifyExit,
+	EXIT_CLASSIFICATIONS,
+	isModelAccessError,
+	MODEL_ACCESS_ERROR_PATTERNS,
+} from "./diagnostics";
+export type { DependencyRef, ParsedTask } from "./discovery";
+export {
+	discoverTasks,
+	extractTaskIdFromFolderName,
+	extractTaskName,
+	normalizeDependencyReference,
+	parseDependencies,
+	parseDependencyReference,
+} from "./discovery";
+export {
+	abortBatch,
+	advanceWave,
+	beginBatch,
+	pauseBatch,
+	phaseAfterOutcomes,
+	promoteToBatch,
+	recordTaskOutcome,
+	resumeBatch,
+	setLaneStatus,
+} from "./engine";
+export type {
+	EngineWorkerData,
+	SerializedBatchState,
+	SerializedWorkspaceConfig,
+	WorkerErrorSource,
+	WorkerInMessage,
+	WorkerToMainMessage,
+} from "./engine-worker";
+export {
+	applySerializedState,
+	deserializeWorkspaceConfig,
+	serializeBatchState,
+	serializeWorkspaceConfig,
+} from "./engine-worker";
+export type { MissionWidget, ThemeLike } from "./formatting";
+export {
+	buildDashboardViewModel,
+	computeMissionSummaryCounts,
+	createMissionWidget,
+	formatDependencyGraph,
+	formatElapsedTime,
+	formatWavePlan,
+	renderLaneCard,
+} from "./formatting";
+export type { GitResult } from "./git";
+export { getCurrentBranch, runGit, runGitWithEnv } from "./git";
+export { killAllMergeAgentsV2, killMergeAgentV2, killV2LaneAgents } from "./killers";
+export { execLog } from "./log";
+export type { MailboxAuditEventType, MailboxMessage, MailboxMessageType, WriteMailboxMessageOpts } from "./mailbox";
+export {
+	_resetRateLimits,
+	ackMessage,
+	ackOutboxMessage,
+	appendMailboxAuditEvent,
+	broadcastInboxDir,
+	checkRateLimit,
+	discoverMailboxAgentIds,
+	isValidMailboxMessage,
+	MAILBOX_DIR_NAME,
+	MAILBOX_MAX_CONTENT_BYTES,
+	MAILBOX_MESSAGE_TYPES,
+	mailboxRoot,
+	RATE_LIMIT_WINDOW_MS,
+	readInbox,
+	readOutbox,
+	readOutboxHistory,
+	recordSend,
+	sessionAckDir,
+	sessionInboxDir,
+	sessionOutboxDir,
+	writeBroadcastMessage,
+	writeMailboxMessage,
+	writeOutboxMessage,
+} from "./mailbox";
+export { MISSION_MESSAGES } from "./messages";
+export type { AppliedMigration, Migration, MigrationRunResult, MigrationState, MissionMeta } from "./migrations";
+export { loadMissionMeta, MIGRATION_REGISTRY, runMigrations, saveMissionMeta } from "./migrations";
+export type { MissionSessionEntry } from "./missions";
+export { formatMissionSessions, listMissionSessions } from "./missions";
+export {
+	buildBranchName,
+	buildLaneSessionId,
+	resolveOperatorId,
+	resolveRepoSlug,
+	sanitizeNameComponent,
+} from "./naming";
+export {
+	packageFileExists,
+	packageRoot,
+	resolveAgentTemplate,
+	resolvePackageFile,
+	resolveTaskTemplate,
+} from "./paths";
+export {
+	archiveMission,
+	clearActiveBatch,
+	deleteBatchState,
+	loadActiveBatch,
+	persistRuntimeState,
+	saveActiveBatch,
+} from "./persistence";
+export {
+	appendAgentEvent,
+	buildRegistrySnapshot,
+	cleanupBatchRuntime,
+	createManifest,
+	detectOrphans,
+	getAgentsByRole,
+	getLiveAgents,
+	isProcessAlive,
+	isTerminalStatus,
+	markOrphansCrashed,
+	readLaneSnapshot,
+	readManifest,
+	readMergeSnapshot,
+	readRegistrySnapshot,
+	updateManifestStatus,
+	writeLaneSnapshot,
+	writeManifest,
+	writeMergeSnapshot,
+	writeRegistrySnapshot,
+} from "./process-registry";
+export type {
+	FindingCategory,
+	FindingSeverity,
+	QualityGateContext,
+	QualityGateResult,
+	ReconciliationAction,
+	ReconciliationResult,
+	ReviewFinding,
+	ReviewVerdict,
+	StatusReconciliation,
+	VerdictEvaluation,
+	VerdictFailReason,
+} from "./quality-gate";
+export {
+	applyStatusReconciliation,
+	applyVerdictRules,
+	buildFixAgentPrompt,
+	FEEDBACK_FILENAME,
+	generateFeedbackMd,
+	generateQualityGatePrompt,
+	parseVerdict,
+	readAndEvaluateVerdict,
+	VERDICT_FILENAME,
+} from "./quality-gate";
+export {
+	REVIEWER_POLL_INTERVAL_MS,
+	REVIEWER_SHUTDOWN_SIGNAL,
+	REVIEWER_SIGNAL_PREFIX,
+	REVIEWER_WAIT_TIMEOUT_MS,
+	reviewerExtension,
+} from "./reviewer";
+export type { Engine, EngineDeps } from "./runtime";
+export { createEngine } from "./runtime";
+export type { SidecarTailState, SidecarTelemetryDelta } from "./sidecar-telemetry";
+export { createSidecarTailState, tailSidecarJsonl } from "./sidecar-telemetry";
+export type { CoreParsedTask, ParsedStatus, StepInfo } from "./task-executor-core";
+export {
+	appendTableRow,
+	displayName,
+	extractVerdict,
+	findStepBoundaryCommit,
+	generateReviewRequest,
+	generateStatusMd,
+	getHeadCommitSha,
+	isLowRiskStep,
+	isStepComplete,
+	logExecution,
+	logReview,
+	parsePromptMd,
+	parseStatusMd,
+	resolveStandards,
+	sanitizeSteeringContent,
+	updateStatusField,
+	updateStepStatus,
+} from "./task-executor-core";
+export type { ResolvedTaskPaths } from "./task-paths";
+export { resolveCanonicalTaskPaths } from "./task-paths";
+export type { LaneSessionAliasTarget } from "./tmux-compat";
+export { normalizeLaneSessionAlias, readLaneSessionAliases } from "./tmux-compat";
+export type {
+	AbortActionStep,
+	AbortErrorCode,
+	AbortLaneResult,
+	AbortMode,
+	AbortResult,
+	AbortTargetSession,
+	AllocatedLane,
+	AllocatedTask,
+	AllocationErrorCode,
+	Autonomy,
+	BatchDiagnostics,
+	CreateWorktreeOptions,
+	DependencyGraph,
+	DiscoveryError,
+	EngineEvent,
+	EngineEventCallback,
+	EngineEventType,
+	EngineStatus,
+	ExecutionUnit,
+	GraphValidationResult,
+	LaneAssignment,
+	LaneExecutionResult,
+	LaneMonitorSnapshot,
+	LaneTaskOutcome,
+	LaneTaskOutcomeTelemetry,
+	LaneTaskStatus,
+	MergeHealthStatus,
+	MissionBatchPhase,
+	MissionBatchRuntimeState,
+	MissionControlConfig,
+	MissionDashboardViewModel,
+	MissionLaneCardData,
+	MissionSummaryCounts,
+	MonitorState,
+	OrchestratorConfig,
+	PacketPaths,
+	PersistedBatchState,
+	PersistedLaneRecord,
+	PersistedSegmentStatus,
+	PersistedTaskExitSummary,
+	PersistedTaskRecord,
+	PointerResolution,
+	PromoteBatchOptions,
+	PromptSegmentDagEdge,
+	PromptSegmentDagMetadata,
+	RuntimeAgentEvent,
+	RuntimeAgentEventType,
+	RuntimeAgentId,
+	RuntimeAgentManifest,
+	RuntimeAgentRole,
+	RuntimeAgentStatus,
+	RuntimeAgentTelemetrySnapshot,
+	RuntimeLaneSnapshot,
+	RuntimeMergeSnapshot,
+	RuntimeRegistry,
+	RuntimeTaskProgress,
+	RuntimeWaveAssignment,
+	SegmentCheckboxGroup,
+	SegmentEdgeProvenance,
+	SegmentId,
+	StepSegmentMapping,
+	SupervisorAlert,
+	SupervisorAlertCallback,
+	SupervisorAlertCategory,
+	SupervisorAlertContext,
+	SupervisorSegmentFrontierSnapshot,
+	TaskArea,
+	TaskMonitorSnapshot,
+	TaskRunnerConfig,
+	TaskSegmentEdge,
+	TaskSegmentNode,
+	TaskSegmentPlan,
+	TaskSegmentPlanMap,
+	WaveComputationResult,
+	WaveExecutionResult,
+	WorkspaceConfig,
+	WorkspaceConfigErrorCode,
+	WorkspaceMode,
+	WorkspaceRepoConfig,
+	WorkspaceRoutingConfig,
+	WorktreeErrorCode,
+	WorktreeInfo,
+} from "./types";
+export {
+	AllocationError,
+	buildRuntimeAgentId,
+	DEFAULT_MISSIONCONTROL_CONFIG,
+	DEFAULT_ORCHESTRATOR_CONFIG,
+	DURATION_BASE_MINUTES,
+	defaultBatchDiagnostics,
+	FATAL_DISCOVERY_CODES,
+	freshMissionBatchState,
+	generateBatchId,
+	getTaskDurationMinutes,
+	POINTER_FILENAME,
+	resolvePacketPaths,
+	runtimeAgentDir,
+	runtimeAgentEventsPath,
+	runtimeLaneSnapshotPath,
+	runtimeManifestPath,
+	runtimeMergeSnapshotPath,
+	runtimeRegistryPath,
+	runtimeRoot,
+	SIZE_DURATION_MINUTES,
+	TERMINAL_AGENT_STATUSES,
+	validateAgentManifest,
+	validatePacketPaths,
+	WORKSPACE_CONFIG_FILENAME,
+	WorkspaceConfigError,
+	WorktreeError,
+} from "./types";
+export type {
+	CommandResult,
+	FingerprintDiff,
+	TestFingerprint,
+	VerificationBaseline,
+	VerificationCommand,
+} from "./verification";
+export {
+	captureBaseline,
+	deduplicateFingerprints,
+	diffFingerprints,
+	fingerprintKey,
+	normalizeFilePath,
+	normalizeMessage,
+	parseTestOutput,
+	parseVitestOutput,
+	runVerificationCommands,
+} from "./verification";
+export { chunkIntoWaves, nextWaveIndex, tasksRemaining } from "./waves";
+export {
+	canonicalizePath,
+	loadWorkspaceConfig,
+	pointerFilePath,
+	resolvePointer,
+	workspaceConfigPath,
+} from "./workspace";
+export type { ParsedWorktreeEntry } from "./worktree";
+export {
+	computePartialProgressBranchName,
+	computeSavedBranchName,
+	escapeRegex,
+	generateBatchContainerName,
+	generateBatchContainerPath,
+	generateBranchName,
+	generateMergeWorktreePath,
+	generateWorktreePath,
+	isRegisteredWorktree,
+	normalizePath,
+	parseWorktreeList,
+	resolveWorktreeBasePath,
+} from "./worktree";

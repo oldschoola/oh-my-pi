@@ -25,6 +25,7 @@
 			"@oh-my-pi/pi-agent-core": "14.1.2",
 			"@oh-my-pi/pi-ai": "14.1.2",
 			"@oh-my-pi/pi-coding-agent": "14.1.2",
+			"@oh-my-pi/pi-missions": "0.3.0",
 			"@oh-my-pi/pi-natives": "14.1.2",
 			"@oh-my-pi/pi-tui": "14.1.2",
 			"@oh-my-pi/pi-utils": "14.1.2",

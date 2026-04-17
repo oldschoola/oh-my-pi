@@ -1865,10 +1865,24 @@ export class AuthStorage {
 			});
 
 			if (isDefinitiveFailure) {
-				// Permanently disable invalid credentials with an explicit cause for inspection/debugging
-				this.#disableCredentialAt(provider, selection.index, `oauth refresh failed: ${errorMsg}`);
-				if (this.#getCredentialsForProvider(provider).some(credential => credential.type === "oauth")) {
-					return this.getApiKey(provider, sessionId, options);
+				// If the credential is currently blocked (typically from a rate-limit hit that
+				// triggered this retry), treat the refresh failure as transient rather than
+				// permanently disabling the credential. A 401/403 on a refresh attempt made
+				// while the provider is actively rejecting us for rate-limit reasons is not
+				// reliable evidence the refresh token itself is bad — deleting the credential
+				// here strands the user with no OAuth at all on the next launch.
+				if (this.#isCredentialBlocked(providerKey, selection.index)) {
+					// Keep the existing block (it already carries the provider's reset time
+					// from markUsageLimitReached); extend to at least 5 min from now if shorter.
+					const existingBlock = this.#getCredentialBlockedUntil(providerKey, selection.index) ?? 0;
+					const minBlock = Date.now() + 5 * 60 * 1000;
+					this.#markCredentialBlocked(providerKey, selection.index, Math.max(existingBlock, minBlock));
+				} else {
+					// Permanently disable invalid credentials with an explicit cause for inspection/debugging
+					this.#disableCredentialAt(provider, selection.index, `oauth refresh failed: ${errorMsg}`);
+					if (this.#getCredentialsForProvider(provider).some(credential => credential.type === "oauth")) {
+						return this.getApiKey(provider, sessionId, options);
+					}
 				}
 			} else {
 				// Block temporarily for transient failures (5 minutes)

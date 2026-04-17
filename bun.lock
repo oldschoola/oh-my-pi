@@ -64,6 +64,7 @@
         "@oh-my-pi/omp-stats": "catalog:",
         "@oh-my-pi/pi-agent-core": "catalog:",
         "@oh-my-pi/pi-ai": "catalog:",
+        "@oh-my-pi/pi-missions": "catalog:",
         "@oh-my-pi/pi-natives": "catalog:",
         "@oh-my-pi/pi-tui": "catalog:",
         "@oh-my-pi/pi-utils": "catalog:",
@@ -94,6 +95,37 @@
         "@napi-rs/cli": "catalog:",
         "@types/bun": "catalog:",
       },
+    },
+    "packages/pi-missions": {
+      "name": "@oh-my-pi/pi-missions",
+      "version": "0.3.0",
+      "dependencies": {
+        "@oh-my-pi/pi-utils": "catalog:",
+        "@tailwindcss/node": "catalog:",
+        "date-fns": "catalog:",
+        "jiti": "^2.6.1",
+        "lucide-react": "catalog:",
+        "react": "catalog:",
+        "react-dom": "catalog:",
+        "yaml": "^2.4.0",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/react": "catalog:",
+        "@types/react-dom": "catalog:",
+        "postcss": "catalog:",
+        "tailwindcss": "catalog:",
+      },
+      "peerDependencies": {
+        "@oh-my-pi/pi-coding-agent": "^13",
+        "@oh-my-pi/pi-tui": "^13",
+        "@sinclair/typebox": "*",
+      },
+      "optionalPeers": [
+        "@oh-my-pi/pi-coding-agent",
+        "@oh-my-pi/pi-tui",
+        "@sinclair/typebox",
+      ],
     },
     "packages/stats": {
       "name": "@oh-my-pi/omp-stats",
@@ -208,6 +240,7 @@
     "@oh-my-pi/pi-agent-core": "14.1.2",
     "@oh-my-pi/pi-ai": "14.1.2",
     "@oh-my-pi/pi-coding-agent": "14.1.2",
+    "@oh-my-pi/pi-missions": "0.3.0",
     "@oh-my-pi/pi-natives": "14.1.2",
     "@oh-my-pi/pi-tui": "14.1.2",
     "@oh-my-pi/pi-utils": "14.1.2",
@@ -566,6 +599,8 @@
     "@oh-my-pi/pi-ai": ["@oh-my-pi/pi-ai@workspace:packages/ai"],
 
     "@oh-my-pi/pi-coding-agent": ["@oh-my-pi/pi-coding-agent@workspace:packages/coding-agent"],
+
+    "@oh-my-pi/pi-missions": ["@oh-my-pi/pi-missions@workspace:packages/pi-missions"],
 
     "@oh-my-pi/pi-natives": ["@oh-my-pi/pi-natives@workspace:packages/natives"],
 
