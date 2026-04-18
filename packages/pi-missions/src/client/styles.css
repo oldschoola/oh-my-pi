@@ -185,6 +185,17 @@ html {
   }
   .stat-card:hover { border-color: var(--border-default); background: var(--bg-elevated); }
 
+  /* Pulses the retry stat card while the agent is in a backoff window.
+     Amber border matches the auto_retry_start widget cue in the TUI. */
+  .stat-card-pulse {
+    border-color: var(--accent-amber);
+    animation: stat-card-pulse-kf 1.6s ease-in-out infinite;
+  }
+  @keyframes stat-card-pulse-kf {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-amber) 35%, transparent); }
+    50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-amber) 0%, transparent); }
+  }
+
   /* Blue/indigo gradient border */
   .gradient-border { position: relative; }
   .gradient-border::before {
@@ -260,6 +271,23 @@ html {
     color: var(--text-muted);
     pointer-events: none;
   }
+
+  /* Per-task checkbox progress bar shown inside each LaneCell. */
+  .task-progress-bar {
+    height: 4px;
+    width: 100%;
+    background: var(--bg-elevated);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .task-progress-fill {
+    height: 100%;
+    transition: width 0.5s ease, background-color 0.5s ease;
+  }
+  .task-progress-fill.pct-0   { background: transparent; }
+  .task-progress-fill.pct-low { background: var(--accent-amber); }
+  .task-progress-fill.pct-mid { background: var(--accent-blue); }
+  .task-progress-fill.pct-hi  { background: var(--accent-green); }
 
   /* Collapsible section */
   .collapsible-header {
@@ -378,9 +406,31 @@ html {
     color: var(--text-secondary);
     padding: 6px 10px;
     border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
   }
-
   .event-row:last-child { border-bottom: none; }
+  .event-row-msg        { background: color-mix(in srgb, var(--accent-cyan) 3%, transparent); }
+  .event-row-retry      { background: color-mix(in srgb, var(--accent-red) 4%, transparent); }
+  .event-row-compaction { background: color-mix(in srgb, var(--accent-violet) 4%, transparent); }
+
+  .event-head { display: flex; align-items: center; gap: 6px; }
+  .event-ts   { color: var(--text-faint); font-size: 10px; min-width: 60px; }
+  .event-icon { display: inline-flex; }
+  .event-label { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .event-body { color: var(--text-secondary); word-break: break-word; padding-left: 68px; }
+  .event-body-dim  { color: var(--text-muted); }
+  .event-body-mono { font-family: inherit; font-size: 11px; }
+  .event-meta { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 68px; }
+  .event-meta-chip {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 1px solid var(--border-subtle);
+  }
 
   /* Gradient text: blue → indigo/violet */
   .gradient-text {

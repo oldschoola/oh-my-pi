@@ -237,6 +237,11 @@ interface TelemetryResponse {
 	};
 	toolCalls?: number;
 	lastToolCall?: string;
+	contextPct?: number;
+	retries?: number;
+	retryActive?: boolean;
+	lastRetryError?: string;
+	compactions?: number;
 }
 
 test("GET /api/mission/:id/telemetry maps server fields to client shape", async () => {
@@ -294,4 +299,166 @@ test("GET /api/mission/:id/telemetry returns empty object when no file exists", 
 	const body = (await res.json()) as TelemetryResponse;
 	expect(body.tokens).toBeUndefined();
 	expect(body.toolCalls).toBeUndefined();
+});
+
+// ---------------------------------------------------------------------------
+// Extended telemetry — context%, retries, compactions, arg preview.
+// ---------------------------------------------------------------------------
+
+test("GET /api/mission/:id/telemetry surfaces context%, retries, compactions", async () => {
+	writeTelemetry("telemetry-extended", {
+		tokens: { input: 1000, output: 500, cacheRead: 0, cacheWrite: 0 },
+		cost: 0.01,
+		toolCalls: 3,
+		durationSec: 12,
+		lastToolCall: "read src/foo.ts",
+		contextPct: 47.5,
+		retries: 2,
+		retryActive: true,
+		lastRetryError: "429 rate limit",
+		compactions: 1,
+	});
+
+	const res = await fetch(`${baseUrl}/api/mission/telemetry-extended/telemetry`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as TelemetryResponse;
+
+	expect(body.contextPct).toBe(47.5);
+	expect(body.retries).toBe(2);
+	expect(body.retryActive).toBe(true);
+	expect(body.lastRetryError).toBe("429 rate limit");
+	expect(body.compactions).toBe(1);
+	expect(body.lastToolCall).toBe("read src/foo.ts");
+});
+
+test("GET /api/mission/:id/telemetry omits retries/compactions when zero", async () => {
+	writeTelemetry("telemetry-zero-retries", {
+		tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+		toolCalls: 1,
+		durationSec: 1,
+		retries: 0,
+		compactions: 0,
+	});
+
+	const res = await fetch(`${baseUrl}/api/mission/telemetry-zero-retries/telemetry`);
+	const body = (await res.json()) as TelemetryResponse;
+
+	expect(body.retries).toBeUndefined();
+	expect(body.compactions).toBeUndefined();
+	expect(body.retryActive).toBeUndefined();
+});
+
+// ---------------------------------------------------------------------------
+// Batch STATUS.md enrichment — getMission attaches parsed progress to tasks.
+// ---------------------------------------------------------------------------
+
+test("GET /api/mission/:id enriches batch tasks with STATUS.md progress", async () => {
+	const batchId = "enrich-1";
+	const statusMdBody = [
+		"# T-1: Demo — Status",
+		"",
+		"**Current Step:** Step 1",
+		"**Iteration:** 2",
+		"**Review Counter:** 1",
+		"",
+		"### Step 1: Implementation",
+		"**Status:** ✅ complete",
+		"- [x] wrote the code",
+		"- [x] ran the tests",
+		"### Step 2: Review",
+		"**Status:** 🟨 in-progress",
+		"- [ ] tidy up",
+		"",
+	].join("\n");
+	const taskDir = join(workDir, ".omp", "missions", batchId, "tasks", "T-1");
+	mkdirSync(taskDir, { recursive: true });
+	writeFileSync(join(taskDir, "STATUS.md"), statusMdBody);
+
+	writeMission(batchId, {
+		description: "enrichment test",
+		mode: "simple",
+		phases: [{ name: "Plan", emoji: "P", status: "active" }],
+		autonomy: "high",
+		modelAssignment: {},
+		paused: false,
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: "2025-01-01T10:00:00Z",
+		kind: "batch",
+		batch: {
+			batchId,
+			phase: "running",
+			waves: [{ wave: 0, taskIds: ["T-1"] }],
+			currentWave: 0,
+			laneCount: 1,
+			laneStatuses: [
+				{ lane: 1, taskId: "T-1", status: "running", stepProgress: "", iteration: 1, elapsed: 0, sessionName: "s" },
+			],
+			tasks: [
+				{
+					taskId: "T-1",
+					status: "running",
+					startTime: null,
+					endTime: null,
+					exitReason: "",
+					sessionName: "s",
+					doneFileFound: false,
+				},
+			],
+			tasksTotal: 1,
+			tasksComplete: 0,
+			tasksFailed: 0,
+			startTime: 0,
+			errors: [],
+		},
+	});
+
+	const res = await fetch(`${baseUrl}/api/mission/${batchId}`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		state: {
+			batch: {
+				tasks: Array<{
+					taskId: string;
+					statusData?: {
+						checked: number;
+						total: number;
+						currentStep?: string;
+						iteration: number;
+						reviews: number;
+					};
+				}>;
+			};
+		};
+	};
+	const task = body.state.batch.tasks.find(t => t.taskId === "T-1");
+	expect(task?.statusData).toBeDefined();
+	expect(task?.statusData).toMatchObject({
+		checked: 2,
+		total: 3,
+		iteration: 2,
+		reviews: 1,
+	});
+	// currentStep resolves to the first in-progress step; Step 2 is in-progress.
+	expect(task?.statusData?.currentStep).toBe("Review");
+});
+
+test("GET /api/mission/:id leaves simple missions untouched by enrichment", async () => {
+	writeMission("simple-no-status", {
+		description: "simple",
+		mode: "simple",
+		phases: [{ name: "Plan", emoji: "P", status: "active" }],
+		autonomy: "high",
+		modelAssignment: {},
+		paused: false,
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: "2025-01-01T10:00:00Z",
+		kind: "simple",
+	});
+
+	const res = await fetch(`${baseUrl}/api/mission/simple-no-status`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as { state: { batch?: unknown } };
+	expect(body.state.batch).toBeUndefined();
 });

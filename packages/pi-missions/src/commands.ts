@@ -181,7 +181,7 @@ export function registerMissionCommands(
 					return;
 				}
 
-				resetTelemetry();
+				resetTelemetry(cwd);
 
 				persist(ctx, newState);
 
@@ -643,7 +643,7 @@ export function registerMissionCommands(
 					modelAssignment: req.modelAssignment,
 					constraints: req.constraints,
 				});
-				resetTelemetry();
+				resetTelemetry(cwd);
 				persist(ctx, newState);
 
 				const firstPhase = newState.phases.find(p => p.status === "active");

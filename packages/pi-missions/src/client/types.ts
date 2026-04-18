@@ -48,6 +48,15 @@ export interface TaskTelemetry {
 
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
 
+/** STATUS.md checkbox / step progress parsed server-side. */
+export interface TaskStatusData {
+	checked: number;
+	total: number;
+	currentStep?: string;
+	iteration: number;
+	reviews: number;
+}
+
 /** Per-task outcome (mirrors server TaskOutcome). */
 export interface TaskOutcome {
 	taskId: string;
@@ -59,6 +68,7 @@ export interface TaskOutcome {
 	doneFileFound: boolean;
 	laneNumber?: number;
 	telemetry?: TaskTelemetry;
+	statusData?: TaskStatusData;
 }
 
 /** Per-lane runtime status (mirrors server LaneStatus). */
@@ -133,7 +143,16 @@ export interface TelemetrySummary {
 		totalCostUsd?: number;
 	};
 	toolCalls?: number;
-	retries?: Array<{ attempt: number; error?: string }>;
+	/** Total retries observed; absent when zero. */
+	retries?: number;
+	/** True while the agent is in a retry backoff window. */
+	retryActive?: boolean;
+	/** Last retry error message; only present when retries > 0. */
+	lastRetryError?: string;
+	/** Auto-compaction count; absent when zero. */
+	compactions?: number;
+	/** Live context window utilisation (0–100). */
+	contextPct?: number;
 	lastToolCall?: string;
 	error?: string;
 }

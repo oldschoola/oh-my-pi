@@ -38,7 +38,12 @@ function WaveHeader({ batch }: { batch: BatchState }) {
 	}, []);
 
 	const elapsed = formatDuration(now - batch.startTime);
-	const pct = batch.tasksTotal > 0 ? Math.round((batch.tasksComplete / batch.tasksTotal) * 100) : 0;
+	const taskMap = new Map(batch.tasks.map(t => [t.taskId, t]));
+	// Prefer checkbox-based progress (STATUS.md derived) when enough data exists.
+	const { checked: batchChecked, total: batchTotal } = aggregateCheckboxProgress(batch);
+	const checkboxPct = batchTotal > 0 ? Math.round((batchChecked / batchTotal) * 100) : null;
+	const taskPct = batch.tasksTotal > 0 ? Math.round((batch.tasksComplete / batch.tasksTotal) * 100) : 0;
+	const pct = checkboxPct ?? taskPct;
 
 	// Count running lanes (not tasks — lanes can be running without a known task)
 	const lanesRunning = batch.laneStatuses.filter(l => l.status === "running").length;
@@ -63,7 +68,12 @@ function WaveHeader({ batch }: { batch: BatchState }) {
 			</div>
 
 			{/* Segmented wave progress bar */}
-			<SegmentedBar waves={batch.waves} currentWave={batch.currentWave} tasksTotal={batch.tasksTotal} />
+			<SegmentedBar
+				waves={batch.waves}
+				currentWave={batch.currentWave}
+				tasksTotal={batch.tasksTotal}
+				taskMap={taskMap}
+			/>
 
 			{/* Count chips */}
 			<div className="flex items-center gap-2 mt-3 text-xs">
@@ -92,44 +102,83 @@ function SegmentedBar({
 	waves,
 	currentWave,
 	tasksTotal,
+	taskMap,
 }: {
 	waves: WaveAssignment[];
 	currentWave: number;
 	tasksTotal: number;
+	taskMap: Map<string, TaskOutcome>;
 }) {
 	if (tasksTotal === 0) return null;
+
+	// Precompute per-wave checkbox totals so width ∨ total and fill ∨ checked.
+	// Fallback to per-task counts when no STATUS.md data is available.
+	const waveStats = waves.map(w => {
+		let checked = 0;
+		let total = 0;
+		for (const tid of w.taskIds) {
+			const t = taskMap.get(tid);
+			if (!t) continue;
+			if (t.statusData && t.statusData.total > 0) {
+				checked += t.statusData.checked;
+				total += t.statusData.total;
+			} else if (t.status === "succeeded") {
+				// Succeeded tasks count as fully done even when STATUS.md is absent.
+				checked += 1;
+				total += 1;
+			} else {
+				total += 1;
+			}
+		}
+		return { taskIds: w.taskIds, checked, total };
+	});
+	const bigTotal = waveStats.reduce((acc, w) => acc + w.total, 0);
+	const useCheckboxWidths = bigTotal > 0 && bigTotal !== waves.reduce((acc, w) => acc + w.taskIds.length, 0);
 
 	return (
 		<div className="h-2.5 rounded-full overflow-hidden flex" style={{ background: "var(--bg-elevated)" }}>
 			{waves.map((w, i) => {
-				const waveTaskCount = w.taskIds.length;
-				const widthPct = (waveTaskCount / tasksTotal) * 100;
+				const ws = waveStats[i];
+				const widthPct = useCheckboxWidths ? (ws.total / bigTotal) * 100 : (w.taskIds.length / tasksTotal) * 100;
 				if (widthPct === 0) return null;
 
 				const isCurrent = i === currentWave;
 				const isFuture = i > currentWave;
 				const isPast = i < currentWave;
+				const liveFill = ws.total > 0 ? Math.round((ws.checked / ws.total) * 100) : 0;
+				const fillPct = isPast ? 100 : isCurrent ? (liveFill > 0 ? liveFill : 50) : 0;
 
 				return (
 					<div
 						key={i}
 						className="wave-seg"
+						title={`W${i + 1}: ${ws.checked}/${ws.total} (${w.taskIds.join(", ")})`}
 						style={{
 							width: `${widthPct}%`,
 							boxShadow: isCurrent ? "inset 0 0 0 1px var(--accent-blue)" : undefined,
 							background: isFuture ? "var(--bg-hover)" : undefined,
 						}}
 					>
-						<div
-							className={`wave-seg-fill ${pctClass(isPast ? 100 : isCurrent ? 50 : 0)}`}
-							style={{ width: isPast ? "100%" : isCurrent ? "50%" : "0%" }}
-						/>
+						<div className={`wave-seg-fill ${pctClass(fillPct)}`} style={{ width: `${fillPct}%` }} />
 						{waves.length <= 8 && <span className="wave-seg-label">{i + 1}</span>}
 					</div>
 				);
 			})}
 		</div>
 	);
+}
+
+/** Roll checkbox totals across all tasks with `statusData`. Returns {0,0} when none. */
+function aggregateCheckboxProgress(batch: BatchState): { checked: number; total: number } {
+	let checked = 0;
+	let total = 0;
+	for (const t of batch.tasks) {
+		if (t.statusData && t.statusData.total > 0) {
+			checked += t.statusData.checked;
+			total += t.statusData.total;
+		}
+	}
+	return { checked, total };
 }
 
 function CountChip({ label, variant }: { label: string; variant: "green" | "cyan" | "red" | "muted" }) {
@@ -244,6 +293,11 @@ function LaneCell({ lane, currentTask, onView }: LaneCellProps) {
 				{currentTask?.taskId ?? lane.taskId ?? <span className="text-[var(--text-muted)] font-normal">(idle)</span>}
 			</div>
 
+			{/* STATUS.md checkbox progress — mirrors taskplane's per-task bar. */}
+			{currentTask?.statusData && currentTask.statusData.total > 0 && (
+				<TaskProgressBar statusData={currentTask.statusData} />
+			)}
+
 			{/* Step progress + elapsed */}
 			{(lane.stepProgress || lane.elapsed > 0) && (
 				<div className="flex items-center gap-3 mb-2">
@@ -286,6 +340,32 @@ function LaneCell({ lane, currentTask, onView }: LaneCellProps) {
 			)}
 		</div>
 	);
+}
+
+function TaskProgressBar({ statusData }: { statusData: NonNullable<TaskOutcome["statusData"]> }) {
+	const pct = statusData.total > 0 ? Math.round((statusData.checked / statusData.total) * 100) : 0;
+	const fillClass = pctClass(pct);
+	return (
+		<div className="mb-2">
+			<div className="task-progress-bar">
+				<div className={`task-progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
+			</div>
+			<div className="flex items-center justify-between mt-1 text-[10px] text-[var(--text-muted)] font-mono">
+				<span title={statusData.currentStep ? `Step: ${statusData.currentStep}` : undefined}>
+					{statusData.currentStep ? truncateStep(statusData.currentStep) : "steps"}
+				</span>
+				<span>
+					{statusData.checked}/{statusData.total} · {pct}%
+					{statusData.iteration > 0 && <span className="ml-1">i{statusData.iteration}</span>}
+					{statusData.reviews > 0 && <span className="ml-1">r{statusData.reviews}</span>}
+				</span>
+			</div>
+		</div>
+	);
+}
+
+function truncateStep(name: string): string {
+	return name.length > 28 ? `${name.slice(0, 27)}…` : name;
 }
 
 function TaskTelemetryBadge({ telemetry }: { telemetry: TaskTelemetry }) {

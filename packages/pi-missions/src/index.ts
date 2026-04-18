@@ -25,7 +25,7 @@
 
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import { logger } from "@oh-my-pi/pi-utils";
+import { isEnoent, logger } from "@oh-my-pi/pi-utils";
 import { registerMissionCommands } from "./commands";
 import { resolvePhaseRole } from "./config";
 import { detectMilestonePhases, detectPhaseTransition, detectProposedPhases } from "./detector";
@@ -47,6 +47,8 @@ import {
 	saveMissionState,
 	writeMissionToDisk,
 } from "./state";
+import { redactEvent } from "./telemetry/redaction";
+import type { SidecarEvent } from "./telemetry/sidecar";
 import type { MissionState } from "./types";
 import { extractRawTextFromMessage, extractTextFromMessage } from "./utils";
 import { clearRetryStatus, setRetryStatus, updateWidget } from "./widget";
@@ -65,6 +67,7 @@ import { clearRetryStatus, setRetryStatus, updateWidget } from "./widget";
 // ---------------------------------------------------------------------------
 
 const ACTIVE_SIMPLE_MISSION_ID = "active-session";
+const SIDECAR_EVENT_CAP = 500;
 
 interface TelemetryAccumulator {
 	inputTokens: number;
@@ -74,6 +77,11 @@ interface TelemetryAccumulator {
 	costUsd: number;
 	toolCalls: number;
 	lastToolCall: string | null;
+	contextPct: number | null;
+	retries: number;
+	retryActive: boolean;
+	lastRetryError: string | null;
+	compactions: number;
 	startTime: number;
 }
 
@@ -86,6 +94,11 @@ function emptyTelemetry(): TelemetryAccumulator {
 		costUsd: 0,
 		toolCalls: 0,
 		lastToolCall: null,
+		contextPct: null,
+		retries: 0,
+		retryActive: false,
+		lastRetryError: null,
+		compactions: 0,
 		startTime: Date.now(),
 	};
 }
@@ -93,12 +106,29 @@ function emptyTelemetry(): TelemetryAccumulator {
 let telemetry: TelemetryAccumulator = emptyTelemetry();
 
 /**
- * Zero the accumulator and reset the start timestamp. Called from `commands.ts`
- * whenever a new mission begins so per-mission totals don’t inherit carryover
- * from a prior run in the same process.
+ * Zero the accumulator, reset the start timestamp, and truncate the worker.jsonl
+ * sidecar. Called from `commands.ts` whenever a new mission begins so per-mission
+ * totals and event feed don’t inherit carryover from a prior run in the same process.
  */
-export function resetTelemetry(): void {
+export function resetTelemetry(cwd?: string): void {
 	telemetry = emptyTelemetry();
+	if (cwd) {
+		// Truncate worker.jsonl so the EventFeed starts clean. The exit-summary.json
+		// file is overwritten on the next message_end, so no explicit reset needed.
+		void Bun.write(workerSidecarPath(cwd), "").catch(err =>
+			logger.error("[pi-mission] sidecar reset failed", {
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	}
+}
+
+function telemetryDir(cwd: string): string {
+	return path.join(cwd, ".omp", "mission-telemetry", ACTIVE_SIMPLE_MISSION_ID);
+}
+
+function workerSidecarPath(cwd: string): string {
+	return path.join(telemetryDir(cwd), "worker.jsonl");
 }
 
 /**
@@ -124,9 +154,44 @@ async function writeSimpleMissionTelemetry(cwd: string): Promise<void> {
 		toolCalls: telemetry.toolCalls,
 		durationSec: Math.round((Date.now() - telemetry.startTime) / 1000),
 		lastToolCall: telemetry.lastToolCall,
+		contextPct: telemetry.contextPct,
+		retries: telemetry.retries,
+		retryActive: telemetry.retryActive,
+		lastRetryError: telemetry.lastRetryError,
+		compactions: telemetry.compactions,
 	};
-	const file = path.join(cwd, ".omp", "mission-telemetry", ACTIVE_SIMPLE_MISSION_ID, "exit-summary.json");
-	await Bun.write(file, `${JSON.stringify(summary, null, 2)}\n`);
+	await Bun.write(path.join(telemetryDir(cwd), "exit-summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+}
+
+/**
+ * Append a redacted event to `worker.jsonl` for the EventFeed. Caps the file at
+ * SIDECAR_EVENT_CAP lines — older entries roll off the front so long missions don’t
+ * grow unbounded. Best-effort; failures are logged.
+ */
+async function appendWorkerEvent(cwd: string, event: SidecarEvent): Promise<void> {
+	const filePath = workerSidecarPath(cwd);
+	const existing = Bun.file(filePath);
+	let prior = "";
+	try {
+		prior = await existing.text();
+	} catch (err) {
+		if (!isEnoent(err)) throw err;
+	}
+	const redacted = redactEvent(event);
+	const line = `${JSON.stringify({ ...redacted, ts: Date.now() })}\n`;
+	const combined = prior + line;
+	const lines = combined.split("\n");
+	const trimmed =
+		lines.length - 1 > SIDECAR_EVENT_CAP
+			? `${lines.slice(lines.length - 1 - SIDECAR_EVENT_CAP).join("\n")}`
+			: combined;
+	await Bun.write(filePath, trimmed);
+}
+
+function logSidecarError(err: unknown): void {
+	logger.error("[pi-mission] sidecar append failed", {
+		error: err instanceof Error ? err.message : String(err),
+	});
 }
 
 function accumulateAssistantUsage(message: { role: string; usage?: unknown } | undefined): boolean {
@@ -145,7 +210,28 @@ function accumulateAssistantUsage(message: { role: string; usage?: unknown } | u
 	} else if (cost && typeof cost === "object" && typeof cost.total === "number") {
 		telemetry.costUsd += cost.total;
 	}
+	// Any successful message_end implicitly resolves an active retry.
+	telemetry.retryActive = false;
 	return true;
+}
+
+/**
+ * Summarise `event.args` into a short, human-readable preview. Non-string args
+ * are skipped — `read`, `edit`, `bash`, `grep`, `find` all pass a primary string
+ * as their first value, which is what operators care about in the dashboard.
+ */
+function toolArgPreview(args: unknown, maxLen = 80): string | null {
+	if (typeof args === "string") {
+		return args.length > maxLen ? `${args.slice(0, maxLen)}…` : args;
+	}
+	if (args && typeof args === "object") {
+		for (const value of Object.values(args as Record<string, unknown>)) {
+			if (typeof value === "string" && value.length > 0) {
+				return value.length > maxLen ? `${value.slice(0, maxLen)}…` : value;
+			}
+		}
+	}
+	return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,13 +288,32 @@ export default function missionExtension(pi: ExtensionAPI): void {
 			// Accumulate simple-mission telemetry first so token/cost numbers keep
 			// advancing even while the phase-detection logic below early-returns
 			// for paused/completed missions.
-			if (!mission.completedAt && accumulateAssistantUsage(event.message)) {
-				const cwd = ctx.cwd;
-				writeSimpleMissionTelemetry(cwd).catch(err =>
-					logger.error("[pi-mission] telemetry write failed", {
-						error: err instanceof Error ? err.message : String(err),
-					}),
-				);
+			if (!mission.completedAt) {
+				const usageAccumulated = accumulateAssistantUsage(event.message);
+				// Capture the live context window utilisation — the TelemetryPanel
+				// surfaces this so operators see “worker is about to compact” before
+				// it happens.
+				const ctxUsage = ctx.getContextUsage();
+				if (ctxUsage && typeof ctxUsage.percent === "number") {
+					telemetry.contextPct = ctxUsage.percent;
+				}
+				if (usageAccumulated) {
+					const cwd = ctx.cwd;
+					writeSimpleMissionTelemetry(cwd).catch(err =>
+						logger.error("[pi-mission] telemetry write failed", {
+							error: err instanceof Error ? err.message : String(err),
+						}),
+					);
+					if (event.message.role === "assistant") {
+						appendWorkerEvent(cwd, {
+							type: "message_end",
+							role: event.message.role,
+							text: extractTextFromMessage(event.message).slice(0, 400),
+							usage: event.message.usage ?? null,
+							contextPct: telemetry.contextPct,
+						}).catch(logSidecarError);
+					}
+				}
 			}
 
 			if (mission.completedAt || mission.paused) return;
@@ -315,14 +420,40 @@ export default function missionExtension(pi: ExtensionAPI): void {
 		try {
 			if (!mission || mission.completedAt) return;
 			telemetry.toolCalls += 1;
-			if (event.toolName) telemetry.lastToolCall = event.toolName;
+			const preview = toolArgPreview(event.args);
+			if (event.toolName) {
+				telemetry.lastToolCall = preview ? `${event.toolName} ${preview}` : event.toolName;
+			}
 			writeSimpleMissionTelemetry(ctx.cwd).catch(err =>
 				logger.error("[pi-mission] telemetry write failed", {
 					error: err instanceof Error ? err.message : String(err),
 				}),
 			);
+			appendWorkerEvent(ctx.cwd, {
+				type: "tool_execution_start",
+				toolName: event.toolName,
+				argsPreview: preview,
+			}).catch(logSidecarError);
 		} catch (err) {
 			logger.error("[pi-mission] tool_execution_start failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	});
+
+	// tool_execution_end — fires when a tool finishes. Surface its error status
+	// on the event feed so operators see failed tool calls without opening the
+	// TUI.
+	pi.on("tool_execution_end", async (event, ctx) => {
+		try {
+			if (!mission || mission.completedAt) return;
+			appendWorkerEvent(ctx.cwd, {
+				type: "tool_execution_end",
+				toolName: event.toolName,
+				isError: event.isError,
+			}).catch(logSidecarError);
+		} catch (err) {
+			logger.error("[pi-mission] tool_execution_end failed", {
 				error: err instanceof Error ? err.message : String(err),
 			});
 		}
@@ -369,6 +500,23 @@ export default function missionExtension(pi: ExtensionAPI): void {
 				delayMs: event.delayMs,
 				errorMessage: event.errorMessage,
 			});
+			// Mirror retry into the telemetry accumulator + sidecar so the dashboard
+			// can render a retry badge alongside the in-TUI widget.
+			telemetry.retries += 1;
+			telemetry.retryActive = true;
+			telemetry.lastRetryError = event.errorMessage || null;
+			writeSimpleMissionTelemetry(ctx.cwd).catch(err =>
+				logger.error("[pi-mission] telemetry write failed", {
+					error: err instanceof Error ? err.message : String(err),
+				}),
+			);
+			appendWorkerEvent(ctx.cwd, {
+				type: "auto_retry_start",
+				attempt: event.attempt,
+				maxAttempts: event.maxAttempts,
+				delayMs: event.delayMs,
+				errorMessage: event.errorMessage,
+			}).catch(logSidecarError);
 		} catch (err) {
 			logger.error("[pi-mission] auto_retry_start failed", {
 				error: err instanceof Error ? err.message : String(err),
@@ -376,12 +524,47 @@ export default function missionExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	pi.on("auto_retry_end", async (_event, ctx) => {
+	pi.on("auto_retry_end", async (event, ctx) => {
 		try {
 			if (!mission) return;
 			clearRetryStatus(ctx, mission);
+			telemetry.retryActive = false;
+			writeSimpleMissionTelemetry(ctx.cwd).catch(err =>
+				logger.error("[pi-mission] telemetry write failed", {
+					error: err instanceof Error ? err.message : String(err),
+				}),
+			);
+			appendWorkerEvent(ctx.cwd, {
+				type: "auto_retry_end",
+				success: event.success,
+				attempt: event.attempt,
+				finalError: event.finalError,
+			}).catch(logSidecarError);
 		} catch (err) {
 			logger.error("[pi-mission] auto_retry_end failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	});
+
+	// Auto-compaction — fired whenever the agent reclaims context. Bump the
+	// counter so operators see how many compactions a mission consumed.
+	pi.on("auto_compaction_start", async (event, ctx) => {
+		try {
+			if (!mission || mission.completedAt) return;
+			telemetry.compactions += 1;
+			writeSimpleMissionTelemetry(ctx.cwd).catch(err =>
+				logger.error("[pi-mission] telemetry write failed", {
+					error: err instanceof Error ? err.message : String(err),
+				}),
+			);
+			appendWorkerEvent(ctx.cwd, {
+				type: "auto_compaction_start",
+				reason: event.reason,
+				action: event.action,
+			}).catch(logSidecarError);
+		} catch (err) {
+			logger.error("[pi-mission] auto_compaction_start failed", {
 				error: err instanceof Error ? err.message : String(err),
 			});
 		}

@@ -226,6 +226,25 @@ export interface TaskTelemetry {
 
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
 
+/**
+ * Parsed STATUS.md progress for a batch task — derived from the checkboxes,
+ * current step, iteration counter, and review counter the worker agent
+ * maintains. Everything here is derivative data; none of it is persisted to
+ * disk by the dashboard.
+ */
+export interface TaskStatusData {
+	/** Total checked boxes across every step. */
+	checked: number;
+	/** Total boxes across every step. */
+	total: number;
+	/** Current active step name ("not-started" + "in-progress" steps favoured over "complete"). */
+	currentStep?: string;
+	/** Iteration counter from the `**Iteration:**` field. */
+	iteration: number;
+	/** Review counter from the `**Review Counter:**` field. */
+	reviews: number;
+}
+
 /** Outcome of a single task execution within a lane. */
 export interface TaskOutcome {
 	taskId: string;
@@ -237,6 +256,11 @@ export interface TaskOutcome {
 	doneFileFound: boolean;
 	laneNumber?: number;
 	telemetry?: TaskTelemetry;
+	/**
+	 * Live STATUS.md progress, attached by `dashboard-api.ts` when serving
+	 * `/api/mission/:id` for batch missions. Absent for simple missions.
+	 */
+	statusData?: TaskStatusData;
 }
 
 /**

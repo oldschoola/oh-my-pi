@@ -13,6 +13,7 @@
 
 import * as path from "node:path";
 import { isEnoent } from "@oh-my-pi/pi-utils";
+import { parseStatusMd } from "./missioncontrol";
 import { readSidecar } from "./telemetry/sidecar";
 import type { BatchState, MissionState } from "./types";
 
@@ -115,18 +116,66 @@ export async function listMissions(cwd: string): Promise<MissionSummary[]> {
 }
 
 export async function getMission(cwd: string, id: string): Promise<MissionDetail | null> {
+	const detail = await loadMissionRecord(cwd, id);
+	if (!detail) return null;
+	await enrichBatchStatusData(cwd, detail);
+	return detail;
+}
+
+async function loadMissionRecord(cwd: string, id: string): Promise<MissionDetail | null> {
 	const file = Bun.file(path.join(projectMissionsDir(cwd), `${id}.json`));
-	if (await file.exists()) {
-		try {
-			const state = (await file.json()) as MissionState;
-			return toDetail(id, state);
-		} catch {
-			// Fall through to active batch.
+	try {
+		const state = (await file.json()) as MissionState;
+		return toDetail(id, state);
+	} catch (err) {
+		if (!isEnoent(err)) {
+			// Malformed mission file — fall through to active batch. No logging:
+			// listMissions already skips unreadable files.
 		}
 	}
 	const active = await readActiveBatch(cwd);
 	if (active && active.id === id) return active;
 	return null;
+}
+
+/**
+ * For batch missions, hydrate each task with parsed STATUS.md progress so the
+ * dashboard can render checkbox-level progress in LaneGrid without every client
+ * having to follow up with its own per-task fetch.
+ *
+ * Best-effort — missing/unparseable STATUS.md files leave `statusData` unset.
+ */
+async function enrichBatchStatusData(cwd: string, detail: MissionDetail): Promise<void> {
+	const batch = detail.state.batch;
+	if (!batch || !batch.tasks) return;
+	const batchId = batch.batchId;
+	if (!batchId) return;
+	await Promise.all(
+		batch.tasks.map(async task => {
+			const statusPath = path.join(projectMissionsDir(cwd), batchId, "tasks", task.taskId, "STATUS.md");
+			try {
+				const content = await Bun.file(statusPath).text();
+				const parsed = parseStatusMd(content);
+				const total = parsed.steps.reduce((acc, s) => acc + s.totalItems, 0);
+				const checked = parsed.steps.reduce((acc, s) => acc + s.totalChecked, 0);
+				const currentStep =
+					parsed.steps.find(s => s.status === "in-progress")?.name ??
+					parsed.steps.find(s => s.status === "not-started")?.name ??
+					parsed.steps.at(-1)?.name;
+				task.statusData = {
+					checked,
+					total,
+					currentStep,
+					iteration: parsed.iteration,
+					reviews: parsed.reviewCounter,
+				};
+			} catch (err) {
+				if (!isEnoent(err)) {
+					// Unparseable STATUS.md — leave statusData unset, dashboard falls back.
+				}
+			}
+		}),
+	);
 }
 
 export async function getMissionEvents(
@@ -173,6 +222,11 @@ interface ServerExitSummary {
 	durationSec?: number;
 	lastToolCall?: string | null;
 	error?: string | null;
+	contextPct?: number | null;
+	retries?: number | null;
+	retryActive?: boolean | null;
+	lastRetryError?: string | null;
+	compactions?: number | null;
 }
 
 export interface TelemetrySummaryResponse {
@@ -188,6 +242,11 @@ export interface TelemetrySummaryResponse {
 	toolCalls?: number;
 	lastToolCall?: string;
 	error?: string;
+	contextPct?: number;
+	retries?: number;
+	retryActive?: boolean;
+	lastRetryError?: string;
+	compactions?: number;
 }
 
 /** Map server-side exit-summary fields onto the client `TelemetrySummary` shape. */
@@ -207,6 +266,11 @@ function mapExitSummary(raw: ServerExitSummary): TelemetrySummaryResponse {
 	if (typeof raw.durationSec === "number") result.durationMs = raw.durationSec * 1000;
 	if (raw.lastToolCall) result.lastToolCall = raw.lastToolCall;
 	if (raw.error) result.error = raw.error;
+	if (typeof raw.contextPct === "number") result.contextPct = raw.contextPct;
+	if (typeof raw.retries === "number" && raw.retries > 0) result.retries = raw.retries;
+	if (raw.retryActive) result.retryActive = true;
+	if (raw.lastRetryError) result.lastRetryError = raw.lastRetryError;
+	if (typeof raw.compactions === "number" && raw.compactions > 0) result.compactions = raw.compactions;
 	return result;
 }
 
