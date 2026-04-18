@@ -2,7 +2,15 @@ import { FileText, MessageSquare } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getLaneConversation, getTaskStatusMd } from "../api";
 
-export function TerminalViewer({ laneId, taskId }: { laneId?: string; taskId?: string }) {
+export function TerminalViewer({
+	laneId,
+	taskId,
+	missionLog,
+}: {
+	laneId?: string;
+	taskId?: string;
+	missionLog?: string;
+}) {
 	const [conversation, setConversation] = useState<string | null>(null);
 	const [statusMd, setStatusMd] = useState<string | null>(null);
 	const [autoScroll, setAutoScroll] = useState(true);
@@ -45,6 +53,20 @@ export function TerminalViewer({ laneId, taskId }: { laneId?: string; taskId?: s
 	}
 
 	if (!laneId && !taskId) {
+		if (missionLog) {
+			return (
+				<pre
+					className="text-xs whitespace-pre-wrap max-h-96 overflow-y-auto p-3 rounded-[var(--radius-md)]"
+					style={{
+						background: "var(--bg-elevated)",
+						border: "1px solid var(--border-subtle)",
+						fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+					}}
+				>
+					{missionLog}
+				</pre>
+			);
+		}
 		return (
 			<div className="flex flex-col items-center justify-center py-8 gap-2">
 				<MessageSquare size={24} className="text-[var(--text-muted)] opacity-30" />

@@ -10,7 +10,7 @@ import { MissionList } from "./components/MissionList";
 import { MissionStartForm } from "./components/MissionStartForm";
 import { SupervisorPanel } from "./components/SupervisorPanel";
 import { TerminalViewer } from "./components/TerminalViewer";
-import type { MissionDetail as MissionDetailType, MissionSummary } from "./types";
+import type { MissionDetail as MissionDetailType, MissionState, MissionSummary } from "./types";
 
 type Tab = "start" | "active" | "history";
 type SecondaryTab = "supervisor" | "mailbox" | "terminal";
@@ -101,6 +101,10 @@ export default function App() {
 	const historyMissions = missions.filter(m => m.status === "completed" || m.status === "failed");
 
 	const activeBatchId = selectedDetail?.state?.batch?.batchId;
+
+	// Build a plain-text progress log for simple missions (no batch lanes).
+	const simpleMissionLog =
+		!activeBatchId && selectedDetail?.state ? formatSimpleMissionLog(selectedDetail.state) : undefined;
 
 	// When History tab selects a mission, switch to Active tab showing that mission
 	function handleHistorySelect(id: string) {
@@ -215,6 +219,7 @@ export default function App() {
 											<TerminalViewer
 												laneId={viewingLaneId ?? (activeBatchId ? `${activeBatchId}:lane-1` : undefined)}
 												taskId={selectedDetail?.state?.batch?.tasks?.[0]?.taskId}
+												missionLog={simpleMissionLog}
 											/>
 										)}
 									</div>
@@ -304,4 +309,32 @@ function SubTabItem({
 			{label}
 		</button>
 	);
+}
+
+/** Format simple-mission state as a plain-text activity log for the Terminal panel. */
+function formatSimpleMissionLog(state: MissionState): string {
+	const lines: string[] = [];
+	lines.push(`Mission: ${state.description}`);
+	lines.push(`Started: ${state.startedAt}`);
+	if (state.completedAt) lines.push(`Completed: ${state.completedAt}`);
+	lines.push("");
+	if (state.phases && state.phases.length > 0) {
+		lines.push("=== Phases ===");
+		for (const p of state.phases) {
+			const icon = p.status === "done" ? "✓" : p.status === "active" ? "▶" : p.status === "skipped" ? "⊘" : "○";
+			let line = `${icon} ${p.emoji ? `${p.emoji} ` : ""}${p.name} [${p.status}]`;
+			if (p.startedAt) line += ` started=${p.startedAt}`;
+			if (p.completedAt) line += ` done=${p.completedAt}`;
+			lines.push(line);
+		}
+		lines.push("");
+	}
+	const log = state.progressLog ?? [];
+	if (log.length > 0) {
+		lines.push("=== Activity ===");
+		for (const ev of log) {
+			lines.push(`[${ev.timestamp}] ${ev.type}: ${ev.detail}`);
+		}
+	}
+	return lines.join("\n");
 }

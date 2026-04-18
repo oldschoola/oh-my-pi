@@ -156,6 +156,17 @@ export function registerMissionCommands(
 
 				persist(ctx, newState);
 
+				// Start dashboard server so the web UI can track real-time progress.
+				void ensureDashboardServer()
+					.then(({ port }) => {
+						ctx.ui.notify(`Dashboard: http://localhost:${port}`, "info");
+					})
+					.catch(err => {
+						logger.warn("[pi-mission] dashboard server failed to start", {
+							error: err instanceof Error ? err.message : String(err),
+						});
+					});
+
 				// Build kick-off message based on mode
 				const firstPhase = newState.phases.find(p => p.status === "active");
 				const kickoff = KICKOFF_TEMPLATE.replace("{{description}}", description).replace(

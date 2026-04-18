@@ -26,8 +26,10 @@ export interface MissionSummary {
 }
 
 export interface MissionPhase {
-	id: string;
+	id?: string;
 	name: string;
+	/** Emoji icon (present in server-serialised phases). */
+	emoji?: string;
 	status: "pending" | "active" | "done" | "failed" | "skipped";
 	startedAt?: string;
 	completedAt?: string;
@@ -99,6 +101,12 @@ export interface BatchState {
 	errors: string[];
 }
 
+export interface ProgressEvent {
+	timestamp: string;
+	type: string;
+	detail: string;
+}
+
 export interface MissionState {
 	description: string;
 	startedAt: string;
@@ -106,6 +114,7 @@ export interface MissionState {
 	paused?: boolean;
 	kind?: MissionKind;
 	phases?: MissionPhase[];
+	progressLog?: ProgressEvent[];
 	batch?: BatchState;
 }
 

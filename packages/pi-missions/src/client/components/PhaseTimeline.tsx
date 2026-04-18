@@ -15,7 +15,7 @@ export function PhaseTimeline({ phases }: { phases: MissionPhase[] }) {
 	return (
 		<div className="flex items-start flex-wrap gap-0">
 			{phases.map((p, i) => (
-				<div key={p.id} className="flex items-start">
+				<div key={p.id ?? p.name} className="flex items-start">
 					<div className="flex flex-col items-center gap-1.5">
 						<PhaseCircle phase={p} index={i} />
 						<span

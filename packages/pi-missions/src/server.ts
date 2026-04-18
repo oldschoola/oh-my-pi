@@ -433,6 +433,17 @@ function buildSSEStream(cwd: string, missionId: string): Response {
 	const stream = new ReadableStream({
 		async start(controller) {
 			let cancelled = false;
+			let interval: NodeJS.Timeout | undefined;
+
+			const stop = (): void => {
+				cancelled = true;
+				if (interval !== undefined) clearInterval(interval);
+				try {
+					controller.close();
+				} catch {
+					// already closed
+				}
+			};
 
 			const send = (payload: unknown): void => {
 				if (cancelled) return;
@@ -442,10 +453,13 @@ function buildSSEStream(cwd: string, missionId: string): Response {
 			const tick = async (): Promise<void> => {
 				const detail = await getMission(cwd, missionId);
 				send({ type: "snapshot", detail });
+				// Stop polling once the mission reaches a terminal state.
+				if (detail?.state?.completedAt) stop();
 			};
 
 			await tick();
-			const interval = setInterval(() => {
+			if (cancelled) return;
+			interval = setInterval(() => {
 				if (cancelled) return;
 				void tick();
 			}, 2000);
@@ -453,8 +467,7 @@ function buildSSEStream(cwd: string, missionId: string): Response {
 			(controller as ReadableStreamDefaultController & { signal?: AbortSignal }).signal?.addEventListener?.(
 				"abort",
 				() => {
-					cancelled = true;
-					clearInterval(interval);
+					stop();
 				},
 			);
 		},

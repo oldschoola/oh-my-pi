@@ -67,7 +67,7 @@ export function MissionStartForm({ token, onDispatched }: { token: string; onDis
 		reviewer: DEFAULT_MODEL,
 	});
 	const [constraints, setConstraints] = useState("");
-	const [laneCount, setLaneCount] = useState(2);
+	const [laneCount, setLaneCount] = useState(1);
 	const [waveSize, setWaveSize] = useState(4);
 	const [state, setState] = useState<SubmitState>("idle");
 	const [errorMsg, setErrorMsg] = useState("");
