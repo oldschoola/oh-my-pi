@@ -153,3 +153,55 @@ export async function getMissionTelemetrySummary(
 		return null;
 	}
 }
+
+export interface SupervisorEvent {
+	ts: string;
+	action: string;
+	classification?: string;
+	detail: string;
+}
+
+export async function getMissionActivity(cwd: string, id: string): Promise<SupervisorEvent[]> {
+	const mission = await getMission(cwd, id);
+	if (!mission) return [];
+	return (mission.state.progressLog ?? []).map((entry: { timestamp: string; type: string; detail: string }) => ({
+		ts: entry.timestamp,
+		action: entry.type,
+		detail: entry.detail,
+	}));
+}
+
+export interface AgentStatusEntry {
+	agentId: string;
+	role: string;
+	status: string;
+	pid?: number;
+}
+
+export interface AgentStatusResult {
+	batchId: string | null;
+	registry: { agents: AgentStatusEntry[] } | null;
+}
+
+function slugifyPhaseName(name: string): string {
+	return name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+}
+
+export async function getMissionAgentStatus(cwd: string, id: string): Promise<AgentStatusResult> {
+	const mission = await getMission(cwd, id);
+	if (!mission) return { batchId: null, registry: null };
+	const agents: AgentStatusEntry[] = [];
+	for (const phase of mission.state.phases ?? []) {
+		if (phase.status === "skipped") continue;
+		const status = phase.status === "active" ? "running" : phase.status === "done" ? "completed" : "pending";
+		agents.push({
+			agentId: `phase-${slugifyPhaseName(phase.name)}`,
+			role: phase.name,
+			status,
+		});
+	}
+	return { batchId: id, registry: { agents } };
+}

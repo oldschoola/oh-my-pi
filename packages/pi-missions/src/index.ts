@@ -254,12 +254,6 @@ export default function missionExtension(pi: ExtensionAPI): void {
 	});
 
 	// -------------------------------------------------------------------
-	// Register all /mission* commands
-	// -------------------------------------------------------------------
-
-	registerMissionCommands(pi, getState, setState, process.cwd());
-
-	// -------------------------------------------------------------------
 	// MissionControl engine — batch-mode orchestration
 	//
 	// Dormant on simple missions (engine.status().active === false) and
@@ -271,6 +265,12 @@ export default function missionExtension(pi: ExtensionAPI): void {
 		getMission: getState,
 		setMission: setState,
 	});
+
+	// -------------------------------------------------------------------
+	// Register all /mission* commands
+	// -------------------------------------------------------------------
+
+	registerMissionCommands(pi, getState, setState, process.cwd(), engine.handlers.batch);
 
 	function parseBatchArgs(args: string): { laneCount?: number; waveSize?: number; taskIds: string[] } {
 		const tokens = args.trim().split(/\s+/).filter(Boolean);

@@ -1,10 +1,11 @@
 import { ChevronRight, RadioTower } from "lucide-react";
 import { useEffect, useState } from "react";
-import { listSupervisorEvents } from "../api";
+import type { MissionActivityEntry } from "../api";
+import { getMissionActivity, listSupervisorEvents } from "../api";
 import type { SupervisorEvent } from "../types";
 
-export function SupervisorPanel({ batchId }: { batchId?: string }) {
-	const [events, setEvents] = useState<SupervisorEvent[]>([]);
+export function SupervisorPanel({ batchId, missionId }: { batchId?: string; missionId?: string }) {
+	const [events, setEvents] = useState<Array<SupervisorEvent | MissionActivityEntry>>([]);
 	const [error, setError] = useState<string | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
 
@@ -12,7 +13,14 @@ export function SupervisorPanel({ batchId }: { batchId?: string }) {
 		let cancelled = false;
 		async function tick() {
 			try {
-				const list = await listSupervisorEvents(100, batchId);
+				let list: Array<SupervisorEvent | MissionActivityEntry>;
+				if (batchId) {
+					list = await listSupervisorEvents(100, batchId);
+				} else if (missionId) {
+					list = await getMissionActivity(missionId);
+				} else {
+					list = [];
+				}
 				if (!cancelled) {
 					setEvents(list);
 					setError(null);
@@ -27,7 +35,7 @@ export function SupervisorPanel({ batchId }: { batchId?: string }) {
 			cancelled = true;
 			clearInterval(interval);
 		};
-	}, [batchId]);
+	}, [batchId, missionId]);
 
 	return (
 		<section>

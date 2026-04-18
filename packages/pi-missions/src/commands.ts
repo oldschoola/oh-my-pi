@@ -67,6 +67,7 @@ export function registerMissionCommands(
 	getState: () => MissionState | null,
 	setState: (s: MissionState | null) => void,
 	cwd: string,
+	_batchHandler?: (opts: { laneCount?: number; waveSize?: number; taskIds: string[] }) => Promise<MissionState | null>,
 ): void {
 	// Helper: persist + update widget after every state change
 	function persist(ctx: Pick<ExtensionCommandContext, "ui">, state: MissionState): void {

@@ -169,7 +169,7 @@ export default function App() {
 							{/* Left: mission list + agents */}
 							<div className="grid gap-4 content-start">
 								<MissionList missions={activeMissions} selectedId={selectedId} onSelect={setSelectedId} />
-								<AgentsPanel batchId={activeBatchId} />
+								<AgentsPanel batchId={activeBatchId} missionId={selectedId ?? undefined} />
 							</div>
 
 							{/* Right: detail at top, secondary panels via sub-tabs */}
@@ -205,8 +205,12 @@ export default function App() {
 										/>
 									</div>
 									<div className="p-4">
-										{secondaryTab === "supervisor" && <SupervisorPanel batchId={activeBatchId} />}
-										{secondaryTab === "mailbox" && <MailboxPanel batchId={activeBatchId} />}
+										{secondaryTab === "supervisor" && (
+											<SupervisorPanel batchId={activeBatchId} missionId={selectedId ?? undefined} />
+										)}
+										{secondaryTab === "mailbox" && (
+											<MailboxPanel batchId={activeBatchId} missionId={selectedId ?? undefined} />
+										)}
 										{secondaryTab === "terminal" && (
 											<TerminalViewer
 												laneId={viewingLaneId ?? (activeBatchId ? `${activeBatchId}:lane-1` : undefined)}

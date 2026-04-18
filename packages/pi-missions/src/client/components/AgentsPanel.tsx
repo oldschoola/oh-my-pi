@@ -1,15 +1,22 @@
 import { Bot } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getAgentsSnapshot } from "../api";
+import { getAgentsSnapshot, getMissionAgentStatus } from "../api";
 import type { AgentSnapshot } from "../types";
 
-export function AgentsPanel({ batchId }: { batchId?: string }) {
+export function AgentsPanel({ batchId, missionId }: { batchId?: string; missionId?: string }) {
 	const [snapshot, setSnapshot] = useState<AgentSnapshot>({ batchId: null, registry: null });
 
 	useEffect(() => {
 		let cancelled = false;
 		async function tick() {
-			const snap = await getAgentsSnapshot(batchId);
+			let snap: AgentSnapshot;
+			if (batchId) {
+				snap = await getAgentsSnapshot(batchId);
+			} else if (missionId) {
+				snap = await getMissionAgentStatus(missionId);
+			} else {
+				snap = { batchId: null, registry: null };
+			}
 			if (!cancelled) setSnapshot(snap);
 		}
 		void tick();
@@ -18,7 +25,7 @@ export function AgentsPanel({ batchId }: { batchId?: string }) {
 			cancelled = true;
 			clearInterval(interval);
 		};
-	}, [batchId]);
+	}, [batchId, missionId]);
 
 	const agents = Array.isArray(snapshot.registry?.agents)
 		? (snapshot.registry.agents as Array<Record<string, unknown>>)

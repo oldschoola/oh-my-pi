@@ -11,7 +11,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { isEnoent, logger } from "@oh-my-pi/pi-utils";
 import { $ } from "bun";
-import { getMission, getMissionEvents, getMissionTelemetrySummary, listMissions } from "./dashboard-api";
+import {
+	getMission,
+	getMissionActivity,
+	getMissionAgentStatus,
+	getMissionEvents,
+	getMissionTelemetrySummary,
+	listMissions,
+} from "./dashboard-api";
 import { dispatchStartRequest, type MissionStartRequest } from "./gui-bridge";
 import {
 	abortBatch,
@@ -310,6 +317,18 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 		const content = await readTaskStatusMd(cwd, statusMdMatch[1]);
 		if (content === null) return new Response("Not Found", { status: 404 });
 		return new Response(content, { headers: { "Content-Type": "text/markdown; charset=utf-8" } });
+	}
+
+	const activityMatch = p.match(/^\/api\/mission\/([^/]+)\/activity$/);
+	if (activityMatch && req.method === "GET") {
+		const entries = await getMissionActivity(cwd, activityMatch[1]);
+		return jsonResponse({ entries });
+	}
+
+	const agentStatusMatch = p.match(/^\/api\/mission\/([^/]+)\/agent-status$/);
+	if (agentStatusMatch && req.method === "GET") {
+		const result = await getMissionAgentStatus(cwd, agentStatusMatch[1]);
+		return jsonResponse(result);
 	}
 
 	return new Response("Not Found", { status: 404 });

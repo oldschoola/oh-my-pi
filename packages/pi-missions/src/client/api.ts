@@ -124,3 +124,28 @@ export async function getTaskStatusMd(taskId: string): Promise<string | null> {
 	if (!res.ok) return null;
 	return res.text();
 }
+
+export interface MissionActivityEntry {
+	ts: string;
+	action: string;
+	classification?: string;
+	detail: string;
+}
+
+export async function getMissionActivity(id: string): Promise<MissionActivityEntry[]> {
+	const res = await fetch(`${API_BASE}/mission/${encodeURIComponent(id)}/activity`);
+	if (!res.ok) return [];
+	const body = (await res.json()) as { entries?: MissionActivityEntry[] };
+	return body.entries ?? [];
+}
+
+export interface MissionAgentStatus {
+	batchId: string | null;
+	registry: { agents: Array<{ agentId: string; role: string; status: string; pid?: number }> } | null;
+}
+
+export async function getMissionAgentStatus(id: string): Promise<MissionAgentStatus> {
+	const res = await fetch(`${API_BASE}/mission/${encodeURIComponent(id)}/agent-status`);
+	if (!res.ok) return { batchId: null, registry: null };
+	return res.json() as Promise<MissionAgentStatus>;
+}

@@ -3,11 +3,12 @@ import { useEffect, useState } from "react";
 import { listMailboxEvents } from "../api";
 import type { MailboxEvent } from "../types";
 
-export function MailboxPanel({ batchId }: { batchId?: string }) {
+export function MailboxPanel({ batchId, missionId: _missionId }: { batchId?: string; missionId?: string }) {
 	const [events, setEvents] = useState<MailboxEvent[]>([]);
 	const [collapsed, setCollapsed] = useState(false);
 
 	useEffect(() => {
+		if (!batchId) return;
 		let cancelled = false;
 		async function tick() {
 			const list = await listMailboxEvents(batchId, 100);
@@ -43,7 +44,11 @@ export function MailboxPanel({ batchId }: { batchId?: string }) {
 				{events.length === 0 ? (
 					<div className="flex flex-col items-center justify-center py-6 gap-2">
 						<Inbox size={20} className="text-[var(--text-muted)] opacity-30" />
-						<p className="text-xs text-[var(--text-muted)]">No inter-agent messages yet.</p>
+						<p className="text-xs text-[var(--text-muted)]">
+							{batchId
+								? "No inter-agent messages yet."
+								: "Mailbox is available for multi-lane batch missions. Start with lane count > 1 to enable inter-agent messaging."}
+						</p>
 					</div>
 				) : (
 					<ul className="grid gap-1 text-xs font-mono max-h-64 overflow-y-auto mt-2">
