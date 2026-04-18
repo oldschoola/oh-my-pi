@@ -7,7 +7,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Agent, AgentBusyError, type AgentTool } from "@oh-my-pi/pi-agent-core";
-import { type AssistantMessage, getBundledModel, type Message, type ToolCall } from "@oh-my-pi/pi-ai";
+import {
+	type AssistantMessage,
+	closeModelCacheDb,
+	getBundledModel,
+	type Message,
+	type ToolCall,
+} from "@oh-my-pi/pi-ai";
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
 import type { Rule } from "@oh-my-pi/pi-coding-agent/capability/rule";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
@@ -43,6 +49,25 @@ function createAssistantMessage(text: string): AssistantMessage {
 	};
 }
 
+/** Retry fs.rmSync on Windows EBUSY/EPERM (SQLite file handles may not release instantly). */
+async function rmSyncRetry(target: string, attempts = 40): Promise<void> {
+	Bun.gc(true);
+	for (let i = 0; i < attempts; i++) {
+		try {
+			fs.rmSync(target, { recursive: true, force: true });
+			return;
+		} catch (err) {
+			const code = (err as NodeJS.ErrnoException).code;
+			if ((code === "EBUSY" || code === "EPERM") && i < attempts - 1) {
+				Bun.gc(true);
+				await Bun.sleep(100);
+				continue;
+			}
+			throw err;
+		}
+	}
+}
+
 describe("AgentSession concurrent prompt guard", () => {
 	let session: AgentSession;
 	let tempDir: string;
@@ -60,9 +85,8 @@ describe("AgentSession concurrent prompt guard", () => {
 		for (const authStorage of authStorages.splice(0)) {
 			authStorage.close();
 		}
-		if (tempDir && fs.existsSync(tempDir)) {
-			fs.rmSync(tempDir, { recursive: true });
-		}
+		closeModelCacheDb();
+		await rmSyncRetry(tempDir);
 		vi.restoreAllMocks();
 	});
 
@@ -313,9 +337,8 @@ describe("AgentSession TTSR resume gate", () => {
 		for (const authStorage of authStorages.splice(0)) {
 			authStorage.close();
 		}
-		if (tempDir && fs.existsSync(tempDir)) {
-			fs.rmSync(tempDir, { recursive: true });
-		}
+		closeModelCacheDb();
+		await rmSyncRetry(tempDir);
 	});
 
 	const testRule: Rule = {

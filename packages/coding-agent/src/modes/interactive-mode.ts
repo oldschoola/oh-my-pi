@@ -518,6 +518,15 @@ export class InteractiveMode implements InteractiveModeContext {
 		if (this.#pendingSubmittedInput === input) {
 			this.#pendingSubmittedInput = undefined;
 		}
+		// Clean up loading animation if the command finished without
+		// triggering agent streaming (e.g., user cancelled an extension
+		// command like /mission model picker). When the agent does run,
+		// #handleAgentEnd already stops the animation before we get here.
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = undefined;
+			this.statusContainer.clear();
+		}
 	}
 
 	#computeEditorMaxHeight(): number {

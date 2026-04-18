@@ -48,7 +48,11 @@ export function agentLoop(
 			stream.push({ type: "message_end", message: prompt });
 		}
 
-		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
+		try {
+			await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
+		} catch (error) {
+			emitLoopError(stream, newMessages, config, error);
+		}
 	})();
 
 	return stream;
@@ -85,7 +89,11 @@ export function agentLoopContinue(
 		stream.push({ type: "agent_start" });
 		stream.push({ type: "turn_start" });
 
-		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
+		try {
+			await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
+		} catch (error) {
+			emitLoopError(stream, newMessages, config, error);
+		}
 	})();
 
 	return stream;
@@ -96,6 +104,44 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 		(event: AgentEvent) => event.type === "agent_end",
 		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
 	);
+}
+
+/**
+ * Route an unexpected loop-level error (e.g. missing API key, thrown before any
+ * assistant event was emitted) through the stream so downstream consumers see a
+ * normal error-terminated turn instead of an unhandled rejection from the IIFE.
+ */
+function emitLoopError(
+	stream: EventStream<AgentEvent, AgentMessage[]>,
+	newMessages: AgentMessage[],
+	config: AgentLoopConfig,
+	error: unknown,
+): void {
+	const errorMessage = error instanceof Error ? error.message : String(error);
+	const assistantMessage: AssistantMessage = {
+		role: "assistant",
+		content: [],
+		api: config.model.api,
+		provider: config.model.provider,
+		model: config.model.id,
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "error",
+		errorMessage,
+		timestamp: Date.now(),
+	};
+	newMessages.push(assistantMessage);
+	stream.push({ type: "message_start", message: { ...assistantMessage } });
+	stream.push({ type: "message_end", message: assistantMessage });
+	stream.push({ type: "turn_end", message: assistantMessage, toolResults: [] });
+	stream.push({ type: "agent_end", messages: newMessages });
+	stream.end(newMessages);
 }
 
 function normalizeMessagesForProvider(

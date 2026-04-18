@@ -1,0 +1,13 @@
+{
+	"extends": "../tsconfig.workspace.json",
+	"include": [
+		"src",
+		"test",
+		"scripts"
+	],
+	"exclude": [
+		"src/client",
+		"dist",
+		"node_modules"
+	]
+}
