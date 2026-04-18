@@ -12,6 +12,7 @@
  */
 
 import * as path from "node:path";
+import { isEnoent } from "@oh-my-pi/pi-utils";
 import { readSidecar } from "./telemetry/sidecar";
 import type { BatchState, MissionState } from "./types";
 
@@ -141,17 +142,72 @@ export async function getMissionEvents(
 	return events;
 }
 
+/**
+ * Read the on-disk exit summary written by either:
+ *   - `agent-host.ts`  (batch lane runner) — final write at lane exit.
+ *   - `index.ts`       (simple-mission accumulator) — incremental writes.
+ *
+ * Both writers share the same `tokens / cost / toolCalls / durationSec` shape.
+ * The dashboard client expects camelCase token fields plus `durationMs`, so we
+ * remap before serving. Returns null when no telemetry file exists yet.
+ */
 export async function getMissionTelemetrySummary(
 	cwd: string,
 	missionId: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<TelemetrySummaryResponse | null> {
 	const file = Bun.file(path.join(telemetryDir(cwd, missionId), "exit-summary.json"));
-	if (!(await file.exists())) return null;
 	try {
-		return (await file.json()) as Record<string, unknown>;
-	} catch {
+		const raw = (await file.json()) as ServerExitSummary;
+		return mapExitSummary(raw);
+	} catch (err) {
+		if (isEnoent(err)) return null;
 		return null;
 	}
+}
+
+interface ServerExitSummary {
+	exitCode?: number | null;
+	tokens?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
+	cost?: number | null;
+	toolCalls?: number;
+	durationSec?: number;
+	lastToolCall?: string | null;
+	error?: string | null;
+}
+
+export interface TelemetrySummaryResponse {
+	exitCode?: number;
+	durationMs?: number;
+	tokens?: {
+		inputTokens: number;
+		outputTokens: number;
+		cacheCreationInputTokens: number;
+		cacheReadInputTokens: number;
+		totalCostUsd: number;
+	};
+	toolCalls?: number;
+	lastToolCall?: string;
+	error?: string;
+}
+
+/** Map server-side exit-summary fields onto the client `TelemetrySummary` shape. */
+function mapExitSummary(raw: ServerExitSummary): TelemetrySummaryResponse {
+	const t = raw.tokens ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+	const result: TelemetrySummaryResponse = {
+		tokens: {
+			inputTokens: t.input ?? 0,
+			outputTokens: t.output ?? 0,
+			cacheCreationInputTokens: t.cacheWrite ?? 0,
+			cacheReadInputTokens: t.cacheRead ?? 0,
+			totalCostUsd: raw.cost ?? 0,
+		},
+		toolCalls: raw.toolCalls ?? 0,
+	};
+	if (typeof raw.exitCode === "number") result.exitCode = raw.exitCode;
+	if (typeof raw.durationSec === "number") result.durationMs = raw.durationSec * 1000;
+	if (raw.lastToolCall) result.lastToolCall = raw.lastToolCall;
+	if (raw.error) result.error = raw.error;
+	return result;
 }
 
 export interface SupervisorEvent {

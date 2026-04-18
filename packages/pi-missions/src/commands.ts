@@ -69,6 +69,7 @@ async function ensureDashboardLaunched(ctx: Pick<ExtensionCommandContext, "ui">)
 	}
 }
 
+import { resetTelemetry } from "./index";
 import KICKOFF_TEMPLATE from "./prompts/mission-gui-kickoff.md" with { type: "text" };
 import {
 	addProgressEvent,
@@ -179,6 +180,8 @@ export function registerMissionCommands(
 					ctx.ui.notify("Operation aborted", "info");
 					return;
 				}
+
+				resetTelemetry();
 
 				persist(ctx, newState);
 
@@ -640,6 +643,7 @@ export function registerMissionCommands(
 					modelAssignment: req.modelAssignment,
 					constraints: req.constraints,
 				});
+				resetTelemetry();
 				persist(ctx, newState);
 
 				const firstPhase = newState.phases.find(p => p.status === "active");

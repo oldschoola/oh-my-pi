@@ -135,7 +135,6 @@ test("GET /api/status-md/missing returns 404", async () => {
 	expect(res.status).toBe(404);
 });
 
-
 // ---------------------------------------------------------------------------
 // SSE lifecycle — verifies server stops polling on completion / disconnect.
 // ---------------------------------------------------------------------------
@@ -214,4 +213,85 @@ test("SSE stream delivers snapshot for active missions without closing", async (
 	// Abort client-side to trigger server cancel() — release resources.
 	ctrl.abort();
 	expect(ctrl.signal.aborted).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// Telemetry endpoint — server shape → client shape field mapping.
+// ---------------------------------------------------------------------------
+
+function writeTelemetry(id: string, raw: unknown): void {
+	const dir = join(workDir, ".omp", "mission-telemetry", id);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "exit-summary.json"), JSON.stringify(raw));
+}
+
+interface TelemetryResponse {
+	exitCode?: number;
+	durationMs?: number;
+	tokens?: {
+		inputTokens: number;
+		outputTokens: number;
+		cacheCreationInputTokens: number;
+		cacheReadInputTokens: number;
+		totalCostUsd: number;
+	};
+	toolCalls?: number;
+	lastToolCall?: string;
+}
+
+test("GET /api/mission/:id/telemetry maps server fields to client shape", async () => {
+	writeTelemetry("telemetry-mapped", {
+		exitCode: 0,
+		tokens: { input: 12_000, output: 3400, cacheRead: 800, cacheWrite: 150 },
+		cost: 0.042,
+		toolCalls: 7,
+		durationSec: 42,
+		lastToolCall: "read",
+	});
+
+	const res = await fetch(`${baseUrl}/api/mission/telemetry-mapped/telemetry`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as TelemetryResponse;
+
+	expect(body.exitCode).toBe(0);
+	expect(body.durationMs).toBe(42_000);
+	expect(body.toolCalls).toBe(7);
+	expect(body.lastToolCall).toBe("read");
+	expect(body.tokens).toEqual({
+		inputTokens: 12_000,
+		outputTokens: 3400,
+		cacheCreationInputTokens: 150,
+		cacheReadInputTokens: 800,
+		totalCostUsd: 0.042,
+	});
+});
+
+test("GET /api/mission/:id/telemetry tolerates null tokens/cost (pre-usage state)", async () => {
+	writeTelemetry("telemetry-empty", {
+		tokens: null,
+		cost: null,
+		toolCalls: 0,
+		durationSec: 0,
+	});
+
+	const res = await fetch(`${baseUrl}/api/mission/telemetry-empty/telemetry`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as TelemetryResponse;
+
+	expect(body.toolCalls).toBe(0);
+	expect(body.tokens).toEqual({
+		inputTokens: 0,
+		outputTokens: 0,
+		cacheCreationInputTokens: 0,
+		cacheReadInputTokens: 0,
+		totalCostUsd: 0,
+	});
+});
+
+test("GET /api/mission/:id/telemetry returns empty object when no file exists", async () => {
+	const res = await fetch(`${baseUrl}/api/mission/telemetry-missing/telemetry`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as TelemetryResponse;
+	expect(body.tokens).toBeUndefined();
+	expect(body.toolCalls).toBeUndefined();
 });

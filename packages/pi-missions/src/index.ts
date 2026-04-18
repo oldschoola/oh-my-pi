@@ -23,6 +23,7 @@
  *   Ctrl+Shift+M       Open Mission Control overlay
  */
 
+import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "@oh-my-pi/pi-utils";
 import { registerMissionCommands } from "./commands";
@@ -51,9 +52,105 @@ import { extractRawTextFromMessage, extractTextFromMessage } from "./utils";
 import { clearRetryStatus, setRetryStatus, updateWidget } from "./widget";
 
 // ---------------------------------------------------------------------------
-// Extension entry point
+// Simple-mission telemetry accumulator
+//
+// Batch missions get per-lane telemetry written by `missioncontrol/agent-host.ts`.
+// Simple missions run inside the coding-agent's main turn loop where no such
+// writer exists — so we tally usage from `message_end` + `tool_execution_start`
+// and mirror the same on-disk `exit-summary.json` shape the dashboard consumes.
+//
+// Mission ID "active-session" matches the filename `state.ts` writes for the
+// active simple mission, so the dashboard resolves telemetry through the same
+// handle it already uses to render the mission row.
 // ---------------------------------------------------------------------------
 
+const ACTIVE_SIMPLE_MISSION_ID = "active-session";
+
+interface TelemetryAccumulator {
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	costUsd: number;
+	toolCalls: number;
+	lastToolCall: string | null;
+	startTime: number;
+}
+
+function emptyTelemetry(): TelemetryAccumulator {
+	return {
+		inputTokens: 0,
+		outputTokens: 0,
+		cacheReadTokens: 0,
+		cacheWriteTokens: 0,
+		costUsd: 0,
+		toolCalls: 0,
+		lastToolCall: null,
+		startTime: Date.now(),
+	};
+}
+
+let telemetry: TelemetryAccumulator = emptyTelemetry();
+
+/**
+ * Zero the accumulator and reset the start timestamp. Called from `commands.ts`
+ * whenever a new mission begins so per-mission totals don’t inherit carryover
+ * from a prior run in the same process.
+ */
+export function resetTelemetry(): void {
+	telemetry = emptyTelemetry();
+}
+
+/**
+ * Mirror the current accumulator to `.omp/mission-telemetry/<id>/exit-summary.json`.
+ * Shape matches `agent-host.ts` so the dashboard’s single mapper in
+ * `dashboard-api.ts` handles both writers. Best-effort — write failures are
+ * logged and swallowed so telemetry never blocks mission progress.
+ */
+async function writeSimpleMissionTelemetry(cwd: string): Promise<void> {
+	const totalTokens =
+		telemetry.inputTokens + telemetry.outputTokens + telemetry.cacheReadTokens + telemetry.cacheWriteTokens;
+	const summary = {
+		tokens:
+			totalTokens > 0
+				? {
+						input: telemetry.inputTokens,
+						output: telemetry.outputTokens,
+						cacheRead: telemetry.cacheReadTokens,
+						cacheWrite: telemetry.cacheWriteTokens,
+					}
+				: null,
+		cost: telemetry.costUsd > 0 ? telemetry.costUsd : null,
+		toolCalls: telemetry.toolCalls,
+		durationSec: Math.round((Date.now() - telemetry.startTime) / 1000),
+		lastToolCall: telemetry.lastToolCall,
+	};
+	const file = path.join(cwd, ".omp", "mission-telemetry", ACTIVE_SIMPLE_MISSION_ID, "exit-summary.json");
+	await Bun.write(file, `${JSON.stringify(summary, null, 2)}\n`);
+}
+
+function accumulateAssistantUsage(message: { role: string; usage?: unknown } | undefined): boolean {
+	if (!message || message.role !== "assistant") return false;
+	const usage = message.usage as
+		| { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: { total?: number } | number }
+		| undefined;
+	if (!usage) return false;
+	telemetry.inputTokens += usage.input ?? 0;
+	telemetry.outputTokens += usage.output ?? 0;
+	telemetry.cacheReadTokens += usage.cacheRead ?? 0;
+	telemetry.cacheWriteTokens += usage.cacheWrite ?? 0;
+	const cost = usage.cost;
+	if (typeof cost === "number") {
+		telemetry.costUsd += cost;
+	} else if (cost && typeof cost === "object" && typeof cost.total === "number") {
+		telemetry.costUsd += cost.total;
+	}
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Extension entry point
+// ---------------------------------------------------------------------------
 export default function missionExtension(pi: ExtensionAPI): void {
 	let mission: MissionState | null = null;
 
@@ -100,7 +197,21 @@ export default function missionExtension(pi: ExtensionAPI): void {
 
 	pi.on("message_end", async (event, ctx) => {
 		try {
-			if (!mission || mission.completedAt || mission.paused) return;
+			if (!mission) return;
+
+			// Accumulate simple-mission telemetry first so token/cost numbers keep
+			// advancing even while the phase-detection logic below early-returns
+			// for paused/completed missions.
+			if (!mission.completedAt && accumulateAssistantUsage(event.message)) {
+				const cwd = ctx.cwd;
+				writeSimpleMissionTelemetry(cwd).catch(err =>
+					logger.error("[pi-mission] telemetry write failed", {
+						error: err instanceof Error ? err.message : String(err),
+					}),
+				);
+			}
+
+			if (mission.completedAt || mission.paused) return;
 			if (event.message.role !== "assistant") return;
 
 			const text = extractTextFromMessage(event.message);
@@ -189,6 +300,29 @@ export default function missionExtension(pi: ExtensionAPI): void {
 			}
 		} catch (err) {
 			logger.error("[pi-mission] message_end failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	});
+
+	// -------------------------------------------------------------------
+	// Tool-call counter for simple-mission telemetry.
+	// Batch runs have `agent-host.ts` doing this job; simple runs need the
+	// same signal so the dashboard Tool Calls stat advances in real time.
+	// -------------------------------------------------------------------
+
+	pi.on("tool_execution_start", async (event, ctx) => {
+		try {
+			if (!mission || mission.completedAt) return;
+			telemetry.toolCalls += 1;
+			if (event.toolName) telemetry.lastToolCall = event.toolName;
+			writeSimpleMissionTelemetry(ctx.cwd).catch(err =>
+				logger.error("[pi-mission] telemetry write failed", {
+					error: err instanceof Error ? err.message : String(err),
+				}),
+			);
+		} catch (err) {
+			logger.error("[pi-mission] tool_execution_start failed", {
 				error: err instanceof Error ? err.message : String(err),
 			});
 		}
