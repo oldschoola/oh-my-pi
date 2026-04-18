@@ -9,9 +9,23 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isEnoent, logger } from "@oh-my-pi/pi-utils";
 import { $ } from "bun";
 import { getMission, getMissionEvents, getMissionTelemetrySummary, listMissions } from "./dashboard-api";
-import { abortBatch, loadActiveBatch, pauseBatch, resumeBatch, saveActiveBatch } from "./missioncontrol";
+import { dispatchStartRequest, type MissionStartRequest } from "./gui-bridge";
+import {
+	abortBatch,
+	loadActiveBatch,
+	mailboxRoot,
+	missionHistoryPath,
+	missionsDir,
+	pauseBatch,
+	readAuditTrail,
+	readRegistrySnapshot,
+	resumeBatch,
+	saveActiveBatch,
+	supervisorEventsPath,
+} from "./missioncontrol";
 
 const CLIENT_DIR = path.join(import.meta.dir, "client");
 const STATIC_DIR = path.join(import.meta.dir, "..", "dist", "client");
@@ -151,7 +165,7 @@ async function ensureClientBuild(): Promise<void> {
 
 	await fs.rm(STATIC_DIR, { recursive: true, force: true });
 
-	console.log("Building MissionControl client...");
+	logger.debug("[missioncontrol] building client");
 	const packageRoot = path.join(import.meta.dir, "..");
 	const buildResult = await $`bun run build.ts`.cwd(packageRoot).quiet().nothrow();
 	if (buildResult.exitCode !== 0) {
@@ -224,7 +238,175 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 		return jsonResponse({ ok: true, phase: next.batch?.phase });
 	}
 
+	// --- /mission-gui: browser → chat dispatch ---------------------------
+	if (p === "/api/mission/start" && req.method === "POST") {
+		const body = (await req.json().catch(() => null)) as MissionStartRequest | null;
+		if (!body) return jsonResponse({ ok: false, reason: "invalid_payload" }, { status: 400 });
+		const result = dispatchStartRequest(body);
+		if (!result.ok) {
+			const status = result.reason === "unknown_token" ? 403 : 400;
+			return jsonResponse({ ok: false, reason: result.reason }, { status });
+		}
+		return jsonResponse({ ok: true, dispatchedTo: "chat" }, { status: 202 });
+	}
+
+	// --- History (past batches) ------------------------------------------
+	if (p === "/api/history" && req.method === "GET") {
+		const entries = await readMissionHistory(cwd);
+		return jsonResponse({ entries });
+	}
+
+	const historyDetailMatch = p.match(/^\/api\/history\/([^/]+)$/);
+	if (historyDetailMatch && req.method === "GET") {
+		const entries = await readMissionHistory(cwd);
+		const found = entries.find(e => e.batchId === historyDetailMatch[1] || e.missionId === historyDetailMatch[1]);
+		if (!found) return new Response("Not Found", { status: 404 });
+		return jsonResponse(found);
+	}
+
+	// --- Supervisor audit trail ------------------------------------------
+	if (p === "/api/supervisor/events" && req.method === "GET") {
+		const limit = Number.parseInt(url.searchParams.get("limit") ?? "200", 10);
+		const batchId = url.searchParams.get("batchId") ?? undefined;
+		try {
+			const entries = readAuditTrail(cwd, { limit, batchId });
+			return jsonResponse({ eventsPath: supervisorEventsPath(cwd), entries });
+		} catch (err) {
+			return jsonResponse(
+				{ eventsPath: supervisorEventsPath(cwd), entries: [], error: String(err) },
+				{ status: 200 },
+			);
+		}
+	}
+
+	// --- Mailbox events --------------------------------------------------
+	if (p === "/api/mailbox/events" && req.method === "GET") {
+		const batchId = url.searchParams.get("batchId") ?? (await activeBatchId(cwd));
+		if (!batchId) return jsonResponse({ events: [] });
+		const limit = Number.parseInt(url.searchParams.get("limit") ?? "200", 10);
+		const events = await readMailboxEvents(cwd, batchId, limit);
+		return jsonResponse({ batchId, events });
+	}
+
+	// --- Agents (process registry snapshot) ------------------------------
+	if (p === "/api/agents" && req.method === "GET") {
+		const batchId = url.searchParams.get("batchId") ?? (await activeBatchId(cwd));
+		if (!batchId) return jsonResponse({ batchId: null, registry: null });
+		const registry = readRegistrySnapshot(cwd, batchId);
+		return jsonResponse({ batchId, registry });
+	}
+
+	// --- Worker conversation transcript ----------------------------------
+	const conversationMatch = p.match(/^\/api\/conversation\/([^/]+)$/);
+	if (conversationMatch && req.method === "GET") {
+		const content = await readLaneConversation(cwd, conversationMatch[1]);
+		if (content === null) return new Response("Not Found", { status: 404 });
+		return new Response(content, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+	}
+
+	// --- STATUS.md per task ----------------------------------------------
+	const statusMdMatch = p.match(/^\/api\/status-md\/([^/]+)$/);
+	if (statusMdMatch && req.method === "GET") {
+		const content = await readTaskStatusMd(cwd, statusMdMatch[1]);
+		if (content === null) return new Response("Not Found", { status: 404 });
+		return new Response(content, { headers: { "Content-Type": "text/markdown; charset=utf-8" } });
+	}
+
 	return new Response("Not Found", { status: 404 });
+}
+
+// ---------------------------------------------------------------------------
+// Route helpers
+// ---------------------------------------------------------------------------
+
+async function activeBatchId(cwd: string): Promise<string | null> {
+	const state = await loadActiveBatch(cwd);
+	return state?.batch?.batchId ?? null;
+}
+
+async function readMissionHistory(
+	cwd: string,
+): Promise<Array<Record<string, unknown> & { batchId: string; missionId?: string }>> {
+	try {
+		const raw = await Bun.file(missionHistoryPath(cwd)).text();
+		const parsed = JSON.parse(raw) as unknown;
+		const arr: unknown[] = Array.isArray(parsed)
+			? parsed
+			: Array.isArray((parsed as { entries?: unknown[] })?.entries)
+				? ((parsed as { entries: unknown[] }).entries ?? [])
+				: [];
+		return arr.filter(
+			(e): e is Record<string, unknown> & { batchId: string } =>
+				!!e && typeof e === "object" && typeof (e as { batchId?: unknown }).batchId === "string",
+		);
+	} catch (err) {
+		if (isEnoent(err)) return [];
+		logger.warn("[missioncontrol] readMissionHistory failed", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return [];
+	}
+}
+
+async function readMailboxEvents(cwd: string, batchId: string, limit: number): Promise<Array<Record<string, unknown>>> {
+	const eventsPath = path.join(mailboxRoot(cwd, batchId), "events.jsonl");
+	try {
+		const raw = await Bun.file(eventsPath).text();
+		const all = Bun.JSONL.parse(raw) as Array<Record<string, unknown>>;
+		return limit > 0 ? all.slice(-limit) : all;
+	} catch (err) {
+		if (!isEnoent(err)) {
+			logger.warn("[missioncontrol] readMailboxEvents failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+		return [];
+	}
+}
+
+// Accept either a bare lane id (lane-1) or a batchId:laneId form.
+async function readLaneConversation(cwd: string, rawLaneId: string): Promise<string | null> {
+	const [maybeBatch, maybeLane] = rawLaneId.includes(":") ? rawLaneId.split(":") : [null, rawLaneId];
+	const batchId = maybeBatch ?? (await activeBatchId(cwd));
+	if (!batchId) return null;
+	const laneSegment = (maybeLane ?? rawLaneId).replace(/[^a-zA-Z0-9._-]/g, "");
+	if (!laneSegment) return null;
+
+	const candidates = [
+		path.join(missionsDir(cwd), batchId, "lanes", laneSegment, "conversation.md"),
+		path.join(missionsDir(cwd), batchId, "lanes", laneSegment, "transcript.md"),
+		path.join(missionsDir(cwd), batchId, "lanes", laneSegment, "log.jsonl"),
+	];
+	for (const candidate of candidates) {
+		try {
+			return await Bun.file(candidate).text();
+		} catch (err) {
+			if (!isEnoent(err)) throw err;
+		}
+	}
+	return null;
+}
+
+async function readTaskStatusMd(cwd: string, rawTaskId: string): Promise<string | null> {
+	const taskId = rawTaskId.replace(/[^a-zA-Z0-9._-]/g, "");
+	if (!taskId) return null;
+	const base = missionsDir(cwd);
+	let dirs: string[] = [];
+	try {
+		const entries = await fs.readdir(base, { withFileTypes: true });
+		dirs = entries.filter(e => e.isDirectory()).map(e => path.join(base, e.name));
+	} catch {
+		return null;
+	}
+	for (const dir of dirs) {
+		const candidate = path.join(dir, "tasks", taskId, "STATUS.md");
+		try {
+			return await Bun.file(candidate).text();
+		} catch (err) {
+			if (!isEnoent(err)) throw err;
+		}
+	}
+	return null;
 }
 
 function buildSSEStream(cwd: string, missionId: string): Response {
@@ -335,7 +517,9 @@ export async function startServer(options: StartServerOptions = {}): Promise<{ p
 				for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v);
 				return new Response(response.body, { status: response.status, headers });
 			} catch (error) {
-				console.error("MissionControl server error:", error);
+				logger.error("[missioncontrol] server request failed", {
+					error: error instanceof Error ? error.message : String(error),
+				});
 				return jsonResponse(
 					{ error: error instanceof Error ? error.message : "Unknown error" },
 					{ status: 500, headers: corsHeaders },

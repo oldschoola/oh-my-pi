@@ -1,28 +1,92 @@
+import { BarChart3, Database, DollarSign, Hash, RefreshCw, Zap } from "lucide-react";
 import type { TelemetrySummary } from "../types";
 
-export function TelemetryPanel({ telemetry }: { telemetry: TelemetrySummary }) {
-	const t = telemetry.tokens ?? {};
-	const totalTokens = (t.inputTokens ?? 0) + (t.outputTokens ?? 0);
-	const cacheTokens = (t.cacheCreationInputTokens ?? 0) + (t.cacheReadInputTokens ?? 0);
-	return (
-		<div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-			<Stat label="Total tokens" value={totalTokens.toLocaleString()} />
-			<Stat label="Cache tokens" value={cacheTokens.toLocaleString()} />
-			<Stat label="Cost" value={formatCost(t.totalCostUsd)} />
-			<Stat label="Tool calls" value={String(telemetry.toolCalls ?? 0)} />
-			{telemetry.exitCode !== undefined && <Stat label="Exit code" value={String(telemetry.exitCode)} />}
-			{telemetry.retries && telemetry.retries.length > 0 && (
-				<Stat label="Retries" value={String(telemetry.retries.length)} />
-			)}
-		</div>
-	);
+interface StatConfig {
+	key: string;
+	label: string;
+	icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
+	color: string;
+	getValue: (t: TelemetrySummary) => string;
+	show?: (t: TelemetrySummary) => boolean;
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+const STAT_CONFIG: StatConfig[] = [
+	{
+		key: "total-tokens",
+		label: "Total Tokens",
+		icon: BarChart3,
+		color: "var(--accent-cyan)",
+		getValue: t => {
+			const tok = t.tokens ?? {};
+			return ((tok.inputTokens ?? 0) + (tok.outputTokens ?? 0)).toLocaleString();
+		},
+	},
+	{
+		key: "cache-tokens",
+		label: "Cache Tokens",
+		icon: Database,
+		color: "var(--accent-violet)",
+		getValue: t => {
+			const tok = t.tokens ?? {};
+			return ((tok.cacheCreationInputTokens ?? 0) + (tok.cacheReadInputTokens ?? 0)).toLocaleString();
+		},
+	},
+	{
+		key: "cost",
+		label: "Cost",
+		icon: DollarSign,
+		color: "var(--accent-indigo)",
+		getValue: t => formatCost(t.tokens?.totalCostUsd),
+	},
+	{
+		key: "tool-calls",
+		label: "Tool Calls",
+		icon: Zap,
+		color: "var(--accent-amber)",
+		getValue: t => String(t.toolCalls ?? 0),
+	},
+	{
+		key: "exit-code",
+		label: "Exit Code",
+		icon: Hash,
+		color: "var(--accent-green)",
+		getValue: t => String(t.exitCode ?? "—"),
+		show: t => t.exitCode !== undefined,
+	},
+	{
+		key: "retries",
+		label: "Retries",
+		icon: RefreshCw,
+		color: "var(--accent-red)",
+		getValue: t => String(t.retries?.length ?? 0),
+		show: t => (t.retries?.length ?? 0) > 0,
+	},
+];
+
+export function TelemetryPanel({ telemetry }: { telemetry: TelemetrySummary }) {
+	const visible = STAT_CONFIG.filter(s => !s.show || s.show(telemetry));
 	return (
-		<div className="surface p-3">
-			<div className="text-xs text-[var(--text-muted)] uppercase tracking-wide">{label}</div>
-			<div className="text-lg font-semibold mt-1">{value}</div>
+		<div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+			{visible.map(s => {
+				const Icon = s.icon;
+				return (
+					<div key={s.key} className="stat-card">
+						<div className="flex items-center justify-between mb-3">
+							<span className="text-xs font-medium text-[var(--text-secondary)]">{s.label}</span>
+							<div
+								className="p-1.5"
+								style={{
+									borderRadius: "var(--radius-sm)",
+									backgroundColor: `${s.color}18`,
+								}}
+							>
+								<Icon size={14} style={{ color: s.color }} />
+							</div>
+						</div>
+						<div className="text-xl font-bold text-[var(--text-primary)]">{s.getValue(telemetry)}</div>
+					</div>
+				);
+			})}
 		</div>
 	);
 }

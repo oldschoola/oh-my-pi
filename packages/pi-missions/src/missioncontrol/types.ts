@@ -2542,8 +2542,8 @@ export interface EventTailerState {
 	partialLine: string;
 	batchId: string;
 	digestBuffer: TaskDigestBuffer;
-	pollTimer: ReturnType<typeof setInterval> | null;
-	digestTimer: ReturnType<typeof setInterval> | null;
+	pollTimer: NodeJS.Timeout | null;
+	digestTimer: NodeJS.Timeout | null;
 }
 
 // ── Supervisor Routing + State ───────────────────────────────────────
@@ -2586,7 +2586,7 @@ export interface SupervisorState {
 	previousModel: unknown | null;
 	didSwitchModel: boolean;
 	lockSessionId: string;
-	heartbeatTimer: ReturnType<typeof setInterval> | null;
+	heartbeatTimer: NodeJS.Timeout | null;
 	eventTailer: EventTailerState;
 	routingContext: SupervisorRoutingContext | null;
 	pendingSummaryDeps: SupervisorSummaryDeps | null;

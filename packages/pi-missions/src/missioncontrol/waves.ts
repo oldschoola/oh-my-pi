@@ -1317,7 +1317,7 @@ export function allocateLanes(
 					: "";
 			const crossRepoRollbackIssues =
 				rollbackErrors.length > 0
-					? "\nCross-repo rollback issues:\n" + rollbackErrors.map(e => `  ${e}`).join("\n")
+					? `\nCross-repo rollback issues:\n${rollbackErrors.map(e => `  ${e}`).join("\n")}`
 					: "";
 
 			return {

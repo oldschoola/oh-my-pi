@@ -1,6 +1,9 @@
 // src/state.ts — State persistence with TypeBox validation
 
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { isEnoent } from "@oh-my-pi/pi-utils";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { ProposedPhase } from "./detector";
@@ -68,6 +71,41 @@ export const MissionStateSchema = Type.Object({
  */
 export function saveMissionState(pi: ExtensionAPI, state: MissionState): void {
 	pi.appendEntry("mission-state", { ...state });
+}
+
+/** Filename of the active simple-mission mirror the dashboard can read. */
+const ACTIVE_MISSION_FILENAME = "active-session.json";
+
+/** Filename pattern for permanent completed-mission records. */
+function permanentFilename(startedAt: string): string {
+	return `session-${new Date(startedAt).getTime()}.json`;
+}
+
+/**
+ * Write mission state to disk.
+ * Always writes `active-session.json` for the live dashboard view.
+ * When `completedAt` is set, also writes `session-<epoch>.json` as a
+ * permanent record that survives `clearMissionOnDisk`.
+ */
+export async function writeMissionToDisk(cwd: string, state: MissionState): Promise<void> {
+	const dir = path.join(cwd, ".omp", "missions");
+	const active = path.join(dir, ACTIVE_MISSION_FILENAME);
+	const json = JSON.stringify(state, null, 2);
+	await Bun.write(active, json);
+	if (state.completedAt) {
+		const permanent = path.join(dir, permanentFilename(state.startedAt));
+		await Bun.write(permanent, json);
+	}
+}
+
+/** Delete the active mission mirror. Permanent `session-*.json` files are preserved. */
+export async function clearMissionOnDisk(cwd: string): Promise<void> {
+	const dest = path.join(cwd, ".omp", "missions", ACTIVE_MISSION_FILENAME);
+	try {
+		await fs.unlink(dest);
+	} catch (err) {
+		if (!isEnoent(err)) throw err;
+	}
 }
 
 /**

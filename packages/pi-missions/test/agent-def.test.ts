@@ -192,11 +192,7 @@ describe("loadAgentDef", () => {
 		const dir = sandbox("standalone-defaults");
 		try {
 			mkdirSync(join(projectDir(dir), "agents"), { recursive: true });
-			writeFileSync(
-				join(projectDir(dir), "agents", "task-worker.md"),
-				"---\nstandalone: true\n---\nbody",
-				"utf-8",
-			);
+			writeFileSync(join(projectDir(dir), "agents", "task-worker.md"), "---\nstandalone: true\n---\nbody", "utf-8");
 			const def = loadAgentDef(dir, "task-worker");
 			expect(def?.tools).toBe("read,grep,find,ls");
 			expect(def?.model).toBe("");
@@ -209,11 +205,7 @@ describe("loadAgentDef", () => {
 		const dir = sandbox("compose");
 		try {
 			mkdirSync(join(projectDir(dir), "agents"), { recursive: true });
-			writeFileSync(
-				join(projectDir(dir), "agents", "task-worker.md"),
-				"local guidance text",
-				"utf-8",
-			);
+			writeFileSync(join(projectDir(dir), "agents", "task-worker.md"), "local guidance text", "utf-8");
 			const def = loadAgentDef(dir, "task-worker");
 			expect(def).not.toBeNull();
 			expect(def?.systemPrompt).toContain("## Project-Specific Guidance");

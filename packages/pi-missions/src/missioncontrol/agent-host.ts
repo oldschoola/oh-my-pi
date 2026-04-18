@@ -265,7 +265,7 @@ export function spawnHostedAgent(
 	emitEvent("agent_started", { cwd: opts.cwd, model: opts.model ?? null });
 
 	let handle: SpawnAgentHandle | null = null;
-	let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+	let timeoutHandle: NodeJS.Timeout | null = null;
 
 	function pushTelemetry(): void {
 		if (!onTelemetry) return;

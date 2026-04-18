@@ -2,18 +2,57 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "@oh-my-pi/pi-utils";
+import { createGuiBridge, type MissionStartRequest } from "./gui-bridge";
 import type { MissionControlCallbacks, MissionControlResult } from "./mission-control";
 import { showMissionControl } from "./mission-control";
 import { buildMissionStatusReport } from "./missioncontrol";
 import { maybeSwitchModel } from "./model-switch";
-import { runMissionPlanner } from "./planner";
+import { buildStateFromConfig, runMissionPlanner } from "./planner";
+import { startServer } from "./server";
+
+/** Best-effort open a URL in the default browser. Duplicated from coding-agent/utils/open.ts (private). */
+function openInBrowser(url: string): void {
+	let cmd: string[];
+	switch (process.platform) {
+		case "darwin":
+			cmd = ["open", url];
+			break;
+		case "win32":
+			cmd = ["rundll32", "url.dll,FileProtocolHandler", url];
+			break;
+		default:
+			cmd = ["xdg-open", url];
+			break;
+	}
+	try {
+		Bun.spawn(cmd, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+	} catch {}
+}
+
+/** Module-scoped singleton so repeated `/mission-gui` calls reuse the dashboard server. */
+let dashboardServer: Promise<{ port: number; stop: () => void }> | null = null;
+async function ensureDashboardServer(): Promise<{ port: number; stop: () => void }> {
+	if (!dashboardServer) {
+		dashboardServer = startServer({ port: Number.parseInt(process.env.OMP_MISSION_PORT ?? "3848", 10) }).catch(
+			err => {
+				dashboardServer = null;
+				throw err;
+			},
+		);
+	}
+	return dashboardServer;
+}
+
+import KICKOFF_TEMPLATE from "./prompts/mission-gui-kickoff.md" with { type: "text" };
 import {
 	addProgressEvent,
 	advancePhase,
+	clearMissionOnDisk,
 	completeMission,
 	pauseMission,
 	resumeMission,
 	saveMissionState,
+	writeMissionToDisk,
 } from "./state";
 import type { MissionState } from "./types";
 import { formatDuration, getPhaseIcon } from "./utils";
@@ -27,12 +66,16 @@ export function registerMissionCommands(
 	pi: ExtensionAPI,
 	getState: () => MissionState | null,
 	setState: (s: MissionState | null) => void,
+	cwd: string,
 ): void {
 	// Helper: persist + update widget after every state change
 	function persist(ctx: Pick<ExtensionCommandContext, "ui">, state: MissionState): void {
 		setState(state);
 		saveMissionState(pi, state);
 		updateWidget(ctx, state);
+		writeMissionToDisk(cwd, state).catch(err =>
+			logger.error("[pi-mission] disk mirror failed", { error: err instanceof Error ? err.message : String(err) }),
+		);
 	}
 
 	// -----------------------------------------------------------------------
@@ -95,6 +138,11 @@ export function registerMissionCommands(
 					setState(null);
 					pi.appendEntry("mission-state", null);
 					updateWidget(ctx, null);
+					clearMissionOnDisk(cwd).catch(err =>
+						logger.error("[pi-mission] disk clear failed", {
+							error: err instanceof Error ? err.message : String(err),
+						}),
+					);
 				}
 
 				// Has args → run planner questionnaire, then kick off
@@ -109,11 +157,10 @@ export function registerMissionCommands(
 
 				// Build kick-off message based on mode
 				const firstPhase = newState.phases.find(p => p.status === "active");
-				const kickoff =
-					`Run an orchestrated mission for: ${description}\n\n` +
-					`Start with Phase 1 (${firstPhase?.name ?? "Plan"}): ` +
-					"Analyze the codebase and produce a detailed implementation plan. " +
-					"Present the plan for my approval before implementing.";
+				const kickoff = KICKOFF_TEMPLATE.replace("{{description}}", description).replace(
+					"{{phaseName}}",
+					firstPhase?.name ?? "Plan",
+				);
 
 				pi.sendUserMessage(kickoff);
 				pi.setSessionName(`🎯 ${description}`);
@@ -388,6 +435,11 @@ export function registerMissionCommands(
 				// Persist a null-state marker so restoreMissionState doesn't
 				// resurrect the old state on session restart
 				pi.appendEntry("mission-state", null);
+				clearMissionOnDisk(cwd).catch(err =>
+					logger.error("[pi-mission] disk clear failed", {
+						error: err instanceof Error ? err.message : String(err),
+					}),
+				);
 				ctx.ui.setWidget("mission", undefined);
 				pi.setSessionName(""); // Clear session name
 				ctx.ui.notify("Mission cleared.", "info");
@@ -481,7 +533,7 @@ export function registerMissionCommands(
 							setState(updated);
 							saveMissionState(pi, updated);
 						}
-						pi.sendUserMessage(message);
+						pi.sendUserMessage(message, { deliverAs: "followUp" });
 					},
 					onModelChange: (role: string, modelId: string) => {
 						const s = getState();
@@ -502,6 +554,81 @@ export function registerMissionCommands(
 				const message = err instanceof Error ? err.message : String(err);
 				logger.error("[pi-mission] mission control failed", { error: message });
 				ctx.ui.notify(`Error opening Mission Control: ${message}`, "error");
+			}
+		},
+	});
+
+	// -----------------------------------------------------------------------
+	// 8. /mission-gui — Launch dashboard, configure a mission in the browser,
+	//                   then kick it off in this chat session.
+	// -----------------------------------------------------------------------
+
+	pi.registerCommand("mission-gui", {
+		description:
+			"Launch MissionControl in the browser, configure a mission visually, and auto-start it in this session",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			const bridge = createGuiBridge();
+			try {
+				const { port } = await ensureDashboardServer();
+				const url = `http://localhost:${port}/?gui=${encodeURIComponent(bridge.token)}`;
+				ctx.ui.notify(`🌐 MissionControl: ${url}\nAwaiting mission config from the browser…`, "info");
+				openInBrowser(url);
+
+				const state = getState();
+				if (state && !state.completedAt && !state.paused) {
+					const ok = await ctx.ui.confirm(
+						"Active Mission",
+						`There's already an active mission:\n"${state.description}"\n\nContinue and replace it once the browser form is submitted?`,
+					);
+					if (!ok) {
+						bridge.close();
+						ctx.ui.notify("Operation aborted", "info");
+						return;
+					}
+				}
+
+				const req: MissionStartRequest = await bridge.waitForStart();
+
+				// Stale state cleanup mirrors /mission.
+				if (state && (state.completedAt || state.paused)) {
+					setState(null);
+					pi.appendEntry("mission-state", null);
+					updateWidget(ctx, null);
+					clearMissionOnDisk(cwd).catch(err =>
+						logger.error("[pi-mission] disk clear failed", {
+							error: err instanceof Error ? err.message : String(err),
+						}),
+					);
+				}
+
+				const newState = buildStateFromConfig({
+					description: req.description,
+					templateKey: req.templateKey,
+					autonomy: req.autonomy,
+					modelAssignment: req.modelAssignment,
+					constraints: req.constraints,
+				});
+				persist(ctx, newState);
+
+				const firstPhase = newState.phases.find(p => p.status === "active");
+				const kickoff = KICKOFF_TEMPLATE.replace("{{description}}", req.description).replace(
+					"{{phaseName}}",
+					firstPhase?.name ?? "Plan",
+				);
+				pi.sendUserMessage(kickoff);
+				pi.setSessionName(`🎯 ${req.description}`);
+
+				const batchNote =
+					req.laneCount && req.laneCount > 1
+						? ` Promote to a ${req.laneCount}-lane batch with /mission-batch when ready.`
+						: "";
+				ctx.ui.notify(`🚀 Mission started from GUI: ${req.description}.${batchNote}`, "info");
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				logger.error("[pi-mission] /mission-gui failed", { error: message });
+				ctx.ui.notify(`Error in /mission-gui: ${message}`, "error");
+			} finally {
+				bridge.close();
 			}
 		},
 	});

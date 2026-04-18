@@ -38,7 +38,14 @@ import {
 } from "./missioncontrol";
 import { maybeSwitchModel } from "./model-switch";
 import { buildMissionProtocol, buildMissionStatus } from "./protocol";
-import { addProgressEvent, advancePhase, expandPhases, restoreMissionState, saveMissionState } from "./state";
+import {
+	addProgressEvent,
+	advancePhase,
+	expandPhases,
+	restoreMissionState,
+	saveMissionState,
+	writeMissionToDisk,
+} from "./state";
 import type { MissionState } from "./types";
 import { extractRawTextFromMessage, extractTextFromMessage } from "./utils";
 import { clearRetryStatus, setRetryStatus, updateWidget } from "./widget";
@@ -148,6 +155,11 @@ export default function missionExtension(pi: ExtensionAPI): void {
 			if (updated) {
 				saveMissionState(pi, mission);
 				updateWidget(ctx, mission);
+				writeMissionToDisk(ctx.cwd, mission).catch(err =>
+					logger.error("[pi-mission] disk mirror failed", {
+						error: err instanceof Error ? err.message : String(err),
+					}),
+				);
 
 				if (mission.completedAt) {
 					// Mission finished — surface it in the session name.
@@ -170,6 +182,7 @@ export default function missionExtension(pi: ExtensionAPI): void {
 						pi.sendUserMessage(
 							`[Mission] Previous phase complete. Begin Phase: ${nextPhase.emoji} ${nextPhase.name} ` +
 								`(role: ${role}). Follow the phase instructions in your system prompt.`,
+							{ deliverAs: "followUp" },
 						);
 					}
 				}
@@ -244,7 +257,7 @@ export default function missionExtension(pi: ExtensionAPI): void {
 	// Register all /mission* commands
 	// -------------------------------------------------------------------
 
-	registerMissionCommands(pi, getState, setState);
+	registerMissionCommands(pi, getState, setState, process.cwd());
 
 	// -------------------------------------------------------------------
 	// MissionControl engine — batch-mode orchestration

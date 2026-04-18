@@ -1,68 +1,355 @@
-import { Activity, CheckCircle2, CircleDashed, XCircle } from "lucide-react";
-import type { BatchState, LaneStatus } from "../types";
+import { Activity, CheckCircle2, CircleDashed, Clock, Copy, Eye, XCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { BatchState, LaneStatus, TaskOutcome, TaskTelemetry, WaveAssignment } from "../types";
 
-export function LaneGrid({ batch }: { batch: BatchState }) {
+interface LaneGridProps {
+	batch: BatchState;
+	onViewLane?: (laneId: string) => void;
+}
+
+export function LaneGrid({ batch, onViewLane }: LaneGridProps) {
 	return (
 		<div className="space-y-4">
 			<WaveHeader batch={batch} />
 			<div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-				{batch.laneStatuses.map(l => (
-					<LaneCell key={l.laneId} lane={l} />
-				))}
+				{batch.laneStatuses.map(l => {
+					// Find the task currently assigned to this lane
+					const currentTask = l.taskId ? (batch.tasks.find(t => t.taskId === l.taskId) ?? null) : null;
+					const laneConvId = `${batch.batchId}:lane-${l.lane}`;
+					return (
+						<LaneCell
+							key={l.lane}
+							lane={l}
+							currentTask={currentTask}
+							onView={onViewLane ? () => onViewLane(laneConvId) : undefined}
+						/>
+					);
+				})}
 			</div>
 		</div>
 	);
 }
 
 function WaveHeader({ batch }: { batch: BatchState }) {
+	const [now, setNow] = useState(Date.now());
+	useEffect(() => {
+		const id = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(id);
+	}, []);
+
+	const elapsed = formatDuration(now - batch.startTime);
 	const pct = batch.tasksTotal > 0 ? Math.round((batch.tasksComplete / batch.tasksTotal) * 100) : 0;
+
+	// Count running lanes (not tasks — lanes can be running without a known task)
+	const lanesRunning = batch.laneStatuses.filter(l => l.status === "running").length;
+	const tasksPending = batch.tasksTotal - batch.tasksComplete - batch.tasksFailed - lanesRunning;
+
 	return (
 		<div className="surface p-4">
-			<div className="flex items-center justify-between mb-2">
-				<div className="text-sm">
-					<span className="font-semibold">Wave {batch.currentWave + 1}</span>
-					<span className="text-[var(--text-muted)]"> / {batch.waves.length}</span>
+			<div className="flex items-center justify-between mb-3">
+				<div className="text-sm flex items-center gap-2">
+					<span className="font-semibold gradient-text">Wave {batch.currentWave + 1}</span>
+					<span className="text-[var(--text-muted)]">/ {batch.waves.length}</span>
 				</div>
-				<div className="text-xs text-[var(--text-muted)]">
-					{batch.tasksComplete}/{batch.tasksTotal} done · {batch.tasksFailed} failed
+				<div className="flex items-center gap-3 text-xs">
+					<span className="font-mono text-[var(--text-muted)]" style={{ fontVariantNumeric: "tabular-nums" }}>
+						{pct}%
+					</span>
+					<span className="font-mono text-[var(--text-muted)] flex items-center gap-1">
+						<Clock size={11} />
+						{elapsed}
+					</span>
 				</div>
 			</div>
-			<div className="h-2 bg-[var(--bg-elevated)] rounded-full overflow-hidden">
-				<div className="h-full bg-[var(--accent-cyan)] transition-all" style={{ width: `${pct}%` }} />
+
+			{/* Segmented wave progress bar */}
+			<SegmentedBar waves={batch.waves} currentWave={batch.currentWave} tasksTotal={batch.tasksTotal} />
+
+			{/* Count chips */}
+			<div className="flex items-center gap-2 mt-3 text-xs">
+				{batch.tasksComplete > 0 && <CountChip label={`${batch.tasksComplete} done`} variant="green" />}
+				{lanesRunning > 0 && <CountChip label={`${lanesRunning} running`} variant="cyan" />}
+				{batch.tasksFailed > 0 && <CountChip label={`${batch.tasksFailed} failed`} variant="red" />}
+				{tasksPending > 0 && <CountChip label={`${tasksPending} pending`} variant="muted" />}
+				<span className="text-[var(--text-muted)] font-mono ml-auto">
+					{batch.tasksComplete}/{batch.tasksTotal}
+				</span>
 			</div>
+
+			{/* Wave chips */}
+			{batch.waves.length > 1 && (
+				<div className="flex items-center gap-1.5 mt-2 flex-wrap">
+					{batch.waves.map((w, i) => (
+						<WaveChip key={i} waveIndex={i} currentWave={batch.currentWave} taskCount={w.taskIds.length} />
+					))}
+				</div>
+			)}
 		</div>
 	);
 }
 
-function LaneCell({ lane }: { lane: LaneStatus }) {
-	const cellClass = `lane-cell lane-${lane.state}`;
+function SegmentedBar({
+	waves,
+	currentWave,
+	tasksTotal,
+}: {
+	waves: WaveAssignment[];
+	currentWave: number;
+	tasksTotal: number;
+}) {
+	if (tasksTotal === 0) return null;
+
+	return (
+		<div className="h-2.5 rounded-full overflow-hidden flex" style={{ background: "var(--bg-elevated)" }}>
+			{waves.map((w, i) => {
+				const waveTaskCount = w.taskIds.length;
+				const widthPct = (waveTaskCount / tasksTotal) * 100;
+				if (widthPct === 0) return null;
+
+				const isCurrent = i === currentWave;
+				const isFuture = i > currentWave;
+				const isPast = i < currentWave;
+
+				return (
+					<div
+						key={i}
+						className="wave-seg"
+						style={{
+							width: `${widthPct}%`,
+							boxShadow: isCurrent ? "inset 0 0 0 1px var(--accent-blue)" : undefined,
+							background: isFuture ? "var(--bg-hover)" : undefined,
+						}}
+					>
+						<div
+							className={`wave-seg-fill ${pctClass(isPast ? 100 : isCurrent ? 50 : 0)}`}
+							style={{ width: isPast ? "100%" : isCurrent ? "50%" : "0%" }}
+						/>
+						{waves.length <= 8 && <span className="wave-seg-label">{i + 1}</span>}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
+function CountChip({ label, variant }: { label: string; variant: "green" | "cyan" | "red" | "muted" }) {
+	const styles: Record<string, { bg: string; color: string }> = {
+		green: { bg: "rgba(74, 222, 128, 0.12)", color: "var(--accent-green)" },
+		cyan: { bg: "rgba(34, 211, 238, 0.12)", color: "var(--accent-cyan)" },
+		red: { bg: "rgba(248, 113, 113, 0.12)", color: "var(--accent-red)" },
+		muted: { bg: "rgba(100, 116, 139, 0.08)", color: "var(--text-muted)" },
+	};
+	const s = styles[variant];
+	return (
+		<span
+			className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium font-mono"
+			style={{ background: s.bg, color: s.color, fontSize: "11px" }}
+		>
+			{label}
+		</span>
+	);
+}
+
+function WaveChip({
+	waveIndex,
+	currentWave,
+	taskCount,
+}: {
+	waveIndex: number;
+	currentWave: number;
+	taskCount: number;
+}) {
+	const isPast = waveIndex < currentWave;
+	const isCurrent = waveIndex === currentWave;
+
+	let bg = "var(--bg-elevated)";
+	let color = "var(--text-muted)";
+	let border = "var(--border-default)";
+
+	if (isPast) {
+		bg = "rgba(74, 222, 128, 0.12)";
+		color = "var(--accent-green)";
+		border = "transparent";
+	} else if (isCurrent) {
+		bg = "rgba(96, 165, 250, 0.12)";
+		color = "var(--accent-blue)";
+		border = "var(--accent-blue)";
+	}
+
+	return (
+		<span
+			className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[11px] font-medium"
+			style={{ background: bg, color, border: `1px solid ${border}` }}
+		>
+			W{waveIndex + 1}
+			<span style={{ opacity: 0.6, fontSize: "10px" }}>{taskCount}</span>
+		</span>
+	);
+}
+
+function pctClass(pct: number): string {
+	if (pct >= 100) return "pct-hi";
+	if (pct >= 50) return "pct-mid";
+	if (pct > 0) return "pct-low";
+	return "pct-0";
+}
+
+// ---------------------------------------------------------------------------
+// LaneCell
+// ---------------------------------------------------------------------------
+
+interface LaneCellProps {
+	lane: LaneStatus;
+	currentTask: TaskOutcome | null;
+	onView?: () => void;
+}
+
+function LaneCell({ lane, currentTask, onView }: LaneCellProps) {
+	const [copied, setCopied] = useState(false);
+	const cellClass = `lane-cell lane-${lane.status}`;
+
+	function handleCopy() {
+		if (!lane.sessionName) return;
+		navigator.clipboard
+			.writeText(lane.sessionName)
+			.then(() => {
+				setCopied(true);
+				setTimeout(() => setCopied(false), 1500);
+			})
+			.catch(() => {});
+	}
+
 	return (
 		<div className={cellClass}>
+			{/* Lane header row */}
 			<div className="flex items-center justify-between mb-2">
 				<div className="flex items-center gap-2">
-					<LaneIcon state={lane.state} />
-					<span className="text-xs font-mono text-[var(--text-muted)]">Lane {lane.laneId}</span>
+					<LaneIcon status={lane.status} />
+					<span className="text-xs font-mono text-[var(--text-muted)]">Lane {lane.lane}</span>
+					<span className="text-xs uppercase tracking-wider" style={{ color: statusColor(lane.status) }}>
+						{lane.status}
+					</span>
 				</div>
-				<span className="text-xs text-[var(--text-muted)] uppercase tracking-wider">{lane.state}</span>
+				{/* View conversation button */}
+				{onView && (
+					<button type="button" className="btn-icon" onClick={onView} title="View conversation">
+						<Eye size={11} />
+						<span>View</span>
+					</button>
+				)}
 			</div>
-			<div className="text-sm truncate">
-				{lane.currentTaskTitle ?? <span className="text-[var(--text-muted)]">(idle)</span>}
+
+			{/* Current task title */}
+			<div className="text-sm truncate font-medium mb-2">
+				{currentTask?.taskId ?? lane.taskId ?? <span className="text-[var(--text-muted)] font-normal">(idle)</span>}
 			</div>
-			{lane.pid && <div className="mt-1 text-xs text-[var(--text-muted)] font-mono">pid {lane.pid}</div>}
+
+			{/* Step progress + elapsed */}
+			{(lane.stepProgress || lane.elapsed > 0) && (
+				<div className="flex items-center gap-3 mb-2">
+					{lane.stepProgress && (
+						<span className="lane-meta-chip">
+							<CheckCircle2 size={10} style={{ opacity: 0.6 }} />
+							{lane.stepProgress}
+						</span>
+					)}
+					{lane.elapsed > 0 && (
+						<span className="lane-meta-chip">
+							<Clock size={10} style={{ opacity: 0.6 }} />
+							{formatDuration(lane.elapsed)}
+						</span>
+					)}
+					{lane.iteration > 1 && (
+						<span className="lane-meta-chip" title="Iteration/retry count">
+							i{lane.iteration}
+						</span>
+					)}
+				</div>
+			)}
+
+			{/* Task telemetry */}
+			{currentTask?.telemetry && <TaskTelemetryBadge telemetry={currentTask.telemetry} />}
+
+			{/* Session name */}
+			{lane.sessionName && (
+				<div className="mt-2">
+					<button
+						type="button"
+						className={`session-tag ${copied ? "copied" : ""}`}
+						onClick={handleCopy}
+						title={copied ? "Copied!" : `Session: ${lane.sessionName} — click to copy`}
+					>
+						<Copy size={9} style={{ opacity: 0.7 }} />
+						{lane.sessionName}
+					</button>
+				</div>
+			)}
 		</div>
 	);
 }
 
-function LaneIcon({ state }: { state: LaneStatus["state"] }) {
-	switch (state) {
+function TaskTelemetryBadge({ telemetry }: { telemetry: TaskTelemetry }) {
+	const totalIn = telemetry.inputTokens + telemetry.cacheReadTokens;
+	const out = telemetry.outputTokens;
+	if (totalIn === 0 && out === 0) return null;
+
+	let label = `↑${formatTokens(totalIn)} ↓${formatTokens(out)}`;
+	if (telemetry.costUsd > 0) label += ` $${telemetry.costUsd.toFixed(2)}`;
+
+	return (
+		<div className="mb-2">
+			<span className="telemetry-badge" title="Tokens: input↑ output↓ cost">
+				{label}
+			</span>
+		</div>
+	);
+}
+
+function LaneIcon({ status }: { status: LaneStatus["status"] }) {
+	switch (status) {
 		case "running":
 			return <Activity size={14} className="text-[var(--accent-cyan)]" />;
 		case "complete":
 			return <CheckCircle2 size={14} className="text-[var(--accent-green)]" />;
 		case "failed":
-		case "recovering":
 			return <XCircle size={14} className="text-[var(--accent-red)]" />;
 		default:
 			return <CircleDashed size={14} className="text-[var(--text-muted)]" />;
 	}
+}
+
+function statusColor(status: LaneStatus["status"]): string {
+	switch (status) {
+		case "running":
+			return "var(--accent-cyan)";
+		case "complete":
+			return "var(--accent-green)";
+		case "failed":
+			return "var(--accent-red)";
+		case "stalled":
+			return "var(--accent-amber)";
+		default:
+			return "var(--text-muted)";
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatDuration(ms: number): string {
+	if (ms <= 0) return "0s";
+	const totalSec = Math.floor(ms / 1000);
+	const h = Math.floor(totalSec / 3600);
+	const m = Math.floor((totalSec % 3600) / 60);
+	const s = totalSec % 60;
+	if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+	return `${m}m ${String(s).padStart(2, "0")}s`;
+}
+
+function formatTokens(n: number): string {
+	if (n === 0) return "0";
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+	return String(n);
 }

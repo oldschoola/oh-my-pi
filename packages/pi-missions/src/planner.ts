@@ -77,7 +77,7 @@ export async function runMissionPlanner(
 	if (!selected) return null;
 	const templateKey = selected.key;
 	const template = getTemplate(templateKey);
-	const mode = template.mode;
+	const _mode = template.mode;
 
 	// ── Step 2: Model assignment ──────────────────────────────────
 	// Always show the assigner. Saved defaults (if any) pre-populate each tab
@@ -107,8 +107,36 @@ export async function runMissionPlanner(
 		(await ctx.ui.input("Any constraints or boundaries?", "e.g. don't modify auth module (optional)")) ?? "";
 
 	// ── Step 5: Build MissionState ──────────────────────────────────────────
+	return buildStateFromConfig({
+		description,
+		templateKey,
+		autonomy,
+		modelAssignment,
+		constraints,
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Non-interactive state builder (shared with /mission-gui)
+// ---------------------------------------------------------------------------
+
+export interface MissionStateConfig {
+	description: string;
+	templateKey: string;
+	autonomy: AutonomyLevel;
+	modelAssignment: ModelAssignment;
+	constraints?: string;
+}
+
+/**
+ * Construct a fresh MissionState from a fully-resolved config. Shared by the
+ * interactive planner and the /mission-gui browser flow; contains no I/O and
+ * no ctx-dependent branching.
+ */
+export function buildStateFromConfig(config: MissionStateConfig): MissionState {
+	const template = getTemplate(config.templateKey);
 	const now = new Date().toISOString();
-	const phases = buildPhases(templateKey);
+	const phases = buildPhases(config.templateKey);
 
 	const initialEvent: ProgressEvent = {
 		timestamp: now,
@@ -119,19 +147,18 @@ export async function runMissionPlanner(
 				: `Mission started in ${template.name} mode`,
 	};
 
-	const state: MissionState = {
-		description: constraints ? `${description}\n\nConstraints: ${constraints}` : description,
-		mode,
-		templateKey,
+	const constraints = config.constraints ?? "";
+	return {
+		description: constraints ? `${config.description}\n\nConstraints: ${constraints}` : config.description,
+		mode: template.mode,
+		templateKey: config.templateKey,
 		currentPhase: phases.length > 0 ? phases[0].name : undefined,
 		phases,
-		autonomy,
-		modelAssignment,
+		autonomy: config.autonomy,
+		modelAssignment: config.modelAssignment,
 		paused: false,
 		pauseHistory: [],
 		progressLog: [initialEvent],
 		startedAt: now,
 	};
-
-	return state;
 }
