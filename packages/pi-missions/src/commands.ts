@@ -29,8 +29,11 @@ function openInBrowser(url: string): void {
 	} catch {}
 }
 
-/** Module-scoped singleton so repeated `/mission-gui` calls reuse the dashboard server. */
+/** Module-scoped singleton so repeated `/mission` and `/mission-gui` calls reuse the dashboard server. */
 let dashboardServer: Promise<{ port: number; stop: () => void }> | null = null;
+/** Whether the dashboard URL has been opened in the browser this session. */
+let dashboardBrowserOpened = false;
+
 async function ensureDashboardServer(): Promise<{ port: number; stop: () => void }> {
 	if (!dashboardServer) {
 		dashboardServer = startServer({ port: Number.parseInt(process.env.OMP_MISSION_PORT ?? "3848", 10) }).catch(
@@ -41,6 +44,29 @@ async function ensureDashboardServer(): Promise<{ port: number; stop: () => void
 		);
 	}
 	return dashboardServer;
+}
+
+/**
+ * Start the dashboard server and open it in the browser the first time it is
+ * launched in this session. Subsequent calls just notify the URL without
+ * spawning new browser windows.
+ */
+async function ensureDashboardLaunched(ctx: Pick<ExtensionCommandContext, "ui">): Promise<void> {
+	try {
+		const { port } = await ensureDashboardServer();
+		const url = `http://localhost:${port}`;
+		if (!dashboardBrowserOpened) {
+			dashboardBrowserOpened = true;
+			ctx.ui.notify(`Dashboard opened: ${url}`, "info");
+			openInBrowser(url);
+		} else {
+			ctx.ui.notify(`Dashboard: ${url}`, "info");
+		}
+	} catch (err) {
+		logger.warn("[pi-mission] dashboard server failed to start", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
 }
 
 import KICKOFF_TEMPLATE from "./prompts/mission-gui-kickoff.md" with { type: "text" };
@@ -157,15 +183,8 @@ export function registerMissionCommands(
 				persist(ctx, newState);
 
 				// Start dashboard server so the web UI can track real-time progress.
-				void ensureDashboardServer()
-					.then(({ port }) => {
-						ctx.ui.notify(`Dashboard: http://localhost:${port}`, "info");
-					})
-					.catch(err => {
-						logger.warn("[pi-mission] dashboard server failed to start", {
-							error: err instanceof Error ? err.message : String(err),
-						});
-					});
+				// Auto-opens the browser the first time a mission is started in this session.
+				void ensureDashboardLaunched(ctx);
 
 				// Build kick-off message based on mode
 				const firstPhase = newState.phases.find(p => p.status === "active");
@@ -585,6 +604,7 @@ export function registerMissionCommands(
 				const url = `http://localhost:${port}/?gui=${encodeURIComponent(bridge.token)}`;
 				ctx.ui.notify(`🌐 MissionControl: ${url}\nAwaiting mission config from the browser…`, "info");
 				openInBrowser(url);
+				dashboardBrowserOpened = true;
 
 				const state = getState();
 				if (state && !state.completedAt && !state.paused) {

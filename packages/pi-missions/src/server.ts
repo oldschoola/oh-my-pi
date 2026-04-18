@@ -430,20 +430,26 @@ async function readTaskStatusMd(cwd: string, rawTaskId: string): Promise<string 
 
 function buildSSEStream(cwd: string, missionId: string): Response {
 	const encoder = new TextEncoder();
-	const stream = new ReadableStream({
-		async start(controller) {
-			let cancelled = false;
-			let interval: NodeJS.Timeout | undefined;
+	let cancelled = false;
+	let interval: NodeJS.Timeout | undefined;
+	let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined;
 
-			const stop = (): void => {
-				cancelled = true;
-				if (interval !== undefined) clearInterval(interval);
-				try {
-					controller.close();
-				} catch {
-					// already closed
-				}
-			};
+	const stop = (): void => {
+		if (cancelled) return;
+		cancelled = true;
+		if (interval !== undefined) clearInterval(interval);
+		if (controllerRef) {
+			try {
+				controllerRef.close();
+			} catch {
+				// already closed
+			}
+		}
+	};
+
+	const stream = new ReadableStream<Uint8Array>({
+		async start(controller) {
+			controllerRef = controller;
 
 			const send = (payload: unknown): void => {
 				if (cancelled) return;
@@ -463,13 +469,11 @@ function buildSSEStream(cwd: string, missionId: string): Response {
 				if (cancelled) return;
 				void tick();
 			}, 2000);
-
-			(controller as ReadableStreamDefaultController & { signal?: AbortSignal }).signal?.addEventListener?.(
-				"abort",
-				() => {
-					stop();
-				},
-			);
+		},
+		// Called by the runtime when the consumer (e.g. browser EventSource)
+		// disconnects. Must tear down the polling loop to avoid leaking timers.
+		cancel() {
+			stop();
 		},
 	});
 	return new Response(stream, {

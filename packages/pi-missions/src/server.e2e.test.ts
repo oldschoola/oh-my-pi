@@ -134,3 +134,84 @@ test("GET /api/status-md/missing returns 404", async () => {
 	const res = await fetch(`${baseUrl}/api/status-md/task-99`);
 	expect(res.status).toBe(404);
 });
+
+
+// ---------------------------------------------------------------------------
+// SSE lifecycle — verifies server stops polling on completion / disconnect.
+// ---------------------------------------------------------------------------
+
+async function readSSEMessage(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
+	const decoder = new TextDecoder();
+	let buffer = "";
+	while (!buffer.includes("\n\n")) {
+		const { value, done } = await reader.read();
+		if (done) break;
+		buffer += decoder.decode(value, { stream: true });
+	}
+	return buffer;
+}
+
+function writeMission(id: string, state: Record<string, unknown>): void {
+	const missionsDir = join(workDir, ".omp", "missions");
+	mkdirSync(missionsDir, { recursive: true });
+	writeFileSync(join(missionsDir, `${id}.json`), JSON.stringify(state));
+}
+
+test("SSE stream closes immediately once mission is completed", async () => {
+	writeMission("sse-completed", {
+		description: "completed",
+		mode: "simple",
+		phases: [{ name: "Plan", emoji: "P", status: "done" }],
+		autonomy: "high",
+		modelAssignment: {},
+		paused: false,
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: "2025-01-01T10:00:00Z",
+		completedAt: "2025-01-01T11:00:00Z",
+		kind: "simple",
+	});
+
+	const res = await fetch(`${baseUrl}/api/mission/sse-completed/stream`);
+	expect(res.status).toBe(200);
+	expect(res.headers.get("content-type")).toContain("text/event-stream");
+	const reader = res.body?.getReader();
+	expect(reader).toBeDefined();
+
+	const first = await readSSEMessage(reader as ReadableStreamDefaultReader<Uint8Array>);
+	expect(first).toContain('"type":"snapshot"');
+	expect(first).toContain('"completedAt":"2025-01-01T11:00:00Z"');
+
+	// After emitting the terminal snapshot, the server must close the stream.
+	const { done } = await (reader as ReadableStreamDefaultReader<Uint8Array>).read();
+	expect(done).toBe(true);
+});
+
+test("SSE stream delivers snapshot for active missions without closing", async () => {
+	writeMission("sse-active", {
+		description: "active",
+		mode: "simple",
+		phases: [{ name: "Plan", emoji: "P", status: "active" }],
+		autonomy: "high",
+		modelAssignment: {},
+		paused: false,
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: "2025-01-01T10:00:00Z",
+		kind: "simple",
+	});
+
+	const ctrl = new AbortController();
+	const res = await fetch(`${baseUrl}/api/mission/sse-active/stream`, { signal: ctrl.signal });
+	expect(res.status).toBe(200);
+	const reader = res.body?.getReader();
+	expect(reader).toBeDefined();
+
+	const first = await readSSEMessage(reader as ReadableStreamDefaultReader<Uint8Array>);
+	expect(first).toContain('"type":"snapshot"');
+	expect(first).not.toContain('"completedAt"');
+
+	// Abort client-side to trigger server cancel() — release resources.
+	ctrl.abort();
+	expect(ctrl.signal.aborted).toBe(true);
+});
