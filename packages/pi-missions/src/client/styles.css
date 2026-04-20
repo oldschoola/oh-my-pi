@@ -331,6 +331,109 @@ html {
     opacity: 1;
   }
 
+  /* Taller variant for the supervisor panel's stacked sub-sections.
+     Sub-sections (conversation, timeline) own their own max-height +
+     overflow-y:auto — the outer container must never clip, otherwise long
+     Batch Summary content is silently hidden. We keep the opacity fade so
+     the collapse still feels animated even though max-height can't
+     interpolate to/from `none`. */
+  .collapsible-body-tall {
+    overflow: hidden;
+    transition: opacity 0.3s ease;
+  }
+  .collapsible-body-tall.collapsed { max-height: 0; opacity: 0; }
+  .collapsible-body-tall.expanded {
+    max-height: none;
+    opacity: 1;
+  }
+
+  .supervisor-subsection {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .supervisor-subsection:first-child {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 0;
+  }
+  .supervisor-subheading {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  .conv-bubble {
+    padding: 8px 10px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+  }
+  .conv-bubble.conv-operator {
+    background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+    border-color: color-mix(in srgb, var(--accent-blue) 22%, transparent);
+  }
+  .conv-bubble.conv-supervisor {
+    background: color-mix(in srgb, var(--accent-cyan) 8%, transparent);
+    border-color: color-mix(in srgb, var(--accent-cyan) 22%, transparent);
+  }
+
+  .badge-tier {
+    display: inline-block;
+    padding: 0 5px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+  }
+  .badge-tier[data-tier="0"] {
+    background: color-mix(in srgb, var(--accent-amber) 14%, transparent);
+    color: var(--accent-amber);
+  }
+  .badge-tier[data-tier="1"] {
+    background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+    color: var(--accent-blue);
+  }
+
+  .supervisor-markdown {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .history-table {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .history-table table { border-collapse: collapse; }
+  .history-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    padding: 6px 10px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .history-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .history-table tbody tr:last-child td { border-bottom: none; }
+  .history-table tbody tr:hover td { background: var(--bg-hover); }
+
   .btn {
     display: inline-flex;
     align-items: center;

@@ -13,7 +13,15 @@
 
 import * as path from "node:path";
 import { isEnoent } from "@oh-my-pi/pi-utils";
-import { parseStatusMd } from "./missioncontrol";
+import type { AuditTrailEntry, SupervisorLockfile, Tier0EventSummary } from "./missioncontrol";
+import {
+	isLockStale,
+	parseStatusMd,
+	readAuditTrail,
+	readLockfile,
+	readTier0EventsForBatch,
+	supervisorDir,
+} from "./missioncontrol";
 import { readSidecar } from "./telemetry/sidecar";
 import type { BatchState, MissionState } from "./types";
 
@@ -29,6 +37,17 @@ export interface MissionSummary {
 	batchPhase?: BatchState["phase"];
 	laneCount?: number;
 	cost?: number;
+	/** Batch task counts (absent for simple missions). */
+	tasksTotal?: number;
+	tasksComplete?: number;
+	tasksFailed?: number;
+	/** Aggregate token totals summed across all batch tasks. */
+	aggregateTokens?: {
+		inputTokens: number;
+		outputTokens: number;
+		cacheReadTokens: number;
+		cacheWriteTokens: number;
+	};
 }
 
 export interface MissionDetail extends MissionSummary {
@@ -86,6 +105,8 @@ async function readActiveBatch(cwd: string): Promise<MissionDetail | null> {
 function toDetail(id: string, state: MissionState): MissionDetail {
 	const kind: "simple" | "batch" = state.kind ?? (state.batch ? "batch" : "simple");
 	const status = resolveStatus(state);
+	const batch = state.batch;
+	const agg = batch ? aggregateBatchTelemetry(batch) : null;
 	return {
 		id,
 		description: state.description,
@@ -95,9 +116,58 @@ function toDetail(id: string, state: MissionState): MissionDetail {
 		completedAt: state.completedAt,
 		phaseCount: state.phases?.length,
 		completedPhases: state.phases?.filter(p => p.status === "done").length,
-		batchPhase: state.batch?.phase,
-		laneCount: state.batch?.laneCount,
+		batchPhase: batch?.phase,
+		laneCount: batch?.laneCount,
+		tasksTotal: batch?.tasksTotal,
+		tasksComplete: batch?.tasksComplete,
+		tasksFailed: batch?.tasksFailed,
+		cost: agg?.costUsd,
+		aggregateTokens: agg
+			? {
+					inputTokens: agg.inputTokens,
+					outputTokens: agg.outputTokens,
+					cacheReadTokens: agg.cacheReadTokens,
+					cacheWriteTokens: agg.cacheWriteTokens,
+				}
+			: undefined,
 		state,
+	};
+}
+
+/**
+ * Sum per-task telemetry into batch-wide totals. Returns null when the batch
+ * has no tasks with telemetry (so the caller can omit the aggregate fields).
+ */
+function aggregateBatchTelemetry(batch: BatchState): {
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	costUsd: number;
+} | null {
+	let input = 0;
+	let output = 0;
+	let cacheRead = 0;
+	let cacheWrite = 0;
+	let cost = 0;
+	let any = false;
+	for (const t of batch.tasks ?? []) {
+		const tel = t.telemetry;
+		if (!tel) continue;
+		any = true;
+		input += tel.inputTokens;
+		output += tel.outputTokens;
+		cacheRead += tel.cacheReadTokens;
+		cacheWrite += tel.cacheWriteTokens;
+		cost += tel.costUsd;
+	}
+	if (!any) return null;
+	return {
+		inputTokens: input,
+		outputTokens: output,
+		cacheReadTokens: cacheRead,
+		cacheWriteTokens: cacheWrite,
+		costUsd: cost,
 	};
 }
 
@@ -147,7 +217,7 @@ async function loadMissionRecord(cwd: string, id: string): Promise<MissionDetail
  */
 async function enrichBatchStatusData(cwd: string, detail: MissionDetail): Promise<void> {
 	const batch = detail.state.batch;
-	if (!batch || !batch.tasks) return;
+	if (!batch?.tasks) return;
 	const batchId = batch.batchId;
 	if (!batchId) return;
 	await Promise.all(
@@ -324,4 +394,200 @@ export async function getMissionAgentStatus(cwd: string, id: string): Promise<Ag
 		});
 	}
 	return { batchId: id, registry: { agents } };
+}
+
+// ---------------------------------------------------------------------------
+// Supervisor detail (for /api/supervisor/detail)
+// ---------------------------------------------------------------------------
+
+export interface SupervisorStatus {
+	state: "active" | "stale" | "inactive";
+	lock: SupervisorLockfile | null;
+	heartbeatAgeMs: number | null;
+}
+
+export interface SupervisorConversationEntry {
+	ts?: string;
+	role: string;
+	content: string;
+}
+
+export interface SupervisorTimelineEntry {
+	/** ISO timestamp (normalized to string). */
+	ts: string;
+	/** Raw machine-readable action or event type. */
+	action: string;
+	/** Operator-facing label derived from `action`. */
+	label: string;
+	/** Tier classification: 0 = engine/Tier0 event, 1 = explicit recovery action. */
+	tier: 0 | 1;
+	/** Pending/success/failure/skipped when available. */
+	outcome?: string;
+	classification?: string;
+	taskId?: string;
+	laneNumber?: number;
+	reason?: string;
+	detail?: string;
+}
+
+export interface SupervisorDetail {
+	status: SupervisorStatus;
+	conversation: SupervisorConversationEntry[];
+	timeline: SupervisorTimelineEntry[];
+	summary: string | null;
+}
+
+/**
+ * Human-readable labels for known recovery action codes. Unknown codes fall
+ * back to a prettified form of the raw code (`foo_bar_baz` → `Foo bar baz`).
+ */
+const RECOVERY_ACTION_LABELS: Readonly<Record<string, string>> = {
+	read_batch_state: "Read batch state",
+	read_status_md: "Read STATUS.md",
+	read_events_jsonl: "Read events log",
+	read_merge_results: "Read merge results",
+	read_file: "Read file",
+	run_git_status: "Run git status",
+	run_git_log: "Run git log",
+	run_git_diff: "Run git diff",
+	retry_lane: "Retry lane",
+	cleanup_worktree: "Clean up worktree",
+	retry_merge: "Retry merge",
+	reset_session: "Reset session collision",
+	clear_git_lock: "Clear git lock",
+	abort_batch: "Abort batch",
+	abort_lane: "Abort lane",
+	force_terminate: "Force terminate",
+	edit_batch_state: "Edit batch state",
+	git_reset: "git reset",
+	git_merge: "git merge",
+	git_checkout: "git checkout",
+	remove_worktree: "Remove worktree",
+	edit_status_md: "Edit STATUS.md",
+	delete_branch: "Delete branch",
+	skip_task: "Skip task",
+	skip_wave: "Skip wave",
+	tier0_recovery_attempt: "Tier 0 recovery attempt",
+	tier0_recovery_success: "Tier 0 recovery success",
+	tier0_recovery_exhausted: "Tier 0 recovery exhausted",
+	tier0_escalation: "Tier 0 escalation",
+};
+
+function labelForAction(action: string): string {
+	const known = RECOVERY_ACTION_LABELS[action];
+	if (known) return known;
+	if (!action) return "event";
+	const spaced = action.replace(/_/g, " ").trim();
+	return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : action;
+}
+
+async function readSupervisorConversation(cwd: string): Promise<SupervisorConversationEntry[]> {
+	const file = Bun.file(path.join(supervisorDir(cwd), "conversation.jsonl"));
+	let raw: string;
+	try {
+		raw = await file.text();
+	} catch (err) {
+		if (isEnoent(err)) return [];
+		return [];
+	}
+	const trimmed = raw.trim();
+	if (!trimmed) return [];
+	// Parse line-by-line so one malformed entry doesn't discard the whole file.
+	// Matches the resilience pattern used in readAuditTrail.
+	const entries: SupervisorConversationEntry[] = [];
+	for (const line of trimmed.split("\n")) {
+		const text = line.trim();
+		if (!text) continue;
+		let parsed: Record<string, unknown>;
+		try {
+			parsed = JSON.parse(text) as Record<string, unknown>;
+		} catch {
+			continue;
+		}
+		const role = typeof parsed.role === "string" ? parsed.role : undefined;
+		const content = typeof parsed.content === "string" ? parsed.content : undefined;
+		if (!role || content === undefined) continue;
+		const ts =
+			typeof parsed.ts === "string"
+				? parsed.ts
+				: typeof parsed.timestamp === "string"
+					? parsed.timestamp
+					: undefined;
+		entries.push({ ts, role, content });
+	}
+	return entries;
+}
+
+async function readSupervisorSummary(cwd: string): Promise<string | null> {
+	const file = Bun.file(path.join(supervisorDir(cwd), "summary.md"));
+	try {
+		return await file.text();
+	} catch (err) {
+		if (isEnoent(err)) return null;
+		return null;
+	}
+}
+
+function auditEntryToTimeline(entry: AuditTrailEntry): SupervisorTimelineEntry {
+	return {
+		ts: entry.ts,
+		action: entry.action,
+		label: labelForAction(entry.action),
+		tier: 1,
+		outcome: entry.result,
+		classification: entry.classification,
+		taskId: entry.taskId,
+		laneNumber: entry.laneNumber,
+		detail: entry.detail || undefined,
+	};
+}
+
+function tier0EventToTimeline(ev: Tier0EventSummary): SupervisorTimelineEntry {
+	return {
+		ts: ev.timestamp,
+		action: ev.type,
+		label: labelForAction(ev.type),
+		tier: 0,
+		taskId: ev.taskId,
+		reason: ev.error,
+		detail: ev.resolution ?? ev.suggestion ?? undefined,
+		classification: ev.pattern,
+	};
+}
+
+export async function getSupervisorDetail(cwd: string, batchId?: string): Promise<SupervisorDetail> {
+	const lock = readLockfile(cwd);
+	const effectiveBatchId = batchId ?? lock?.batchId;
+
+	const heartbeatAgeMs = lock ? Date.now() - new Date(lock.heartbeat).getTime() : null;
+	const status: SupervisorStatus = {
+		state: !lock ? "inactive" : isLockStale(lock) ? "stale" : "active",
+		lock,
+		heartbeatAgeMs: heartbeatAgeMs !== null && Number.isFinite(heartbeatAgeMs) ? heartbeatAgeMs : null,
+	};
+
+	const [conversation, summary] = await Promise.all([readSupervisorConversation(cwd), readSupervisorSummary(cwd)]);
+
+	let auditEntries: AuditTrailEntry[] = [];
+	try {
+		auditEntries = readAuditTrail(cwd, { limit: 500, batchId: effectiveBatchId });
+	} catch {
+		auditEntries = [];
+	}
+	const tier0Events = effectiveBatchId ? readTier0EventsForBatch(cwd, effectiveBatchId) : [];
+
+	const timeline: SupervisorTimelineEntry[] = [
+		...auditEntries.map(auditEntryToTimeline),
+		...tier0Events.map(tier0EventToTimeline),
+	];
+	timeline.sort((a, b) => {
+		const ta = Date.parse(a.ts);
+		const tb = Date.parse(b.ts);
+		if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
+		if (Number.isNaN(ta)) return 1;
+		if (Number.isNaN(tb)) return -1;
+		return ta - tb;
+	});
+
+	return { status, conversation, timeline, summary };
 }

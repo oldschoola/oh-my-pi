@@ -23,6 +23,15 @@ export interface MissionSummary {
 	batchPhase?: BatchPhase;
 	laneCount?: number;
 	cost?: number;
+	tasksTotal?: number;
+	tasksComplete?: number;
+	tasksFailed?: number;
+	aggregateTokens?: {
+		inputTokens: number;
+		outputTokens: number;
+		cacheReadTokens: number;
+		cacheWriteTokens: number;
+	};
 }
 
 export interface MissionPhase {
@@ -180,17 +189,56 @@ export interface MissionStartRequest {
 	waveSize?: number;
 }
 
+export interface HistoryTokenCounts {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	costUsd: number;
+}
+
+export interface BatchHistoryTask {
+	taskId: string;
+	taskName: string;
+	status: "succeeded" | "failed" | "skipped" | "blocked" | "stalled" | "pending";
+	wave: number;
+	lane: number;
+	durationMs: number;
+	tokens: HistoryTokenCounts;
+	exitReason: string | null;
+}
+
+export interface BatchHistoryWave {
+	wave: number;
+	tasks: string[];
+	mergeStatus: "succeeded" | "failed" | "partial" | "skipped";
+	durationMs: number;
+	tokens: HistoryTokenCounts;
+}
+
 export interface BatchHistoryEntry {
 	batchId: string;
 	missionId?: string;
 	description?: string;
 	phase?: string;
-	startedAt?: string;
-	completedAt?: string;
+	status?: "completed" | "partial" | "failed" | "aborted";
+	startedAt?: string | number;
+	completedAt?: string | number;
+	endedAt?: string | number;
 	durationMs?: number;
+	totalWaves?: number;
+	totalTasks?: number;
 	tasksTotal?: number;
 	tasksComplete?: number;
 	tasksFailed?: number;
+	succeededTasks?: number;
+	failedTasks?: number;
+	skippedTasks?: number;
+	blockedTasks?: number;
+	tokens?: HistoryTokenCounts;
+	tasks?: BatchHistoryTask[];
+	waves?: BatchHistoryWave[];
+	integratedAt?: number;
 	[key: string]: unknown;
 }
 
@@ -203,14 +251,58 @@ export interface SupervisorEvent {
 	[key: string]: unknown;
 }
 
-export interface MailboxEvent {
+export interface SupervisorLock {
+	pid: number;
+	sessionId: string;
+	batchId: string;
+	startedAt: string;
+	heartbeat: string;
+}
+
+export interface SupervisorStatus {
+	state: "active" | "stale" | "inactive";
+	lock: SupervisorLock | null;
+	heartbeatAgeMs: number | null;
+}
+
+export interface SupervisorConversationEntry {
 	ts?: string;
+	role: string;
+	content: string;
+}
+
+export interface SupervisorTimelineEntry {
+	ts: string;
+	action: string;
+	label: string;
+	tier: 0 | 1;
+	outcome?: string;
+	classification?: string;
+	taskId?: string;
+	laneNumber?: number;
+	reason?: string;
+	detail?: string;
+}
+
+export interface SupervisorDetail {
+	status: SupervisorStatus;
+	conversation: SupervisorConversationEntry[];
+	timeline: SupervisorTimelineEntry[];
+	summary: string | null;
+}
+
+export interface MailboxEvent {
+	ts?: string | number;
 	messageId?: string;
 	direction?: "inbox" | "outbox" | "broadcast";
 	from?: string;
 	to?: string;
+	/** Raw audit-event type (e.g. message_sent, message_delivered). */
 	type?: string;
+	/** Original message type (e.g. request, response). */
+	messageType?: string;
 	content?: string;
+	contentPreview?: string;
 	[key: string]: unknown;
 }
 

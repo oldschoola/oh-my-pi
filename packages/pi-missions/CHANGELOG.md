@@ -19,6 +19,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `addProgressEvent` returns a new state instead of mutating in place, matching the rest of `state.ts`. All 14 call sites updated.
 - `getProtocolForRole` uses a `Record<PhaseRole, string>` table instead of a `switch` with a brittle `default: return ""`. Adding a new `PhaseRole` variant now surfaces at compile time.
 
+
+### Added (dashboard parity, round 2)
+- MissionControl dashboard — richer mission list cards: inline search, live-ticking duration timer for active missions, mini progress bar (phase or task completion), cost chip from aggregate telemetry, batch task counts (`succeeded/total` plus failed highlight).
+- `/api/missions` and `/api/mission/:id` now include `tasksTotal`, `tasksComplete`, `tasksFailed`, and `aggregateTokens` rolled up from `state.batch.tasks[].telemetry`. `cost` is derived from the same aggregate.
+- Supervisor panel — four-section layout (Status, Conversation, Recovery Actions, Batch Summary). New `/api/supervisor/detail` endpoint returns `{ status, conversation, timeline, summary }` from `.omp/supervisor/{lock.json,conversation.jsonl,actions.jsonl,events.jsonl,summary.md}`. Recovery actions use human-readable labels and tier badges (T0 = Tier 0 engine events, T1 = explicit supervisor actions). Summary renders markdown with checkbox support.
+- `SummaryBar` component at the top of batch mission detail: segmented wave progress, status count chips, elapsed time, aggregate token/cost totals, and wave plan chips listing per-wave task IDs. `SegmentedBar` extracted as a shared component between `SummaryBar` and the lane view.
+- History detail view — clicking a completed mission expands inline stat cards (tasks, succeeded, failed, waves, duration, cost), a per-wave breakdown table, and a per-task breakdown table with status, wave, lane, duration, tokens, cost, and exit reason. No live polling — history is rendered from the stored `BatchHistorySummary`.
+- `ErrorsPanel` rendering the last 20 entries of `batch.errors` below the lane grid. Hidden when empty.
+- Mailbox panel — per-event status badges (sent / delivered / reply / escalated / rate-limit / inbox / outbox) derived from the audit-event `type` field, plus broadcast icon for `_broadcast` recipients.
+- e2e coverage for all of the above (`src/server.e2e.test.ts`): aggregate telemetry, supervisor detail inactive/active/stale states, extended history detail, batch errors surfacing, mailbox event type preservation.
 ### Added
 - Unit-test coverage for `completeMission`: active-phase closure, pending-only states, preservation of already-done phases, and non-mutation.
 - `CHANGELOG.md`.

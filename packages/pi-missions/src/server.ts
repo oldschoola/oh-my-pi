@@ -17,6 +17,7 @@ import {
 	getMissionAgentStatus,
 	getMissionEvents,
 	getMissionTelemetrySummary,
+	getSupervisorDetail,
 	listMissions,
 } from "./dashboard-api";
 import { dispatchStartRequest, type MissionStartRequest } from "./gui-bridge";
@@ -284,6 +285,13 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 				{ status: 200 },
 			);
 		}
+	}
+
+	// --- Supervisor detail (status + conversation + timeline + summary) -
+	if (p === "/api/supervisor/detail" && req.method === "GET") {
+		const batchId = url.searchParams.get("batchId") ?? (await activeBatchId(cwd));
+		const detail = await getSupervisorDetail(cwd, batchId ?? undefined);
+		return jsonResponse(detail);
 	}
 
 	// --- Mailbox events --------------------------------------------------

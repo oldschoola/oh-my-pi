@@ -462,3 +462,368 @@ test("GET /api/mission/:id leaves simple missions untouched by enrichment", asyn
 	const body = (await res.json()) as { state: { batch?: unknown } };
 	expect(body.state.batch).toBeUndefined();
 });
+
+// ---------------------------------------------------------------------------
+// G9 Mission List — aggregate task counts + cost
+// ---------------------------------------------------------------------------
+
+test("GET /api/missions exposes task counts + aggregate cost for batch missions", async () => {
+	writeMission("g9-batch", {
+		description: "batch with telemetry",
+		mode: "simple",
+		startedAt: "2025-01-02T10:00:00Z",
+		kind: "batch",
+		batch: {
+			batchId: "g9-batch",
+			phase: "running",
+			waves: [{ wave: 0, taskIds: ["T-1", "T-2"] }],
+			currentWave: 0,
+			laneCount: 2,
+			laneStatuses: [],
+			tasks: [
+				{
+					taskId: "T-1",
+					status: "succeeded",
+					startTime: 0,
+					endTime: 1,
+					exitReason: "",
+					sessionName: "s1",
+					doneFileFound: true,
+					telemetry: {
+						inputTokens: 1000,
+						outputTokens: 400,
+						cacheReadTokens: 50,
+						cacheWriteTokens: 20,
+						costUsd: 0.03,
+						toolCalls: 3,
+						durationMs: 1000,
+					},
+				},
+				{
+					taskId: "T-2",
+					status: "failed",
+					startTime: 0,
+					endTime: 1,
+					exitReason: "timeout",
+					sessionName: "s2",
+					doneFileFound: false,
+					telemetry: {
+						inputTokens: 500,
+						outputTokens: 200,
+						cacheReadTokens: 10,
+						cacheWriteTokens: 5,
+						costUsd: 0.02,
+						toolCalls: 1,
+						durationMs: 500,
+					},
+				},
+			],
+			tasksTotal: 2,
+			tasksComplete: 1,
+			tasksFailed: 1,
+			startTime: 0,
+			errors: [],
+		},
+	});
+
+	const res = await fetch(`${baseUrl}/api/missions`);
+	expect(res.status).toBe(200);
+	const summaries = (await res.json()) as Array<{
+		id: string;
+		tasksTotal?: number;
+		tasksComplete?: number;
+		tasksFailed?: number;
+		cost?: number;
+		aggregateTokens?: {
+			inputTokens: number;
+			outputTokens: number;
+			cacheReadTokens: number;
+			cacheWriteTokens: number;
+		};
+	}>;
+	const found = summaries.find(m => m.id === "g9-batch");
+	expect(found).toBeDefined();
+	expect(found?.tasksTotal).toBe(2);
+	expect(found?.tasksComplete).toBe(1);
+	expect(found?.tasksFailed).toBe(1);
+	expect(found?.cost).toBeCloseTo(0.05, 5);
+	expect(found?.aggregateTokens).toEqual({
+		inputTokens: 1500,
+		outputTokens: 600,
+		cacheReadTokens: 60,
+		cacheWriteTokens: 25,
+	});
+});
+
+test("GET /api/missions omits aggregate fields for batch with no telemetry", async () => {
+	writeMission("g9-batch-empty", {
+		description: "batch no telemetry",
+		mode: "simple",
+		startedAt: "2025-01-02T10:00:00Z",
+		kind: "batch",
+		batch: {
+			batchId: "g9-batch-empty",
+			phase: "running",
+			waves: [{ wave: 0, taskIds: ["T-1"] }],
+			currentWave: 0,
+			laneCount: 1,
+			laneStatuses: [],
+			tasks: [
+				{
+					taskId: "T-1",
+					status: "running",
+					startTime: null,
+					endTime: null,
+					exitReason: "",
+					sessionName: "s",
+					doneFileFound: false,
+				},
+			],
+			tasksTotal: 1,
+			tasksComplete: 0,
+			tasksFailed: 0,
+			startTime: 0,
+			errors: [],
+		},
+	});
+	const res = await fetch(`${baseUrl}/api/missions`);
+	const summaries = (await res.json()) as Array<{ id: string; aggregateTokens?: unknown; cost?: unknown }>;
+	const found = summaries.find(m => m.id === "g9-batch-empty");
+	expect(found?.aggregateTokens).toBeUndefined();
+	expect(found?.cost).toBeUndefined();
+});
+
+// ---------------------------------------------------------------------------
+// G4 Supervisor detail endpoint
+// ---------------------------------------------------------------------------
+
+function writeSupervisorFile(relPath: string, content: string): void {
+	const dir = join(workDir, ".omp", "supervisor");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, relPath), content);
+}
+
+test("GET /api/supervisor/detail returns inactive state with no lockfile", async () => {
+	const res = await fetch(`${baseUrl}/api/supervisor/detail`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		status: { state: string; lock: unknown };
+		conversation: unknown[];
+		timeline: unknown[];
+		summary: string | null;
+	};
+	expect(body.status.state).toBe("inactive");
+	expect(body.status.lock).toBeNull();
+	expect(body.conversation).toEqual([]);
+	expect(body.summary).toBeNull();
+});
+
+test("GET /api/supervisor/detail reports active lock + conversation + summary + timeline", async () => {
+	const heartbeat = new Date().toISOString();
+	writeSupervisorFile(
+		"lock.json",
+		JSON.stringify({
+			pid: 12345,
+			sessionId: "sup-abc",
+			batchId: "g4-batch",
+			startedAt: heartbeat,
+			heartbeat,
+		}),
+	);
+	writeSupervisorFile(
+		"conversation.jsonl",
+		`${JSON.stringify({ ts: heartbeat, role: "operator", content: "status?" })}\n${JSON.stringify({ ts: heartbeat, role: "supervisor", content: "all good" })}\n`,
+	);
+	writeSupervisorFile(
+		"actions.jsonl",
+		`${JSON.stringify({ ts: heartbeat, batchId: "g4-batch", action: "retry_lane", classification: "tier0_known", context: "", command: "", result: "success", detail: "retried lane 1", laneNumber: 1 })}\n`,
+	);
+	writeSupervisorFile(
+		"events.jsonl",
+		`${JSON.stringify({ timestamp: heartbeat, type: "tier0_recovery_attempt", batchId: "g4-batch", waveIndex: 0, pattern: "stall", attempt: 1, maxAttempts: 3, taskId: "T-1" })}\n`,
+	);
+	writeSupervisorFile("summary.md", "# Batch Summary\n\n- [x] first item\n- [ ] second item\n");
+
+	const res = await fetch(`${baseUrl}/api/supervisor/detail?batchId=g4-batch`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		status: { state: string; lock: { batchId: string }; heartbeatAgeMs: number | null };
+		conversation: Array<{ role: string; content: string }>;
+		timeline: Array<{ action: string; label: string; tier: number; taskId?: string }>;
+		summary: string | null;
+	};
+	expect(body.status.state).toBe("active");
+	expect(body.status.lock?.batchId).toBe("g4-batch");
+	expect(body.conversation.length).toBe(2);
+	expect(body.conversation[0].role).toBe("operator");
+	expect(body.conversation[1].role).toBe("supervisor");
+	expect(body.summary).toContain("Batch Summary");
+	expect(body.timeline.length).toBe(2);
+	const t1 = body.timeline.find(t => t.tier === 1);
+	const t0 = body.timeline.find(t => t.tier === 0);
+	expect(t1?.action).toBe("retry_lane");
+	expect(t1?.label).toBe("Retry lane");
+	expect(t0?.action).toBe("tier0_recovery_attempt");
+	expect(t0?.taskId).toBe("T-1");
+});
+
+test("GET /api/supervisor/detail marks lock as stale beyond threshold", async () => {
+	const oldTs = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+	writeSupervisorFile(
+		"lock.json",
+		JSON.stringify({
+			pid: 1,
+			sessionId: "old-session",
+			batchId: "stale-batch",
+			startedAt: oldTs,
+			heartbeat: oldTs,
+		}),
+	);
+	const res = await fetch(`${baseUrl}/api/supervisor/detail?batchId=stale-batch`);
+	const body = (await res.json()) as { status: { state: string; heartbeatAgeMs: number | null } };
+	expect(body.status.state).toBe("stale");
+	expect(body.status.heartbeatAgeMs).toBeGreaterThan(0);
+});
+
+test("GET /api/supervisor/detail skips malformed conversation lines", async () => {
+	const ts = new Date().toISOString();
+	// Line 2 is corrupt. A JSONL reader that parses the whole blob would
+	// drop every entry; the line-by-line reader must preserve the valid two.
+	writeSupervisorFile(
+		"conversation.jsonl",
+		[
+			JSON.stringify({ ts, role: "operator", content: "first" }),
+			"not json",
+			JSON.stringify({ ts, role: "supervisor", content: "second" }),
+		].join("\n"),
+	);
+	const res = await fetch(`${baseUrl}/api/supervisor/detail`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as { conversation: Array<{ role: string; content: string }> };
+	expect(body.conversation.length).toBe(2);
+	expect(body.conversation[0].content).toBe("first");
+	expect(body.conversation[1].content).toBe("second");
+});
+
+// ---------------------------------------------------------------------------
+// G6 History detail — extended shape
+// ---------------------------------------------------------------------------
+
+test("GET /api/history/:id returns full per-task + per-wave detail", async () => {
+	const projectDir = join(workDir, ".omp");
+	// Read existing history, add a richer entry, rewrite.
+	const path = join(projectDir, "mission-history.json");
+	const existing = JSON.parse(await Bun.file(path).text()) as unknown[];
+	existing.push({
+		batchId: "g6-batch",
+		description: "detailed history",
+		status: "completed",
+		startedAt: Date.parse("2025-01-02T10:00:00Z"),
+		endedAt: Date.parse("2025-01-02T10:30:00Z"),
+		durationMs: 30 * 60_000,
+		totalWaves: 1,
+		totalTasks: 2,
+		succeededTasks: 2,
+		failedTasks: 0,
+		skippedTasks: 0,
+		blockedTasks: 0,
+		tokens: { input: 1000, output: 500, cacheRead: 100, cacheWrite: 50, costUsd: 0.12 },
+		tasks: [
+			{
+				taskId: "T-1",
+				taskName: "First",
+				status: "succeeded",
+				wave: 1,
+				lane: 1,
+				durationMs: 1000,
+				tokens: { input: 500, output: 200, cacheRead: 50, cacheWrite: 20, costUsd: 0.05 },
+				exitReason: null,
+			},
+			{
+				taskId: "T-2",
+				taskName: "Second",
+				status: "succeeded",
+				wave: 1,
+				lane: 2,
+				durationMs: 2000,
+				tokens: { input: 500, output: 300, cacheRead: 50, cacheWrite: 30, costUsd: 0.07 },
+				exitReason: null,
+			},
+		],
+		waves: [
+			{
+				wave: 1,
+				tasks: ["T-1", "T-2"],
+				mergeStatus: "succeeded",
+				durationMs: 2000,
+				tokens: { input: 1000, output: 500, cacheRead: 100, cacheWrite: 50, costUsd: 0.12 },
+			},
+		],
+	});
+	writeFileSync(path, JSON.stringify(existing));
+
+	const res = await fetch(`${baseUrl}/api/history/g6-batch`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		batchId: string;
+		totalTasks?: number;
+		succeededTasks?: number;
+		tasks?: Array<{ taskId: string; status: string; lane: number; wave: number }>;
+		waves?: Array<{ wave: number; tasks: string[]; mergeStatus: string }>;
+		tokens?: { costUsd: number };
+	};
+	expect(body.totalTasks).toBe(2);
+	expect(body.succeededTasks).toBe(2);
+	expect(body.tasks?.length).toBe(2);
+	expect(body.waves?.length).toBe(1);
+	expect(body.waves?.[0].mergeStatus).toBe("succeeded");
+	expect(body.tokens?.costUsd).toBeCloseTo(0.12, 5);
+});
+
+// ---------------------------------------------------------------------------
+// G7 Errors + G8 Mailbox status
+// ---------------------------------------------------------------------------
+
+test("GET /api/mission/:id exposes batch.errors array", async () => {
+	writeMission("g7-errors", {
+		description: "with errors",
+		mode: "simple",
+		startedAt: "2025-01-02T10:00:00Z",
+		kind: "batch",
+		batch: {
+			batchId: "g7-errors",
+			phase: "error",
+			waves: [],
+			currentWave: 0,
+			laneCount: 1,
+			laneStatuses: [],
+			tasks: [],
+			tasksTotal: 0,
+			tasksComplete: 0,
+			tasksFailed: 0,
+			startTime: 0,
+			errors: ["err-a", "err-b"],
+		},
+	});
+	const res = await fetch(`${baseUrl}/api/mission/g7-errors`);
+	const body = (await res.json()) as { state: { batch: { errors: string[] } } };
+	expect(body.state.batch.errors).toEqual(["err-a", "err-b"]);
+});
+
+test("GET /api/mailbox/events preserves event.type (for status badge mapping)", async () => {
+	const dir = join(workDir, ".omp", "mailbox", "mb-1");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(
+		join(dir, "events.jsonl"),
+		`${JSON.stringify({ batchId: "mb-1", ts: Date.now(), type: "message_sent", from: "a", to: "b", messageType: "request", contentPreview: "hello" })}\n${JSON.stringify({ batchId: "mb-1", ts: Date.now(), type: "message_rate_limited", from: "a", reason: "throttled" })}\n`,
+	);
+	const res = await fetch(`${baseUrl}/api/mailbox/events?batchId=mb-1`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		events: Array<{ type?: string; messageType?: string; contentPreview?: string }>;
+	};
+	expect(body.events.length).toBe(2);
+	expect(body.events[0].type).toBe("message_sent");
+	expect(body.events[0].messageType).toBe("request");
+	expect(body.events[1].type).toBe("message_rate_limited");
+});

@@ -1,4 +1,4 @@
-import { ChevronRight, Inbox } from "lucide-react";
+import { ArrowRight, ChevronRight, Inbox, Radio } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listMailboxEvents } from "../api";
 import type { MailboxEvent } from "../types";
@@ -51,25 +51,85 @@ export function MailboxPanel({ batchId, missionId: _missionId }: { batchId?: str
 						</p>
 					</div>
 				) : (
-					<ul className="grid gap-1 text-xs font-mono max-h-64 overflow-y-auto mt-2">
+					<ul className="grid gap-1 text-xs max-h-64 overflow-y-auto mt-2">
 						{events
 							.slice()
 							.reverse()
 							.map((ev, i) => (
-								<li key={i} className="flex gap-2 py-0.5">
-									<span className="text-[var(--text-muted)] flex-shrink-0">{ev.ts ?? ""}</span>
-									<span className="flex-shrink-0">
-										{ev.from ?? "?"} → {ev.to ?? "?"}
-									</span>
-									<span style={{ color: "var(--accent-blue)" }} className="flex-shrink-0">
-										{ev.type ?? ""}
-									</span>
-									<span className="truncate text-[var(--text-secondary)]">{String(ev.content ?? "")}</span>
-								</li>
+								<MailboxRow key={i} event={ev} />
 							))}
 					</ul>
 				)}
 			</div>
 		</section>
 	);
+}
+
+function MailboxRow({ event: ev }: { event: MailboxEvent }) {
+	const status = statusFromEvent(ev);
+	const isBroadcast = ev.to === "_broadcast" || ev.direction === "broadcast";
+	return (
+		<li className="flex items-center gap-2 py-1 font-mono">
+			<span className="text-[var(--text-muted)] shrink-0">{formatTs(ev.ts)}</span>
+			{status && <StatusBadge status={status} />}
+			<span className="shrink-0 flex items-center gap-1">
+				<span>{ev.from ?? "?"}</span>
+				{isBroadcast ? (
+					<Radio size={10} className="text-[var(--accent-violet)]" />
+				) : (
+					<ArrowRight size={10} className="text-[var(--text-muted)]" />
+				)}
+				<span>{isBroadcast ? "all" : (ev.to ?? "?")}</span>
+			</span>
+			{ev.type && (
+				<span className="text-[var(--accent-blue)] shrink-0">
+					{ev.messageType ? String(ev.messageType) : ev.type}
+				</span>
+			)}
+			<span className="truncate text-[var(--text-secondary)]">{String(ev.content ?? "")}</span>
+		</li>
+	);
+}
+
+type MailboxStatus = "sent" | "delivered" | "replied" | "escalated" | "rate-limited" | "inbox" | "outbox";
+
+function statusFromEvent(ev: MailboxEvent): MailboxStatus | null {
+	// Prefer explicit audit-event `type`, then fall back to `direction`.
+	const t = typeof ev.type === "string" ? ev.type : undefined;
+	if (t === "message_sent") return "sent";
+	if (t === "message_delivered") return "delivered";
+	if (t === "message_replied") return "replied";
+	if (t === "message_escalated") return "escalated";
+	if (t === "message_rate_limited") return "rate-limited";
+	if (ev.direction === "inbox") return "inbox";
+	if (ev.direction === "outbox") return "outbox";
+	return null;
+}
+
+function StatusBadge({ status }: { status: MailboxStatus }) {
+	const map: Record<MailboxStatus, { color: string; bg: string; label: string }> = {
+		sent: { color: "var(--accent-blue)", bg: "rgba(96, 165, 250, 0.14)", label: "sent" },
+		delivered: { color: "var(--accent-green)", bg: "rgba(74, 222, 128, 0.14)", label: "delivered" },
+		replied: { color: "var(--accent-cyan)", bg: "rgba(34, 211, 238, 0.14)", label: "reply" },
+		escalated: { color: "var(--accent-red)", bg: "rgba(248, 113, 113, 0.14)", label: "escalated" },
+		"rate-limited": { color: "var(--accent-amber)", bg: "rgba(251, 191, 36, 0.14)", label: "rate-limit" },
+		inbox: { color: "var(--accent-indigo)", bg: "rgba(129, 140, 248, 0.14)", label: "inbox" },
+		outbox: { color: "var(--text-muted)", bg: "var(--bg-elevated)", label: "outbox" },
+	};
+	const s = map[status];
+	return (
+		<span
+			className="inline-block px-1.5 py-0.5 rounded-full shrink-0"
+			style={{ background: s.bg, color: s.color, fontSize: "10px", fontWeight: 600 }}
+		>
+			{s.label}
+		</span>
+	);
+}
+
+function formatTs(ts?: string | number): string {
+	if (!ts) return "";
+	const d = typeof ts === "number" ? new Date(ts) : new Date(ts);
+	if (Number.isNaN(d.getTime())) return String(ts);
+	return d.toLocaleTimeString();
 }

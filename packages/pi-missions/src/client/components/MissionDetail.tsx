@@ -1,13 +1,15 @@
 import { Clock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getMissionEvents, getMissionTelemetry, subscribeMission } from "../api";
+import { formatDuration } from "../format";
 import type { MissionDetail as MissionDetailType, TelemetryEvent, TelemetrySummary } from "../types";
+import { ErrorsPanel } from "./ErrorsPanel";
 import { EventFeed } from "./EventFeed";
 import { LaneGrid } from "./LaneGrid";
 import { PhaseTimeline } from "./PhaseTimeline";
 import { StatusBadge } from "./StatusBadge";
+import { SummaryBar } from "./SummaryBar";
 import { TelemetryPanel } from "./TelemetryPanel";
-
 export function MissionDetail({
 	initialDetail,
 	onViewLane,
@@ -20,11 +22,16 @@ export function MissionDetail({
 	const [telemetry, setTelemetry] = useState<TelemetrySummary>({});
 	const [now, setNow] = useState(Date.now());
 
-	// Tick every second for live elapsed timer
+	const state = detail.state;
+	const isActive = detail.status === "active" || detail.status === "paused";
+
+	// Tick every second while active so the elapsed timer stays live.
+	// Completed/failed missions render a static duration — no need to tick.
 	useEffect(() => {
+		if (!isActive) return;
 		const id = setInterval(() => setNow(Date.now()), 1000);
 		return () => clearInterval(id);
-	}, []);
+	}, [isActive]);
 
 	useEffect(() => {
 		setDetail(initialDetail);
@@ -54,10 +61,7 @@ export function MissionDetail({
 		};
 	}, [detail.id]);
 
-	const state = detail.state;
-	const isActive = detail.status === "active" || detail.status === "paused";
-
-	// Compute duration — live ticking for active, static for completed
+	// Compute duration — live ticking for active, static for completed.
 	let duration: string | null = null;
 	if (state.startedAt && state.completedAt && !isActive) {
 		duration = durationBetween(state.startedAt, state.completedAt);
@@ -98,7 +102,14 @@ export function MissionDetail({
 			</div>
 
 			{detail.kind === "batch" && state.batch ? (
-				<LaneGrid batch={state.batch} onViewLane={onViewLane} />
+				<>
+					<SummaryBar
+						batch={state.batch}
+						summary={{ cost: detail.cost, aggregateTokens: detail.aggregateTokens }}
+					/>
+					<LaneGrid batch={state.batch} onViewLane={onViewLane} />
+					<ErrorsPanel errors={state.batch.errors ?? []} />
+				</>
 			) : (
 				<div className="surface p-5">
 					<SectionHeader label="Phases" />
@@ -130,14 +141,4 @@ function durationBetween(startIso: string, endIso: string): string {
 	} catch {
 		return "";
 	}
-}
-
-function formatDuration(ms: number): string {
-	if (ms <= 0) return "0s";
-	const totalSec = Math.floor(ms / 1000);
-	const h = Math.floor(totalSec / 3600);
-	const m = Math.floor((totalSec % 3600) / 60);
-	const s = totalSec % 60;
-	if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
-	return `${m}m ${String(s).padStart(2, "0")}s`;
 }

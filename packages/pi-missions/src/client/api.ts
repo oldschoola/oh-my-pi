@@ -5,6 +5,7 @@ import type {
 	MissionDetail,
 	MissionStartRequest,
 	MissionSummary,
+	SupervisorDetail,
 	SupervisorEvent,
 	TelemetryEvent,
 	TelemetrySummary,
@@ -94,6 +95,21 @@ export async function listSupervisorEvents(limit = 200, batchId?: string): Promi
 	if (!res.ok) return [];
 	const body = (await res.json()) as { entries?: SupervisorEvent[] };
 	return body.entries ?? [];
+}
+
+export async function getSupervisorDetail(batchId?: string): Promise<SupervisorDetail> {
+	const qs = new URLSearchParams();
+	if (batchId) qs.set("batchId", batchId);
+	const res = await fetch(`${API_BASE}/supervisor/detail?${qs.toString()}`);
+	if (!res.ok) {
+		return {
+			status: { state: "inactive", lock: null, heartbeatAgeMs: null },
+			conversation: [],
+			timeline: [],
+			summary: null,
+		};
+	}
+	return res.json() as Promise<SupervisorDetail>;
 }
 
 export async function listMailboxEvents(batchId?: string, limit = 200): Promise<MailboxEvent[]> {
