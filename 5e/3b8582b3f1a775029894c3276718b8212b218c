@@ -1,0 +1,141 @@
+packages/pi-missions/templates/agents/supervisor-routing.md
+  8176c49269c355db 80
+packages/pi-missions/src/kickoff.ts
+  8176c49269c355db 1-39
+packages/pi-missions/src/missioncontrol/orch-handlers.ts
+  8176c49269c355db 1-362
+packages/pi-missions/templates/tasks/fix-feature-template.md
+  8176c49269c355db 1-103
+packages/pi-missions/src/missioncontrol/runtime.ts
+  8176c49269c355db 14-18,25-34,41-46,53,67,89-91,93,99-101,111-139,145-148,154,157-168,174,194-196,200-203,216
+packages/pi-missions/src/gui-bridge.ts
+  8176c49269c355db 2-4,6-13,15-16,39-40,50-52,55-61,71-72,84-86,98,106,112-141,152,157,175-190
+packages/pi-missions/src/missioncontrol/mailbox.ts
+  8176c49269c355db 138-151,161,244-262
+packages/pi-missions/src/index.ts
+  8176c49269c355db 29,33-34,36,38,41,43,45-48,50,62,67,255,261,269,608-616,672-678,684-685,688,690,728-840,865-876
+packages/pi-missions/src/missioncontrol/resume.ts
+  8176c49269c355db 14,848-867
+packages/pi-missions/src/planner.ts
+  8176c49269c355db 150,152,163
+packages/pi-missions/src/agent-bridge.ts
+  8176c49269c355db 1-325
+packages/pi-missions/src/dashboard-api.ts
+  3b44cd2f50ee8dc0 933-938,940-945
+packages/pi-missions/src/types.ts
+  8176c49269c355db 120-126,215-242,260-271,311-336,359-389
+packages/pi-missions/src/server-hooks.ts
+  8176c49269c355db 1-63
+packages/pi-missions/src/missioncontrol/planning.ts
+  8176c49269c355db 1-410
+packages/pi-missions/src/missioncontrol/discovery.ts
+  8176c49269c355db 87-96,970-1003,1024-1028
+packages/pi-missions/src/missioncontrol/persistence.ts
+  8176c49269c355db 181-230,262,295,615,619,754-768,910-1000,1080-1086,1172-1180
+packages/pi-missions/src/mission-server-binding.ts
+  8176c49269c355db 1-135
+packages/pi-missions/src/missioncontrol/validator-stall.ts
+  8176c49269c355db 1-146
+packages/pi-missions/src/missioncontrol/secret-scanner.ts
+  8176c49269c355db 1-195
+packages/pi-missions/src/missioncontrol/mission-plan.ts
+  8176c49269c355db 1-132
+packages/pi-missions/src/missioncontrol/killers.ts
+  8176c49269c355db 2,4-8,10-19,23-41,44,46-50,52-67,71,73-75,77-90
+packages/pi-missions/src/missioncontrol/abort.ts
+  8176c49269c355db 288-290,344
+packages/pi-missions/src/missioncontrol/types.ts
+  8176c49269c355db 393,606-609,699-703,706,708-709,711,760-777,817-818,1215-1261,1297-1302,1383-1395,1404-1410,1739-1746,1779-1790
+packages/pi-missions/src/missioncontrol/config-schema.ts
+  8176c49269c355db 260-345,392-393,554-556
+packages/pi-missions/src/missioncontrol/fix-features.ts
+  8176c49269c355db 1-251
+packages/pi-missions/src/missioncontrol/engine.ts
+  8176c49269c355db 11,66,82,84-86,106-109
+packages/pi-missions/templates/agents/milestone-scrutiny-validator.md
+  8176c49269c355db 1-156
+packages/pi-missions/src/missioncontrol/lane-runner.ts
+  8176c49269c355db 15-16,20,30-32,48-49,51,672-688,1395-1409,1420-1425,1441-1462,1466-1500,1568-1571,1573-1581,1583-1600,1602,1604,1606-1615,1617-1619,1621,1643-1666,1680-1694,1696-1739
+packages/pi-missions/src/missioncontrol/policy.ts
+  8176c49269c355db 1-196
+packages/pi-missions/src/missioncontrol/config-loader.ts
+  8176c49269c355db 405-407,751-755
+packages/pi-missions/src/commands.ts
+  8176c49269c355db 6,11,51-54,56-59,62-73,78,80,83-84,136-137,139,207,282,623,652,668-733
+packages/pi-missions/src/missioncontrol/mission-skills.ts
+  8176c49269c355db 1-423
+packages/pi-missions/src/missioncontrol/validation-contract.ts
+  8176c49269c355db 1-251
+packages/pi-missions/src/missioncontrol/mission-status.ts
+  8176c49269c355db 5-8,14-15,22-43,45-48,82-115,133
+packages/pi-missions/src/missioncontrol/milestone-runner.ts
+  8176c49269c355db 1-425
+packages/pi-missions/src/state.ts
+  8176c49269c355db 62-63,215-242
+packages/pi-missions/templates/agents/milestone-user-testing-validator.md
+  8176c49269c355db 1-147
+packages/pi-missions/src/server.ts
+  3b44cd2f50ee8dc0 15,523-532
+  8176c49269c355db 24-25,28-40,49,53-54,249-400,404,406-412,414-448,450-454,458-463,472-484,551-556,584-588,664-731
+packages/pi-missions/src/missioncontrol/validators.ts
+  8176c49269c355db 1-602
+packages/pi-missions/src/prompts/planning-conversation-protocol.md
+  8176c49269c355db 1-105
+packages/pi-missions/src/missioncontrol/engine-milestones.ts
+  8176c49269c355db 1-280
+packages/pi-missions/src/missioncontrol/knowledge.ts
+  8176c49269c355db 1-269
+packages/pi-missions/src/preferences.ts
+  8176c49269c355db 1-49
+packages/pi-missions/src/missioncontrol/supervisor.ts
+  8176c49269c355db 45-46,55-56,553-645,1068-1161,2013-2018,2024-2029,2253-2258
+packages/pi-missions/src/supervisor-tools.ts
+  8176c49269c355db 1-1339
+packages/pi-missions/src/missioncontrol/mission-checkpoint.ts
+  8176c49269c355db 1-169
+packages/pi-missions/src/missioncontrol/role-models.ts
+  8176c49269c355db 1-187
+packages/pi-missions/src/protocol.ts
+  8176c49269c355db 79-85
+packages/pi-missions/src/missioncontrol/telemetry-rollup.ts
+  8176c49269c355db 1-288
+packages/pi-missions/src/missioncontrol/index.ts
+  8176c49269c355db 91,100,102-104,115-116,134-135,228-246,297-311,330-340,343,361,392-408,411-433,446-474,512,520-547,602,617-627,630-639,642,645,656,682,720-735,800-803,918-919,975-1025
+packages/pi-missions/src/missioncontrol/worktree.ts
+  8176c49269c355db 2-3,6-8,12-14,1682-1684
+packages/pi-missions/src/missioncontrol/milestone-resume.ts
+  8176c49269c355db 1-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "5e3b8582b3f1a775029894c3276718b8212b218c",
+  "prompts": {
+    "3b44cd2f50ee8dc0": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "a4e73759-0026-4485-b680-97cf41ad34e1",
+        "model": "custom:claude-opus-4-7"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 238,
+      "total_deletions": 6,
+      "accepted_lines": 230,
+      "overriden_lines": 2
+    },
+    "8176c49269c355db": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "f3679b9a-f19b-4316-81ef-eec497b56745",
+        "model": "custom:claude-opus-4-7"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 23646,
+      "total_deletions": 902,
+      "accepted_lines": 23644,
+      "overriden_lines": 0
+    }
+  }
+}
