@@ -390,7 +390,7 @@ export const FATAL_DISCOVERY_CODES: ReadonlyArray<DiscoveryError["code"]> = [
 
 /**
  * Result of the full discovery pipeline (ported from taskplane types.ts:623).
- * Used by formatDiscoveryResults + runDiscovery (runDiscovery not yet ported).
+ * Used by `formatDiscoveryResults` and `runDiscovery`.
  */
 export interface DiscoveryResult {
 	pending: Map<string, ParsedTask>;
@@ -603,6 +603,10 @@ export interface PersistedTaskExitSummary {
 	cost: number;
 	durationSec: number;
 	retries?: number;
+	/** Token breakdown when the exit writer captured per-task usage. */
+	tokens?: import("./diagnostics").SessionTokenCounts;
+	/** Tool-call count when captured. */
+	toolCalls?: number;
 }
 
 /**
@@ -692,14 +696,19 @@ export function defaultResilienceState(): ResilienceState {
  *   v4 — Segment execution. Adds optional `segments` array and
  *         per-task `packetRepoId`, `packetTaskPath`, `segmentIds`,
  *         `activeSegmentId` fields.
+ *   v5 — Factory-aligned milestones. Adds top-level `milestones` array
+ *         and per-task fields `milestoneId`, `fulfillsAssertionIds`,
+ *         `parentFeatureId`, `isFixFeature`. Pre-v5 state is upconverted
+ *         in memory with an implicit single `M-001` milestone covering
+ *         every task.
  *
  * Compatibility policy:
- *   - load accepts v1/v2/v3/v4 files; v1→v2→v3→v4 auto-upconverted
+ *   - load accepts v1..v5 files; v1→v2→v3→v4→v5 auto-upconverted
  *     in memory (chained). On-disk file is NOT rewritten during load.
- *   - save always writes v4.
- *   - Schema versions > 4 are rejected with STATE_SCHEMA_INVALID.
+ *   - save always writes the current version.
+ *   - Schema versions > current are rejected with STATE_SCHEMA_INVALID.
  */
-export const BATCH_STATE_SCHEMA_VERSION = 4;
+export const BATCH_STATE_SCHEMA_VERSION = 5;
 
 /**
  * Error codes for state persistence operations.
@@ -748,6 +757,24 @@ export interface PersistedTaskRecord {
 	packetTaskPath?: string;
 	segmentIds?: string[];
 	activeSegmentId?: string | null;
+	/**
+	 * Milestone this task (feature) belongs to. Absent on pre-v5 records;
+	 * populated at load time with `"M-001"` during upconvert.
+	 */
+	milestoneId?: string;
+	/**
+	 * Validation assertion IDs this feature claims to satisfy. Consumed by
+	 * the scrutiny + user-testing validators at milestone boundaries.
+	 */
+	fulfillsAssertionIds?: string[];
+	/**
+	 * Parent feature ID when this record is an auto-generated fix feature
+	 * (`isFixFeature === true`). Lets the engine collect fix-feature clusters
+	 * under their originating feature without reparenting the wavePlan.
+	 */
+	parentFeatureId?: string;
+	/** True when this record was auto-generated from validator findings. */
+	isFixFeature?: boolean;
 }
 
 /**
@@ -787,6 +814,8 @@ export interface MissionBatchRuntimeState {
 	diagnostics?: BatchDiagnostics;
 	/** v4 segment records. */
 	segments?: PersistedSegmentRecord[];
+	/** v5 Factory-aligned milestones. */
+	milestones?: Milestone[];
 	_extraFields?: Record<string, unknown>;
 }
 
@@ -1183,6 +1212,53 @@ export interface PersistedLaneRecord {
 	repoId?: string;
 }
 
+// ── Milestones (Track A, Factory-aligned) ────────────────────────────
+//
+// A milestone groups one or more features (task records) into a logical
+// validation boundary. The engine executes features wave-by-wave as
+// before; milestones sit above waves and are the unit at which the
+// scrutiny + user-testing validators run.
+//
+// Lifecycle:
+//   pending   — no task in this milestone has started yet.
+//   in_progress — at least one task has entered `running`.
+//   validating — every non-fix task is terminal; validator(s) pending.
+//   passed    — validators reported no blocking findings.
+//   failed    — validators reported blocking findings that the engine
+//               exhausted `maxValidationRounds` fixing, or the operator
+//               explicitly force-failed the milestone.
+
+/** Lifecycle state for a milestone. */
+export type MilestoneStatus = "pending" | "in_progress" | "validating" | "passed" | "failed";
+
+/**
+ * A Factory-style milestone: a named group of features plus the
+ * assertions the milestone must satisfy before the engine advances.
+ *
+ * `featureIds` and `assertionIds` are authoritative — per-task
+ * `milestoneId` / `fulfillsAssertionIds` fields mirror this data for
+ * convenience during execution but are not the source of truth.
+ */
+export interface Milestone {
+	id: string;
+	name: string;
+	featureIds: string[];
+	assertionIds: string[];
+	status: MilestoneStatus;
+	/** 1-indexed count of validation rounds attempted so far. */
+	validationRounds: number;
+	/** Upper bound on validation rounds before the milestone is marked failed. */
+	maxValidationRounds: number;
+	startedAt?: number;
+	endedAt?: number;
+}
+
+/** Default Factory-observed cadence: plan → fix → re-validate → one more fix pass. */
+export const DEFAULT_MILESTONE_MAX_VALIDATION_ROUNDS = 4;
+
+/** Canonical ID for the implicit "everything" milestone used during v4→v5 upconvert. */
+export const DEFAULT_MILESTONE_ID = "M-001";
+
 /**
  * Persisted batch state (expanding surface).
  *
@@ -1218,6 +1294,12 @@ export interface PersistedBatchState {
 	diagnostics?: BatchDiagnostics;
 	lastError?: { code: string; message: string } | null;
 	errors?: string[];
+	/**
+	 * Factory-aligned milestones (schema v5). Each milestone groups
+	 * features and tracks validator rounds. Pre-v5 state is upconverted
+	 * in memory with a single implicit `M-001` milestone.
+	 */
+	milestones?: Milestone[];
 	/** Unknown top-level fields preserved for round-trip fidelity across schema versions. */
 	_extraFields?: Record<string, unknown>;
 }
@@ -1298,6 +1380,19 @@ export interface ResumeEligibility {
  * each bucket. `mergeRetryWaveIndexes` captures waves whose tasks are
  * terminal but whose merge is missing/failed (TP-037).
  */
+export interface MilestoneValidatorSlot {
+	kind: "scrutiny" | "user-testing";
+	outputPath: string;
+	parseError?: string;
+	needsRespawn: boolean;
+}
+
+export interface MilestoneValidatorReconciliation {
+	milestoneId: string;
+	round: number;
+	slots: MilestoneValidatorSlot[];
+}
+
 export interface ResumePoint {
 	resumeWaveIndex: number;
 	completedTaskIds: string[];
@@ -1306,6 +1401,13 @@ export interface ResumePoint {
 	reconnectTaskIds: string[];
 	reExecuteTaskIds: string[];
 	mergeRetryWaveIndexes: number[];
+	/**
+	 * Per-milestone validator reconciliation (Track H3). Populated by
+	 * `reconcileMilestoneValidators` when the engine needs to decide,
+	 * per milestone in `"validating"` status, whether to reuse an
+	 * existing validator output file or re-spawn the run.
+	 */
+	milestoneValidatorActions?: MilestoneValidatorReconciliation[];
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -1634,7 +1736,14 @@ export type EngineEventType =
 	| "merge_health_dead"
 	| "merge_health_stuck"
 	| "batch_complete"
-	| "batch_paused";
+	| "batch_paused"
+	| "milestone_started"
+	| "milestone_validating"
+	| "milestone_passed"
+	| "milestone_failed"
+	| "validator_started"
+	| "validator_completed"
+	| "fix_feature_generated";
 
 /**
  * Structured engine event written to `.omp/supervisor/events.jsonl`.
@@ -1667,6 +1776,18 @@ export interface EngineEvent {
 	sessionName?: string;
 	healthStatus?: MergeHealthStatus;
 	stalledMinutes?: number;
+	/** Milestone id this event relates to (validator events, milestone_* events). */
+	milestoneId?: string;
+	/** Validator kind when `type` is `validator_*`. */
+	validatorKind?: "scrutiny" | "user-testing";
+	/** Validator round (1-indexed) when `type` is `validator_*` or `milestone_*`. */
+	validationRound?: number;
+	/** Validator verdict when `type === "validator_completed"`. */
+	validatorVerdict?: "pass" | "needs-fix" | "fail";
+	/** Blocker finding count when `type === "validator_completed"`. */
+	validatorBlockerCount?: number;
+	/** Fix feature task id when `type === "fix_feature_generated"`. */
+	fixFeatureId?: string;
 }
 
 export type EngineEventCallback = (event: EngineEvent) => void;

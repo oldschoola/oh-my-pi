@@ -402,6 +402,9 @@ function loadJsonConfig(configRoot: string): Partial<MissionProjectConfig> | nul
 			overrides.workspace = normalizedWorkspace;
 		}
 	}
+	if (parsed.missions && typeof parsed.missions === "object" && !Array.isArray(parsed.missions)) {
+		overrides.missions = deepClone(parsed.missions);
+	}
 
 	return overrides;
 }
@@ -744,6 +747,12 @@ function mergeProjectOverrides(config: MissionProjectConfig, overrides: Partial<
 	}
 	if (overrides.orchestrator) {
 		deepMerge(config.orchestrator as Record<string, any>, overrides.orchestrator as Record<string, any>);
+	}
+	if (overrides.missions) {
+		if (!config.missions || typeof config.missions !== "object") {
+			config.missions = { models: {} };
+		}
+		deepMerge(config.missions as Record<string, any>, overrides.missions as Record<string, any>);
 	}
 	if (overrides.workspace) {
 		if (!config.workspace || typeof config.workspace !== "object") {

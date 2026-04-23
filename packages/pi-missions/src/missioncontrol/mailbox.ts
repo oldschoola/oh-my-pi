@@ -135,9 +135,20 @@ function newMessageId(): { id: string; timestamp: number } {
 }
 
 function atomicWriteJson(dir: string, id: string, payload: unknown): void {
-	mkdirSync(dir, { recursive: true });
-	const finalPath = join(dir, `${id}.msg.json`);
-	const tempPath = join(dir, `${id}.msg.json.tmp`);
+	atomicWriteJsonFile(join(dir, `${id}.msg.json`), payload);
+}
+
+/**
+ * Atomically write a JSON payload to `finalPath` via a `.tmp` + rename.
+ *
+ * Creates the parent directory as needed. On write failure, the `.tmp`
+ * file is best-effort cleaned up. Shared with the worker-side agent
+ * bridge so both sides of the mailbox go through the same durability
+ * guarantees.
+ */
+export function atomicWriteJsonFile(finalPath: string, payload: unknown): void {
+	mkdirSync(dirname(finalPath), { recursive: true });
+	const tempPath = `${finalPath}.tmp`;
 	try {
 		writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
 		renameSync(tempPath, finalPath);
@@ -147,9 +158,7 @@ function atomicWriteJson(dir: string, id: string, payload: unknown): void {
 		} catch {
 			// best-effort cleanup
 		}
-		throw new Error(
-			`Failed to write mailbox message to ${finalPath}: ${err instanceof Error ? err.message : String(err)}`,
-		);
+		throw new Error(`Failed to write file to ${finalPath}: ${err instanceof Error ? err.message : String(err)}`);
 	}
 }
 
@@ -232,6 +241,25 @@ export function writeMailboxMessage(
 	const inboxDir =
 		to === "_broadcast" ? broadcastInboxDir(stateRoot, batchId) : sessionInboxDir(stateRoot, batchId, to);
 	atomicWriteJson(inboxDir, id, message);
+
+	// Best-effort audit row so the dashboard's Mailbox panel (which reads
+	// `events.jsonl`) reflects every supervisor write. Failures here must
+	// not roll back the message — the atomic write already succeeded and
+	// the message is the source of truth for delivery.
+	try {
+		appendMailboxAuditEvent(stateRoot, batchId, {
+			ts: timestamp,
+			type: "message_sent",
+			from: opts.from,
+			to,
+			messageId: id,
+			messageType: opts.type,
+			contentPreview: opts.content.slice(0, 100),
+			broadcast: to === "_broadcast",
+		});
+	} catch {
+		// already swallowed inside appendMailboxAuditEvent; defensive only
+	}
 	return message;
 }
 

@@ -1,14 +1,17 @@
 /**
- * MissionControl worktree helpers — pure path + parsing subset.
+ * MissionControl worktree helpers — pure path + parsing subset plus
+ * the mutating git-worktree operations the merge + cleanup paths need.
  *
  * Ported from `taskplane/extensions/taskplane/worktree.ts` (2505 LOC).
- * This module carries only the deterministic helpers downstream modules
- * need (path math, branch naming, `git worktree list --porcelain` parsing,
- * cross-platform path normalization). The mutating I/O surface
+ * Includes both the deterministic helpers downstream modules read
+ * (path math, branch naming, `git worktree list --porcelain` parsing,
+ * cross-platform path normalization) and the mutating I/O surface
  * (`createWorktree`, `removeWorktree`, `ensureLaneWorktrees`,
  * `removeAllWorktrees`, `safeResetWorktree`, `forceCleanupWorktree`,
  * `savePartialProgress`, `preserveFailedLaneProgress`, `runPreflight`,
- * `ensureBranchDeleted`) lands with the full engine + merge port.
+ * `ensureBranchDeleted`). The MVP engine does not yet invoke the
+ * partial-progress pair from a cleanup hook; callers driving lane
+ * decomposition (merge, resume) wire them in on their own schedule.
  *
  * Rename map:
  *   `taskplane-wt` → default prefix becomes `mission-wt` (via
@@ -1676,9 +1679,9 @@ export function preserveBranch(branch: string, targetBranch: string, repoRoot: s
 /**
  * Result of saving partial progress for a single failed task.
  *
- * Produced by `savePartialProgress()` (mutating helper, not yet ported) and
- * consumed by `applyPartialProgressToOutcomes()` to backfill branch + commit
- * metadata onto persisted `LaneTaskOutcome` records.
+ * Produced by `savePartialProgress()` and consumed by
+ * `applyPartialProgressToOutcomes()` to backfill branch + commit metadata
+ * onto persisted `LaneTaskOutcome` records.
  */
 export interface SavePartialProgressResult {
 	/** Whether partial progress was saved (branch created or already existed). */

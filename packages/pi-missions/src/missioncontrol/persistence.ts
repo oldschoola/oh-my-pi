@@ -178,6 +178,56 @@ export function upconvertV3toV4(obj: Record<string, unknown>): void {
 	if (!obj.segments) obj.segments = [];
 }
 
+/**
+ * Upconvert a v4 state object to v5 by adding Factory-aligned milestones.
+ *
+ * Added fields:
+ * - `milestones`: single implicit `M-001` milestone covering every task in
+ *   `wavePlan`, with status `"pending"` and `validationRounds: 0`. When the
+ *   wavePlan contains no tasks the milestone is still emitted with an empty
+ *   `featureIds` array so loaders can rely on the field being present.
+ * - Per-task `milestoneId` defaults to `"M-001"` on every task record.
+ *
+ * Task-level `fulfillsAssertionIds`, `parentFeatureId`, and `isFixFeature`
+ * fields stay undefined — only the planning conversation can attribute them.
+ * Idempotent on already-v5+ objects.
+ */
+export function upconvertV4toV5(obj: Record<string, unknown>): void {
+	if ((obj.schemaVersion as number) >= 5) return;
+	obj.schemaVersion = 5;
+	if (!Array.isArray(obj.milestones) || (obj.milestones as unknown[]).length === 0) {
+		const wavePlan = Array.isArray(obj.wavePlan) ? (obj.wavePlan as unknown[][]) : [];
+		const featureIds: string[] = [];
+		const seen = new Set<string>();
+		for (const wave of wavePlan) {
+			if (!Array.isArray(wave)) continue;
+			for (const id of wave) {
+				if (typeof id !== "string" || seen.has(id)) continue;
+				seen.add(id);
+				featureIds.push(id);
+			}
+		}
+		obj.milestones = [
+			{
+				id: "M-001",
+				name: "Mission",
+				featureIds,
+				assertionIds: [],
+				status: "pending",
+				validationRounds: 0,
+				maxValidationRounds: 4,
+			},
+		];
+	}
+	if (Array.isArray(obj.tasks)) {
+		for (const t of obj.tasks as Record<string, unknown>[]) {
+			if (t && typeof t === "object" && t.milestoneId === undefined) {
+				t.milestoneId = "M-001";
+			}
+		}
+	}
+}
+
 // ── Schema validation ──────────────────────────────────────────────────────
 
 const VALID_REPAIR_STATUSES: ReadonlySet<string> = new Set(["succeeded", "failed", "skipped"]);
@@ -209,6 +259,7 @@ const KNOWN_TOP_LEVEL_FIELDS: ReadonlySet<string> = new Set([
 	"resilience",
 	"diagnostics",
 	"segments",
+	"milestones",
 	"_extraFields",
 ]);
 
@@ -241,7 +292,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 			`Missing or invalid "schemaVersion" field (expected number, got ${typeof obj.schemaVersion})`,
 		);
 	}
-	const ACCEPTED_VERSIONS = [1, 2, 3, BATCH_STATE_SCHEMA_VERSION];
+	const ACCEPTED_VERSIONS = [1, 2, 3, 4, BATCH_STATE_SCHEMA_VERSION];
 	if (!ACCEPTED_VERSIONS.includes(obj.schemaVersion as number)) {
 		throw new StateFileError(
 			"STATE_SCHEMA_INVALID",
@@ -561,10 +612,11 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		}
 	}
 
-	// ── Chain upconvert v1→v2→v3→v4 (in-memory) ──────────────────
+	// ── Chain upconvert v1→v2→v3→v4→v5 (in-memory) ──────────────
 	upconvertV1toV2(obj);
 	upconvertV2toV3(obj);
 	upconvertV3toV4(obj);
+	upconvertV4toV5(obj);
 
 	// ── v3 resilience ────────────────────────────────────────────
 	if (!obj.resilience || typeof obj.resilience !== "object") {
@@ -697,6 +749,21 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 			throw new StateFileError(
 				"STATE_SCHEMA_INVALID",
 				`diagnostics.taskExits["${taskId}"].retries must be a number when present (got ${typeof te.retries})`,
+			);
+		}
+		if (
+			te.tokens !== undefined &&
+			(te.tokens === null || typeof te.tokens !== "object" || Array.isArray(te.tokens))
+		) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].tokens must be an object when present (got ${typeof te.tokens})`,
+			);
+		}
+		if (te.toolCalls !== undefined && typeof te.toolCalls !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].toolCalls must be a number when present (got ${typeof te.toolCalls})`,
 			);
 		}
 	}
@@ -840,6 +907,97 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		}
 	}
 
+	// ── v5 milestones[] ──────────────────────────────
+	if (obj.milestones !== undefined) {
+		if (!Array.isArray(obj.milestones)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`Invalid "milestones" field (expected array, got ${typeof obj.milestones})`,
+			);
+		}
+		const seenMilestoneIds = new Set<string>();
+		for (let i = 0; i < (obj.milestones as unknown[]).length; i++) {
+			const m = (obj.milestones as unknown[])[i] as Record<string, unknown>;
+			if (!m || typeof m !== "object" || Array.isArray(m)) {
+				throw new StateFileError("STATE_SCHEMA_INVALID", `milestones[${i}] is not an object`);
+			}
+			for (const field of ["id", "name", "status"] as const) {
+				if (typeof m[field] !== "string" || (m[field] as string).length === 0) {
+					throw new StateFileError("STATE_SCHEMA_INVALID", `milestones[${i}].${field} must be a non-empty string`);
+				}
+			}
+			const milestoneId = m.id as string;
+			if (seenMilestoneIds.has(milestoneId)) {
+				throw new StateFileError("STATE_SCHEMA_INVALID", `duplicate milestone id "${milestoneId}"`);
+			}
+			seenMilestoneIds.add(milestoneId);
+			if (!["pending", "in_progress", "validating", "passed", "failed"].includes(m.status as string)) {
+				throw new StateFileError("STATE_SCHEMA_INVALID", `milestones[${i}].status invalid: "${m.status}"`);
+			}
+			for (const field of ["featureIds", "assertionIds"] as const) {
+				if (!Array.isArray(m[field])) {
+					throw new StateFileError("STATE_SCHEMA_INVALID", `milestones[${i}].${field} must be an array`);
+				}
+				for (const v of m[field] as unknown[]) {
+					if (typeof v !== "string") {
+						throw new StateFileError(
+							"STATE_SCHEMA_INVALID",
+							`milestones[${i}].${field} contains non-string value`,
+						);
+					}
+				}
+			}
+			if (typeof m.validationRounds !== "number" || m.validationRounds < 0) {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`milestones[${i}].validationRounds must be a non-negative number`,
+				);
+			}
+			if (typeof m.maxValidationRounds !== "number" || m.maxValidationRounds < 1) {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`milestones[${i}].maxValidationRounds must be a positive number`,
+				);
+			}
+			if (m.startedAt !== undefined && typeof m.startedAt !== "number") {
+				throw new StateFileError("STATE_SCHEMA_INVALID", `milestones[${i}].startedAt must be a number when set`);
+			}
+			if (m.endedAt !== undefined && typeof m.endedAt !== "number") {
+				throw new StateFileError("STATE_SCHEMA_INVALID", `milestones[${i}].endedAt must be a number when set`);
+			}
+		}
+	}
+
+	// ── v5 task-level milestone fields (optional) ──────────────
+	for (let i = 0; i < tasks.length; i++) {
+		const t = tasks[i] as Record<string, unknown>;
+		if (t.milestoneId !== undefined && typeof t.milestoneId !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`tasks[${i}].milestoneId is not a string (got ${typeof t.milestoneId})`,
+			);
+		}
+		if (t.fulfillsAssertionIds !== undefined) {
+			if (!Array.isArray(t.fulfillsAssertionIds)) {
+				throw new StateFileError("STATE_SCHEMA_INVALID", `tasks[${i}].fulfillsAssertionIds is not an array`);
+			}
+			for (const v of t.fulfillsAssertionIds as unknown[]) {
+				if (typeof v !== "string") {
+					throw new StateFileError(
+						"STATE_SCHEMA_INVALID",
+						`tasks[${i}].fulfillsAssertionIds contains non-string value`,
+					);
+				}
+			}
+		}
+		if (t.parentFeatureId !== undefined && typeof t.parentFeatureId !== "string") {
+			throw new StateFileError("STATE_SCHEMA_INVALID", `tasks[${i}].parentFeatureId is not a string`);
+		}
+		if (t.isFixFeature !== undefined && typeof t.isFixFeature !== "boolean") {
+			throw new StateFileError("STATE_SCHEMA_INVALID", `tasks[${i}].isFixFeature is not a boolean`);
+		}
+	}
+
 	// ── Capture unknown fields for roundtrip preservation ────────
 	const extraFields: Record<string, unknown> = {};
 	for (const key of Object.keys(obj)) {
@@ -919,6 +1077,13 @@ export function serializeBatchState(
 		};
 
 		const parsedTask = allocated?.allocatedTask.task;
+		if (parsedTask?.milestoneId !== undefined) record.milestoneId = parsedTask.milestoneId;
+		if (parsedTask?.fulfillsAssertionIds !== undefined) {
+			record.fulfillsAssertionIds = [...parsedTask.fulfillsAssertionIds];
+		}
+		if (parsedTask?.parentFeatureId !== undefined) record.parentFeatureId = parsedTask.parentFeatureId;
+		if (parsedTask?.isFixFeature === true) record.isFixFeature = true;
+
 		if (parsedTask?.promptRepoId !== undefined) record.repoId = parsedTask.promptRepoId;
 		if (parsedTask?.resolvedRepoId !== undefined) record.resolvedRepoId = parsedTask.resolvedRepoId;
 
@@ -1004,6 +1169,15 @@ export function serializeBatchState(
 		resilience: state.resilience ?? defaultResilienceState(),
 		diagnostics: state.diagnostics ?? defaultBatchDiagnostics(),
 		segments: (state.segments ?? []) as PersistedBatchState["segments"],
+		...(state.milestones && state.milestones.length > 0
+			? {
+					milestones: state.milestones.map(m => ({
+						...m,
+						featureIds: [...m.featureIds],
+						assertionIds: [...m.assertionIds],
+					})),
+				}
+			: {}),
 	};
 
 	// Preserve unknown fields from a previously-loaded state so round-trip

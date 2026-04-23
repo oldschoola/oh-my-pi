@@ -117,6 +117,13 @@ export interface MissionState {
 	kind?: MissionKind;
 	/** Populated when `kind === "batch"`. Owned by the MissionControl engine. */
 	batch?: BatchState;
+
+	/**
+	 * Optional free-form operator guidance (e.g. "don't touch the auth module").
+	 * Editable from the dashboard MissionMetaEditor. Surfaced to the agent via
+	 * the system-prompt builder in protocol.ts.
+	 */
+	constraints?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +212,34 @@ export interface LaneStatus {
 	elapsed: number;
 	/** Session identifier used by the worker (mirrors taskplane naming). */
 	sessionName: string;
+	/** Repo identity for workspace-mode lanes (absent in repo mode). @since round3 */
+	repoId?: string;
+	/** Reviewer sub-row telemetry when a reviewer is running on this lane. @since round3 */
+	reviewer?: ReviewerStatus;
+}
+
+/**
+ * Per-lane reviewer telemetry snapshot — populated when a reviewer agent is
+ * actively running on the lane (file written by the worker's reviewer
+ * subprocess to `.reviewer-state.json`). Absent or stale snapshots produce
+ * `undefined` on `LaneStatus.reviewer`.
+ */
+export interface ReviewerStatus {
+	/** Reviewer is currently active (file status === "running" and fresh). */
+	active: boolean;
+	/** Review type (e.g. "step-review", "final-review"). */
+	reviewType?: string;
+	/** Current review step/iteration. */
+	reviewStep?: number;
+	elapsedMs?: number;
+	toolCalls?: number;
+	contextPct?: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	cacheReadTokens?: number;
+	cacheWriteTokens?: number;
+	costUsd?: number;
+	lastTool?: string;
 }
 
 /** Wave assignment — which tasks run together in parallel on which lanes. */
@@ -222,6 +257,18 @@ export interface TaskTelemetry {
 	costUsd: number;
 	toolCalls: number;
 	durationMs: number;
+	/** Live context window utilisation (0–100). @since round3 */
+	contextPct?: number;
+	/** Last tool invocation string (name + arg preview). @since round3 */
+	lastTool?: string;
+	/** Total retry events observed; absent when zero. @since round3 */
+	retries?: number;
+	/** True while the worker is in a retry backoff window. @since round3 */
+	retryActive?: boolean;
+	/** Last retry error message; only present when retries > 0. @since round3 */
+	lastRetryError?: string;
+	/** Auto-compaction count; absent when zero. @since round3 */
+	compactions?: number;
 }
 
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
@@ -261,6 +308,32 @@ export interface TaskOutcome {
 	 * `/api/mission/:id` for batch missions. Absent for simple missions.
 	 */
 	statusData?: TaskStatusData;
+	/** Repo this task runs in (workspace mode). @since round3 */
+	repoId?: string;
+	/** Resolved repo after workspace routing (preferred over `repoId`). @since round3 */
+	resolvedRepoId?: string;
+	/** Ordered segment IDs for multi-repo tasks. @since round3 */
+	segmentIds?: string[];
+	/** Currently-active segment ID when running. @since round3 */
+	activeSegmentId?: string | null;
+}
+
+/** Per-repo outcome within a wave merge (workspace mode). @since round3 */
+export interface RepoMergeResult {
+	repoId?: string;
+	status: "succeeded" | "failed" | "partial";
+	laneNumbers: number[];
+	failedLane?: number | null;
+	failureReason?: string | null;
+}
+
+/** Per-wave merge outcome. Dashboard renders one row per entry. @since round3 */
+export interface MergeResult {
+	waveIndex: number;
+	status: "succeeded" | "failed" | "partial";
+	failedLane?: number | null;
+	failureReason?: string | null;
+	repoResults?: RepoMergeResult[];
 }
 
 /**
@@ -283,4 +356,35 @@ export interface BatchState {
 	startTime: number;
 	endTime?: number;
 	errors: string[];
+	/** Workspace mode: `"workspace"` when multi-repo, `"repo"` (default) otherwise. @since round3 */
+	mode?: "repo" | "workspace";
+	/** Per-wave merge outcomes, populated from engine merge results. @since round3 */
+	mergeResults?: MergeResult[];
+	/**
+	 * Factory-aligned milestones. Groups features into validation boundaries.
+	 * Populated by the orchestrator during planning (Track D) or auto-generated
+	 * as a single implicit `M-001` milestone when a batch is promoted without
+	 * explicit milestone metadata. @since track-A
+	 */
+	milestones?: BatchMilestone[];
+}
+
+/** Lifecycle state for a dashboard-visible milestone view. */
+export type BatchMilestoneStatus = "pending" | "in_progress" | "validating" | "passed" | "failed";
+
+/**
+ * Dashboard-visible milestone snapshot. The engine's authoritative
+ * `Milestone` shape lives in `missioncontrol/types.ts`; this mirrors
+ * the fields the client renders.
+ */
+export interface BatchMilestone {
+	id: string;
+	name: string;
+	featureIds: string[];
+	assertionIds: string[];
+	status: BatchMilestoneStatus;
+	validationRounds: number;
+	maxValidationRounds: number;
+	startedAt?: number;
+	endedAt?: number;
 }

@@ -147,9 +147,9 @@ export function buildStateFromConfig(config: MissionStateConfig): MissionState {
 				: `Mission started in ${template.name} mode`,
 	};
 
-	const constraints = config.constraints ?? "";
+	const constraints = config.constraints?.trim() ?? "";
 	return {
-		description: constraints ? `${config.description}\n\nConstraints: ${constraints}` : config.description,
+		description: config.description,
 		mode: template.mode,
 		templateKey: config.templateKey,
 		currentPhase: phases.length > 0 ? phases[0].name : undefined,
@@ -160,5 +160,6 @@ export function buildStateFromConfig(config: MissionStateConfig): MissionState {
 		pauseHistory: [],
 		progressLog: [initialEvent],
 		startedAt: now,
+		constraints: constraints.length > 0 ? constraints : undefined,
 	};
 }

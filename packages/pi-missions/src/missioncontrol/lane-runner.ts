@@ -12,11 +12,12 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { logger } from "@oh-my-pi/pi-utils";
-import type { MissionState, TaskOutcome } from "../types";
-import { type SpawnAgentHandle, spawnAgent } from "./adapter";
+import type { BatchPhase, MissionState, TaskOutcome, TaskTelemetry } from "../types";
+import type { SpawnAgentHandle } from "./adapter";
 import type { AgentHostOptions, AgentHostResult } from "./agent-host";
 import { spawnHostedAgent } from "./agent-host";
 import { advanceWave, recordTaskOutcome, setLaneStatus } from "./engine";
+import { currentMilestone } from "./engine-milestones";
 import {
 	ackMessage,
 	ackOutboxMessage,
@@ -26,6 +27,9 @@ import {
 	sessionInboxDir,
 	sessionOutboxDir,
 } from "./mailbox";
+import { runValidationRound, type ValidationRoundDeps } from "./milestone-runner";
+import { buildSkillPromptBlock, listAvailableSkills, resolveTaskSkills } from "./mission-skills";
+import { buildEngineEventBase, emitEngineEvent } from "./persistence";
 import { appendAgentEvent, writeLaneSnapshot } from "./process-registry";
 import {
 	generateStatusMd,
@@ -41,7 +45,10 @@ import {
 	type ExecutionUnit,
 	type LaneTaskOutcome,
 	type LaneTaskStatus,
+	type MilestoneValidatorReconciliation,
+	type MissionBatchPhase,
 	type MissionControlConfig,
+	type RuntimeAgentId,
 	type RuntimeAgentStatus,
 	type RuntimeAgentTelemetrySnapshot,
 	type RuntimeLaneSnapshot,
@@ -661,6 +668,23 @@ export async function executeTaskV2(
 			``,
 			`⚠️ CHECKPOINT RULE: After completing EACH checkbox item, immediately edit STATUS.md to check it off (- [ ] → - [x]) BEFORE starting the next item. Do NOT batch checkbox updates at the end of a step.`,
 		];
+
+		// Track E2: surface relevant agent skills to the worker. Resolve
+		// catalogue on every iteration (cheap — single readdir) so newly
+		// promoted skills take effect mid-run without a restart.
+		try {
+			const available = await listAvailableSkills(config.stateRoot);
+			const relevant = resolveTaskSkills(available, unit.task);
+			const skillBlock = buildSkillPromptBlock(relevant);
+			if (skillBlock.length > 0) promptLines.push(...skillBlock);
+		} catch (err) {
+			// Discovery failure is non-fatal — log and continue without the
+			// injected block so prompt build never blocks on a transient fs
+			// error.
+			logger.debug("[missioncontrol] skill resolution failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
 
 		const segmentDag = isSegmentScoped ? unit.task.explicitSegmentDag : null;
 		if (segmentDag && segmentDag.repoIds.length > 0) {
@@ -1368,6 +1392,21 @@ export interface LaneRunnerDeps {
 	setMission: (state: MissionState) => void;
 	persist: (state: MissionState) => Promise<void>;
 	config: MissionControlConfig;
+	/**
+	 * Per-milestone validator reconciliation from resume (Track H3).
+	 * Each entry is consumed exactly once on the lane-runner's first
+	 * visit to the matching `"validating"` milestone; thereafter new
+	 * rounds spawn fresh validators. Populated by the resume flow from
+	 * `enrichResumePointWithMilestoneValidators`; production callers
+	 * without a resume step leave this empty.
+	 */
+	initialMilestoneReconciliations?: readonly MilestoneValidatorReconciliation[];
+	/**
+	 * Optional overrides for {@link runValidationRound}. Tests inject
+	 * spawn + parse fakes through this field; production callers leave
+	 * it unset to use the real validator stack.
+	 */
+	validation?: Partial<Omit<ValidationRoundDeps, "cwd" | "persist">>;
 }
 
 export interface LaneRunnerHandle {
@@ -1378,6 +1417,12 @@ export interface LaneRunnerHandle {
 export function startLaneRunner(deps: LaneRunnerDeps): LaneRunnerHandle {
 	let stopped = false;
 	const activeAgents = new Set<SpawnAgentHandle>();
+	// Resume reconciliation pool. Each entry is consumed exactly once on
+	// the lane-runner's first visit to the matching milestone.
+	const reconciliationsById = new Map<string, MilestoneValidatorReconciliation>();
+	for (const rec of deps.initialMilestoneReconciliations ?? []) {
+		reconciliationsById.set(rec.milestoneId, rec);
+	}
 
 	const loop = (async () => {
 		while (!stopped) {
@@ -1393,10 +1438,66 @@ export function startLaneRunner(deps: LaneRunnerDeps): LaneRunnerHandle {
 			});
 
 			if (pending.length === 0) {
+				const ms = currentMilestone(state.batch.milestones);
+				if (ms && ms.status === "validating") {
+					const pendingReconciliation = reconciliationsById.get(ms.id);
+					if (pendingReconciliation) reconciliationsById.delete(ms.id);
+					const result = await runValidationRound(state, ms, {
+						cwd: deps.cwd,
+						persist: deps.persist,
+						...(deps.validation ?? {}),
+						...(pendingReconciliation ? { reconciliation: pendingReconciliation } : {}),
+					});
+					deps.setMission(result.state);
+					if (result.kind === "stalled") {
+						logger.warn("[missioncontrol] validator stalled; pausing loop", {
+							milestoneId: ms.id,
+							validator: result.validator,
+							timeoutMs: result.timeoutMs,
+						});
+						break;
+					}
+					continue;
+				}
+				const prevWaveIndex = state.batch.currentWave;
 				const advanced = advanceWave(state);
 				deps.setMission(advanced);
 				await deps.persist(advanced);
-				if (advanced.batch?.phase === "complete") break;
+				if (advanced.batch) {
+					const advancedBatch = advanced.batch;
+					if (advancedBatch.phase === "complete") {
+						const totalMs = advancedBatch.endTime
+							? advancedBatch.endTime - advancedBatch.startTime
+							: Date.now() - advancedBatch.startTime;
+						void emitEngineEvent(deps.cwd, {
+							...buildEngineEventBase(
+								"batch_complete",
+								advancedBatch.batchId,
+								advancedBatch.currentWave,
+								toMissionBatchPhase(advancedBatch.phase),
+							),
+							totalWaves: advancedBatch.waves.length,
+							succeededTasks: advancedBatch.tasksComplete,
+							failedTasks: advancedBatch.tasksFailed,
+							batchDurationMs: totalMs,
+						});
+						break;
+					}
+					if (advancedBatch.phase === "running" && advancedBatch.currentWave !== prevWaveIndex) {
+						const newWave = advancedBatch.waves[advancedBatch.currentWave];
+						void emitEngineEvent(deps.cwd, {
+							...buildEngineEventBase(
+								"wave_start",
+								advancedBatch.batchId,
+								advancedBatch.currentWave,
+								toMissionBatchPhase(advancedBatch.phase),
+							),
+							taskIds: newWave?.taskIds ?? [],
+							laneCount: advancedBatch.laneCount,
+							totalWaves: advancedBatch.waves.length,
+						});
+					}
+				}
 				continue;
 			}
 
@@ -1464,22 +1565,60 @@ async function runTask(
 		doneFileFound: false,
 	};
 
+	const batchId = stateBefore.batch.batchId;
+	const agentId: RuntimeAgentId = `worker-${batchId}-lane-${assignment.laneNumber}-${assignment.taskId}`;
+	const eventsPath = runtimeAgentEventsPath(deps.cwd, batchId, agentId);
+
 	try {
-		const handle = await spawnAgent({
+		const prompt = await buildTaskPrompt(assignment.taskId, { cwd: deps.cwd });
+		const hostOpts: AgentHostOptions = {
+			agentId,
+			role: "worker",
+			batchId,
+			laneNumber: assignment.laneNumber,
+			taskId: assignment.taskId,
+			// MVP runs a single-repo project rooted at deps.cwd; no workspace routing.
+			repoId: "project",
 			cwd: deps.cwd,
-			modelId: deps.config.model,
-			prompt: buildTaskPrompt(assignment.taskId),
-		});
-		activeAgents.add(handle);
+			prompt,
+			...(deps.config.model ? { model: deps.config.model } : {}),
+			eventsPath,
+			exitSummaryPath: eventsPath.replace(/\.jsonl$/, "-exit.json"),
+			timeoutMs: 30 * 60 * 1000,
+			stateRoot: deps.cwd,
+		};
+		const spawned = spawnHostedAgent(hostOpts);
+		const shim: SpawnAgentHandle = {
+			pid: null,
+			async stop() {
+				spawned.kill();
+				await spawned.promise;
+			},
+			done: spawned.promise.then(() => {}),
+		};
+		activeAgents.add(shim);
+		let result: AgentHostResult;
 		try {
-			await handle.done;
+			result = await spawned.promise;
 		} finally {
-			activeAgents.delete(handle);
+			activeAgents.delete(shim);
 		}
+		const telemetry: TaskTelemetry = {
+			inputTokens: result.inputTokens,
+			outputTokens: result.outputTokens,
+			cacheReadTokens: result.cacheReadTokens,
+			cacheWriteTokens: result.cacheWriteTokens,
+			costUsd: result.costUsd,
+			toolCalls: result.toolCalls,
+			durationMs: result.durationMs,
+			...(result.lastTool ? { lastTool: result.lastTool } : {}),
+		};
 		if (isStopped()) {
-			outcome = { ...outcome, status: "failed", exitReason: "aborted", endTime: Date.now() };
+			outcome = { ...outcome, status: "failed", exitReason: "aborted", endTime: Date.now(), telemetry };
+		} else if (result.error) {
+			outcome = { ...outcome, status: "failed", exitReason: result.error, endTime: Date.now(), telemetry };
 		} else {
-			outcome = { ...outcome, endTime: Date.now() };
+			outcome = { ...outcome, endTime: Date.now(), telemetry };
 		}
 	} catch (err) {
 		outcome = {
@@ -1501,6 +1640,30 @@ async function runTask(
 	});
 	deps.setMission(withIdleLane);
 	await deps.persist(withIdleLane);
+
+	const finalBatch = withIdleLane.batch;
+	if (finalBatch) {
+		const durationMs = (outcome.endTime ?? Date.now()) - (outcome.startTime ?? start);
+		const phase = toMissionBatchPhase(finalBatch.phase);
+		if (outcome.status === "succeeded") {
+			void emitEngineEvent(deps.cwd, {
+				...buildEngineEventBase("task_complete", finalBatch.batchId, finalBatch.currentWave, phase),
+				taskId: outcome.taskId,
+				laneNumber: assignment.laneNumber,
+				durationMs,
+				outcome: "succeeded",
+			});
+		} else if (outcome.status === "failed") {
+			void emitEngineEvent(deps.cwd, {
+				...buildEngineEventBase("task_failed", finalBatch.batchId, finalBatch.currentWave, phase),
+				taskId: outcome.taskId,
+				laneNumber: assignment.laneNumber,
+				durationMs,
+				reason: outcome.exitReason || "failed",
+				error: outcome.exitReason || undefined,
+			});
+		}
+	}
 }
 
 function withTaskStatus(state: MissionState, taskId: string, patch: Partial<TaskOutcome>): MissionState {
@@ -1514,12 +1677,66 @@ function withTaskStatus(state: MissionState, taskId: string, patch: Partial<Task
 	};
 }
 
-function buildTaskPrompt(taskId: string): string {
-	return (
-		`Mission task: ${taskId}\n\n` +
+/**
+ * Compose the worker-agent prompt for a mission task.
+ *
+ * The MVP lane-runner does not track per-task folders or parsed
+ * metadata — the spawned agent finds STATUS.md / PROMPT.md via its own
+ * tooling. What this builder adds on top is the “Relevant skills for
+ * this feature” block, resolved from the project's promoted + draft
+ * skill catalogue. Skill discovery hits the filesystem every call so
+ * newly-promoted skills take effect without a restart; failures fall
+ * back to the terse stub so prompt generation never blocks a spawn.
+ */
+export async function buildTaskPrompt(taskId: string, opts: { cwd: string }): Promise<string> {
+	const lines: string[] = [
+		`Mission task: ${taskId}`,
+		"",
 		`Complete the task defined for id "${taskId}". Write a .DONE file at the task directory when finished. ` +
-		`Exit cleanly when the work is complete.`
-	);
+			`Exit cleanly when the work is complete.`,
+	];
+	try {
+		const available = await listAvailableSkills(opts.cwd);
+		const relevant = resolveTaskSkills(available, { taskName: taskId });
+		const skillBlock = buildSkillPromptBlock(relevant);
+		if (skillBlock.length > 0) lines.push(...skillBlock);
+	} catch (err) {
+		logger.debug("[missioncontrol] MVP skill resolution failed", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+	return lines.join("\n");
+}
+
+/**
+ * Map the MVP batch phase (as persisted on `MissionState.batch.phase`) to
+ * the engine-level {@link MissionBatchPhase} used by {@link EngineEvent}.
+ * The two vocabularies overlap but are not identical — MVP uses `running`
+ * while the engine uses `executing`, and MVP's `complete` / `error` /
+ * `aborted` collapse to `completed` / `failed` on the engine side.
+ */
+function toMissionBatchPhase(phase: BatchPhase): MissionBatchPhase {
+	switch (phase) {
+		case "running":
+			return "executing";
+		case "complete":
+			return "completed";
+		case "error":
+		case "aborted":
+			return "failed";
+		case "idle":
+		case "planning":
+		case "merging":
+		case "paused":
+			return phase;
+		default: {
+			// Exhaustiveness guard — if BatchPhase gains a variant we haven't
+			// mapped, fall back to `executing` rather than failing the emit.
+			const _exhaustive: never = phase;
+			void _exhaustive;
+			return "executing";
+		}
+	}
 }
 
 function sleep(ms: number): Promise<void> {

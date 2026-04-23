@@ -77,7 +77,7 @@ mode to batch monitoring mode. Examples of operator intent:
 - "run just the platform tasks" → invoke `/mission-batch platform` (with the area name)
 
 Before starting, you may optionally:
-- Show a quick summary of pending tasks and wave plan (`/mission-batch-plan all`)
+- Show a quick summary of pending tasks and wave plan (`/mission-plan all`)
 - Ask for confirmation if the operator's intent was ambiguous
 
 After `/mission-batch all` starts, your system prompt will automatically switch to

@@ -84,6 +84,16 @@ export interface ParsedTask {
 	explicitSegmentDag?: PromptSegmentDagMetadata;
 	/** Explicit step-segment mapping parsed from `#### Segment:` markers (TP-173). */
 	stepSegmentMap?: StepSegmentMapping[];
+	/** Milestone ID parsed from `## Milestone:` metadata (Track A). */
+	milestoneId?: string;
+	/** Validation assertion IDs parsed from `## Fulfills:` metadata (Track A). */
+	fulfillsAssertionIds?: string[];
+	/** Parent feature ID when this task is an auto-generated fix feature. */
+	parentFeatureId?: string;
+	/** True when this task was auto-generated from validator findings. */
+	isFixFeature?: boolean;
+	/** Skill names parsed from `## Skills:` metadata (Track E2). Injected into the worker prompt when present. */
+	skillsNeeded?: string[];
 }
 
 /**
@@ -957,6 +967,40 @@ export function parsePromptForOrchestrator(
 	}
 	const stepSegmentMap = stepSegResult.hasExplicitMarkers ? stepSegResult.mapping : undefined;
 
+	const milestoneMatch = content.match(/^##\s+Milestone:\s*([A-Z]+-\d+)\s*$/m);
+	const milestoneId = milestoneMatch?.[1];
+
+	const fulfillsMatch = content.match(/^##\s+Fulfills:\s*(.+)$/m);
+	const fulfillsAssertionIds: string[] = [];
+	if (fulfillsMatch?.[1]) {
+		for (const token of fulfillsMatch[1].split(/[,;\s]+/)) {
+			const trimmed = token.trim();
+			if (!trimmed) continue;
+			if (/^[A-Z]{2,}-\d{3,}$/.test(trimmed) && !fulfillsAssertionIds.includes(trimmed)) {
+				fulfillsAssertionIds.push(trimmed);
+			}
+		}
+	}
+
+	const parentFeatureMatch = content.match(/^##\s+Parent Feature:\s*([A-Z]+-\d+)\s*$/m);
+	const parentFeatureId = parentFeatureMatch?.[1];
+
+	const isFixFeature = /^##\s+Fix Feature:\s+(?:true|yes)\s*$/im.test(content);
+
+	const skillsMatch = content.match(/^##\s+Skills:\s*(.+)$/m);
+	const skillsNeeded: string[] = [];
+	if (skillsMatch?.[1]) {
+		for (const token of skillsMatch[1].split(/[,;\s]+/)) {
+			const trimmed = token.trim().toLowerCase();
+			if (!trimmed) continue;
+			// Valid skill names are lowercase alphanumeric + hyphen (matches
+			// mission-skills normalisation). Drop anything else silently.
+			if (/^[a-z0-9][a-z0-9-]*$/.test(trimmed) && !skillsNeeded.includes(trimmed)) {
+				skillsNeeded.push(trimmed);
+			}
+		}
+	}
+
 	const resolvedFolder = resolve(taskFolder);
 	const resolvedPrompt = resolve(promptPath);
 
@@ -977,6 +1021,11 @@ export function parsePromptForOrchestrator(
 			...(promptRepoId ? { promptRepoId } : {}),
 			...(explicitSegmentDag ? { explicitSegmentDag } : {}),
 			...(stepSegmentMap ? { stepSegmentMap } : {}),
+			...(milestoneId ? { milestoneId } : {}),
+			...(fulfillsAssertionIds.length > 0 ? { fulfillsAssertionIds } : {}),
+			...(parentFeatureId ? { parentFeatureId } : {}),
+			...(isFixFeature ? { isFixFeature: true } : {}),
+			...(skillsNeeded.length > 0 ? { skillsNeeded } : {}),
 		},
 		error: null,
 		warnings: stepSegResult.warnings,

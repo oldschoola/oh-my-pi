@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ParsedTask } from "./discovery";
 import { runGit } from "./git";
+import { type ReconcileMilestoneValidatorsOptions, reconcileMilestoneValidators } from "./milestone-resume";
 import { hasTaskDoneMarker } from "./persistence";
 import { resolveCanonicalTaskPaths } from "./task-paths";
 import type {
@@ -843,4 +844,25 @@ export function runPreResumeDiagnostics(
 			failed.map(c => `   - ${c.check}: ${c.detail}`).join("\n");
 
 	return { passed, checks, summary };
+}
+
+/**
+ * Enrich a {@link ResumePoint} with per-milestone validator
+ * reconciliation (Track H3). Called after {@link computeResumePoint}
+ * when the caller wants the validator resume decision on the same
+ * record. Returns a NEW `ResumePoint`; never mutates the input.
+ *
+ * Milestones not in `"validating"` status are skipped; the resulting
+ * `milestoneValidatorActions` array is `undefined` when no milestones
+ * required reconciliation.
+ */
+export async function enrichResumePointWithMilestoneValidators(
+	resumePoint: ResumePoint,
+	batchState: PersistedBatchState,
+	cwd: string,
+	options: ReconcileMilestoneValidatorsOptions = {},
+): Promise<ResumePoint> {
+	const actions = await reconcileMilestoneValidators(batchState, cwd, options);
+	if (actions.length === 0) return resumePoint;
+	return { ...resumePoint, milestoneValidatorActions: actions };
 }

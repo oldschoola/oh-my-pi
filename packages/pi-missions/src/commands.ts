@@ -3,11 +3,12 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import { logger } from "@oh-my-pi/pi-utils";
 import { createGuiBridge, type MissionStartRequest } from "./gui-bridge";
+import { kickoffMissionFromRequest } from "./kickoff";
 import type { MissionControlCallbacks, MissionControlResult } from "./mission-control";
 import { showMissionControl } from "./mission-control";
 import { buildMissionStatusReport } from "./missioncontrol";
 import { maybeSwitchModel } from "./model-switch";
-import { buildStateFromConfig, runMissionPlanner } from "./planner";
+import { runMissionPlanner } from "./planner";
 import { startServer } from "./server";
 
 /** Best-effort open a URL in the default browser. Duplicated from coding-agent/utils/open.ts (private). */
@@ -47,25 +48,40 @@ async function ensureDashboardServer(): Promise<{ port: number; stop: () => void
 }
 
 /**
- * Start the dashboard server and open it in the browser the first time it is
- * launched in this session. Subsequent calls just notify the URL without
- * spawning new browser windows.
+ * Start the dashboard server, build a mission-aware URL, and open it in the
+ * default browser the first time it is launched in this session. Subsequent
+ * calls just notify the URL. Pass `token` for an explicit `/mission-gui`
+ * bridge, `viewHint` for a plain `?view=<name>` query string.
  */
-async function ensureDashboardLaunched(ctx: Pick<ExtensionCommandContext, "ui">): Promise<void> {
+async function openDashboardInBrowser(
+	ctx: Pick<ExtensionCommandContext, "ui">,
+	opts: { viewHint?: string; token?: string } = {},
+): Promise<{ url: string; port: number } | null> {
 	try {
 		const { port } = await ensureDashboardServer();
-		const url = `http://localhost:${port}`;
+		let url = `http://localhost:${port}`;
+		if (opts.token) {
+			url = `${url}/?gui=${encodeURIComponent(opts.token)}`;
+		} else if (opts.viewHint) {
+			url = `${url}/?view=${encodeURIComponent(opts.viewHint)}`;
+		}
+		const message = opts.token
+			? `🌐 MissionControl: ${url}\nAwaiting mission config from the browser…`
+			: opts.viewHint === "start"
+				? `🌐 MissionControl: ${url}\nConfigure your mission in the browser.`
+				: `Dashboard: ${url}`;
+		ctx.ui.notify(message, "info");
 		if (!dashboardBrowserOpened) {
 			dashboardBrowserOpened = true;
-			ctx.ui.notify(`Dashboard opened: ${url}`, "info");
 			openInBrowser(url);
-		} else {
-			ctx.ui.notify(`Dashboard: ${url}`, "info");
 		}
+		return { url, port };
 	} catch (err) {
-		logger.warn("[pi-mission] dashboard server failed to start", {
+		logger.error("[pi-mission] openDashboardInBrowser failed", {
 			error: err instanceof Error ? err.message : String(err),
 		});
+		ctx.ui.notify("Could not launch dashboard.", "error");
+		return null;
 	}
 }
 
@@ -117,9 +133,10 @@ export function registerMissionCommands(
 				const description = args.trim();
 				const state = getState();
 
-				// No args + no mission → usage
+				// No args + no mission → open the dashboard form via the default
+				// GUI bridge so the user can configure a mission in the browser.
 				if (!description && !state) {
-					ctx.ui.notify("Usage: /mission <description of what to build/fix>", "warning");
+					await openDashboardInBrowser(ctx, { viewHint: "start" });
 					return;
 				}
 
@@ -187,7 +204,7 @@ export function registerMissionCommands(
 
 				// Start dashboard server so the web UI can track real-time progress.
 				// Auto-opens the browser the first time a mission is started in this session.
-				void ensureDashboardLaunched(ctx);
+				void openDashboardInBrowser(ctx);
 
 				// Build kick-off message based on mode
 				const firstPhase = newState.phases.find(p => p.status === "active");
@@ -262,7 +279,7 @@ export function registerMissionCommands(
 				}
 
 				if (state.batch) {
-					const batchReport = buildMissionStatusReport(state);
+					const batchReport = await buildMissionStatusReport(state, { cwd: ctx.cwd ?? process.cwd() });
 					lines.push("");
 					for (const line of batchReport.message.split("\n")) lines.push(line);
 				}
@@ -603,11 +620,7 @@ export function registerMissionCommands(
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const bridge = createGuiBridge();
 			try {
-				const { port } = await ensureDashboardServer();
-				const url = `http://localhost:${port}/?gui=${encodeURIComponent(bridge.token)}`;
-				ctx.ui.notify(`🌐 MissionControl: ${url}\nAwaiting mission config from the browser…`, "info");
-				openInBrowser(url);
-				dashboardBrowserOpened = true;
+				await openDashboardInBrowser(ctx, { token: bridge.token });
 
 				const state = getState();
 				if (state && !state.completedAt && !state.paused) {
@@ -636,23 +649,7 @@ export function registerMissionCommands(
 					);
 				}
 
-				const newState = buildStateFromConfig({
-					description: req.description,
-					templateKey: req.templateKey,
-					autonomy: req.autonomy,
-					modelAssignment: req.modelAssignment,
-					constraints: req.constraints,
-				});
-				resetTelemetry(cwd);
-				persist(ctx, newState);
-
-				const firstPhase = newState.phases.find(p => p.status === "active");
-				const kickoff = KICKOFF_TEMPLATE.replace("{{description}}", req.description).replace(
-					"{{phaseName}}",
-					firstPhase?.name ?? "Plan",
-				);
-				pi.sendUserMessage(kickoff);
-				pi.setSessionName(`🎯 ${req.description}`);
+				kickoffMissionFromRequest(pi, cwd, req, s => persist(ctx, s));
 
 				const batchNote =
 					req.laneCount && req.laneCount > 1
@@ -667,5 +664,72 @@ export function registerMissionCommands(
 				bridge.close();
 			}
 		},
+	});
+
+	// -----------------------------------------------------------------------
+	// 8. /enter-mission (alias /missions) — Factory-style planning entry point (Track D)
+	// -----------------------------------------------------------------------
+
+	const enterMissionHandler = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+		try {
+			const description = args.trim();
+			const state = getState();
+
+			// Bare call with no active mission — open the dashboard's planning view.
+			// The planning conversation agent takes over once the operator submits.
+			if (!description && !state) {
+				await openDashboardInBrowser(ctx, { viewHint: "start" });
+				ctx.ui.notify(
+					"Opening the mission planning console. The orchestrator will interview you for requirements, then seek approval before any feature work starts.",
+					"info",
+				);
+				return;
+			}
+
+			// Same quick-status behaviour as /mission when a mission is running.
+			if (!description && state && !state.completedAt && !state.paused) {
+				const elapsed = formatDuration(Date.now() - new Date(state.startedAt).getTime());
+				ctx.ui.notify(
+					`Active mission: ${state.description} (${elapsed}).\n` +
+						`Run /mission to see the active phase, or /mission-reset to start fresh before /enter-mission.`,
+					"info",
+				);
+				return;
+			}
+
+			if (!description && state) {
+				const label = state.completedAt ? "completed" : "paused";
+				ctx.ui.notify(
+					`Mission "${state.description}" is ${label}. Clear it with /mission-reset then run /enter-mission to plan a new one.`,
+					"info",
+				);
+				return;
+			}
+
+			// Description supplied inline — the planning conversation lives in
+			// the dashboard; the CLI flow can still kick off a simple mission via
+			// the /mission command. Surface a hint instead of branching here so
+			// /enter-mission keeps a single "opens the planning console" mental model.
+			ctx.ui.notify(
+				`/enter-mission opens the planning console for collaborative requirement gathering. ` +
+					`To start a one-shot mission with a description, use \`/mission ${description}\` instead.`,
+				"info",
+			);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			logger.error("[pi-mission] /enter-mission failed", { error: message });
+			ctx.ui.notify(`Error in /enter-mission: ${message}`, "error");
+		}
+	};
+
+	pi.registerCommand("enter-mission", {
+		description:
+			"Start a Factory-style planning conversation. Orchestrator interviews requirements, emits a validation contract, and seeks approval before any feature work.",
+		handler: enterMissionHandler,
+	});
+
+	pi.registerCommand("missions", {
+		description: "Alias of /enter-mission — opens the mission planning console.",
+		handler: enterMissionHandler,
 	});
 }

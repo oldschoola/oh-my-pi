@@ -930,6 +930,19 @@ function labelForAction(action: string): string {
 	return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : action;
 }
 
+/**
+ * Append an operator-authored supervisor conversation entry to
+ * `.omp/supervisor/conversation.jsonl`. Used by the Start tab terminal so
+ * messages typed before a batch is running are still captured in the shared
+ * supervisor conversation log.
+ */
+export async function appendSupervisorConversation(cwd: string, entry: SupervisorConversationEntry): Promise<void> {
+	const dir = supervisorDir(cwd);
+	await fs.promises.mkdir(dir, { recursive: true });
+	const line = `${JSON.stringify(entry)}\n`;
+	await fs.promises.appendFile(path.join(dir, "conversation.jsonl"), line, "utf8");
+}
+
 async function readSupervisorConversation(cwd: string): Promise<SupervisorConversationEntry[]> {
 	const file = Bun.file(path.join(supervisorDir(cwd), "conversation.jsonl"));
 	let raw: string;

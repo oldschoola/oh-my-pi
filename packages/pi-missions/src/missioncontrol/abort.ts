@@ -285,7 +285,9 @@ export function killOrchSessions(
 				batchId: options?.batchId,
 				logContext: "abort",
 			});
-			killMergeAgentV2(baseSessionName);
+			if (options?.stateRoot && options?.batchId) {
+				killMergeAgentV2(options.stateRoot, options.batchId, baseSessionName);
+			}
 			killedBaseSessions.add(baseSessionName);
 		}
 
@@ -339,7 +341,7 @@ export async function executeAbort(
 		);
 	}
 
-	const v2MergeKilled = killAllMergeAgentsV2();
+	const v2MergeKilled = killAllMergeAgentsV2(repoRoot, batchState.batchId);
 	if (v2MergeKilled > 0) {
 		execLog("abort", batchState.batchId, `killed ${v2MergeKilled} V2 merge agent(s)`);
 	}

@@ -26,16 +26,28 @@
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { isEnoent, logger } from "@oh-my-pi/pi-utils";
+import { registerAgentBridge } from "./agent-bridge";
 import { registerMissionCommands } from "./commands";
 import { resolvePhaseRole } from "./config";
 import { detectMilestonePhases, detectPhaseTransition, detectProposedPhases } from "./detector";
+import { bindMissionServer } from "./mission-server-binding";
+import type { PersistedBatchState } from "./missioncontrol";
 import {
+	buildIntegrationExecutor,
 	buildMissionDepsReport,
+	buildMissionPlanReport,
 	createEngine,
 	formatMissionSessions,
+	getCurrentBranch,
 	listMissionSessions,
+	loadBatchState,
 	MISSION_MESSAGES,
+	parseIntegrateArgs,
+	parseResumeArgs,
+	resolveIntegrationContext,
+	resolveOperatorId,
 	reviewerExtension,
+	runGit,
 } from "./missioncontrol";
 import { maybeSwitchModel } from "./model-switch";
 import { buildMissionProtocol, buildMissionStatus } from "./protocol";
@@ -47,11 +59,12 @@ import {
 	saveMissionState,
 	writeMissionToDisk,
 } from "./state";
+import registerSupervisorTools from "./supervisor-tools";
 import { redactEvent } from "./telemetry/redaction";
 import type { SidecarEvent } from "./telemetry/sidecar";
 import type { MissionState } from "./types";
 import { extractRawTextFromMessage, extractTextFromMessage } from "./utils";
-import { clearRetryStatus, setRetryStatus, updateWidget } from "./widget";
+import { clearRetryStatus, type MissionWidgetCtx, setRetryStatus, updateWidget } from "./widget";
 
 // ---------------------------------------------------------------------------
 // Simple-mission telemetry accumulator
@@ -239,11 +252,13 @@ function toolArgPreview(args: unknown, maxLen = 80): string | null {
 // ---------------------------------------------------------------------------
 export default function missionExtension(pi: ExtensionAPI): void {
 	let mission: MissionState | null = null;
+	let lastCtx: MissionWidgetCtx | null = null;
 
 	const getState = () => mission;
 	const setState = (s: MissionState | null) => {
 		mission = s;
 	};
+	const getCtx = () => lastCtx;
 
 	// -------------------------------------------------------------------
 	// Session lifecycle — restore persisted state on any session change
@@ -251,6 +266,7 @@ export default function missionExtension(pi: ExtensionAPI): void {
 
 	/** Shared restore logic for all session lifecycle events. */
 	function restoreFromSession(ctx: Pick<ExtensionContext, "ui" | "sessionManager">, source: string): void {
+		lastCtx = ctx;
 		try {
 			mission = restoreMissionState(ctx.sessionManager.getEntries());
 			if (mission && !mission.completedAt) {
@@ -589,6 +605,15 @@ export default function missionExtension(pi: ExtensionAPI): void {
 
 	registerMissionCommands(pi, getState, setState, process.cwd(), engine.handlers.batch);
 
+	// Wire the dashboard server's HTTP hooks + default GUI bridge.
+	bindMissionServer({
+		pi,
+		cwd: process.cwd(),
+		getState,
+		setState,
+		getCtx,
+	});
+
 	function parseBatchArgs(args: string): { laneCount?: number; waveSize?: number; taskIds: string[] } {
 		const tokens = args.trim().split(/\s+/).filter(Boolean);
 		const result: { laneCount?: number; waveSize?: number; taskIds: string[] } = { taskIds: [] };
@@ -644,20 +669,25 @@ export default function missionExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("mission-batch-resume", {
-		description: "Resume a paused batch mission",
-		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+		description: "Resume a paused batch mission (/mission-batch-resume [--force])",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			const parsed = parseResumeArgs(args);
+			if ("error" in parsed) {
+				ctx.ui.notify(parsed.error, "info");
+				return;
+			}
 			const current = getState();
 			if (!current?.batch) {
 				ctx.ui.notify("No batch mission to resume.", "warning");
 				return;
 			}
-			if (current.batch.phase !== "paused") {
-				ctx.ui.notify(`Batch is not paused (phase: ${current.batch.phase}).`, "info");
+			if (!parsed.force && current.batch.phase !== "paused") {
+				ctx.ui.notify(`Batch is not paused (phase: ${current.batch.phase}). Use --force to override.`, "info");
 				return;
 			}
-			const next = await engine.handlers.resume();
+			const next = await engine.handlers.resume({ force: parsed.force });
 			if (next) updateWidget(ctx, next);
-			ctx.ui.notify("Batch mission resumed.", "info");
+			ctx.ui.notify(parsed.force ? "Batch mission resumed (forced)." : "Batch mission resumed.", "info");
 		},
 	});
 
@@ -695,6 +725,119 @@ export default function missionExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerCommand("mission-plan", {
+		description: "Preview wave plan: /mission-plan <areas|all> [--refresh]",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			try {
+				const report = buildMissionPlanReport(process.cwd(), args, getState());
+				ctx.ui.notify(report.message, report.level);
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				ctx.ui.notify(`/mission-plan failed: ${msg}`, "error");
+			}
+		},
+	});
+
+	pi.registerCommand("mission-resume", {
+		description: "Resume a paused or interrupted batch mission (/mission-resume [--force])",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			const parsed = parseResumeArgs(args);
+			if ("error" in parsed) {
+				ctx.ui.notify(parsed.error, "info");
+				return;
+			}
+			const current = getState();
+			if (!current?.batch) {
+				ctx.ui.notify("No batch mission to resume.", "warning");
+				return;
+			}
+			if (!parsed.force && current.batch.phase !== "paused") {
+				ctx.ui.notify(`Batch is not paused (phase: ${current.batch.phase}). Use --force to override.`, "info");
+				return;
+			}
+			const next = await engine.handlers.resume({ force: parsed.force });
+			if (next) updateWidget(ctx, next);
+			ctx.ui.notify(parsed.force ? "Batch mission resumed (forced)." : "Batch mission resumed.", "info");
+		},
+	});
+
+	pi.registerCommand("mission-integrate", {
+		description:
+			"Integrate a completed batch into the working branch (/mission-integrate [--merge|--pr] [--force] [<mission-branch>])",
+		handler: async (args: string, ctx: ExtensionCommandContext) => {
+			const trimmed = args.trim();
+			if (trimmed === "--help" || trimmed === "-h") {
+				ctx.ui.notify(
+					"Usage: /mission-integrate [<mission-branch>] [--merge] [--pr] [--force]\n\n" +
+						"Integrate a completed batch into your working branch.\n\n" +
+						"Modes:\n" +
+						"  (default)   Fast-forward merge (cleanest history)\n" +
+						"  --merge     Create a real merge commit\n" +
+						"  --pr        Push mission branch and open a pull request\n\n" +
+						"Options:\n" +
+						"  --force     Skip branch safety check\n" +
+						"  <branch>    Mission branch name (auto-detected from batch state if omitted)\n\n" +
+						"Examples:\n" +
+						"  /mission-integrate                          Auto-detect and fast-forward\n" +
+						"  /mission-integrate --merge                  Auto-detect with merge commit\n" +
+						"  /mission-integrate orch/batch-1 --pr        Specific branch, create PR\n" +
+						"  /mission-integrate --force                  Skip branch safety check",
+					"info",
+				);
+				return;
+			}
+
+			const parsed = parseIntegrateArgs(args);
+			if ("error" in parsed) {
+				ctx.ui.notify(`${parsed.error}\n\nRun /mission-integrate --help for usage.`, "error");
+				return;
+			}
+
+			const cwd = ctx.cwd ?? process.cwd();
+
+			let batchState: PersistedBatchState | null = null;
+			try {
+				batchState = await loadBatchState(cwd);
+			} catch (err) {
+				ctx.ui.notify(
+					`Failed to load batch state: ${err instanceof Error ? err.message : String(err)}\n\n` +
+						"You can still integrate by naming the branch: /mission-integrate <mission-branch>",
+					"error",
+				);
+				return;
+			}
+
+			const resolution = resolveIntegrationContext(parsed, {
+				loadBatchState: () => batchState,
+				getCurrentBranch: () => getCurrentBranch(cwd),
+				listOrchBranches: () => {
+					const result = runGit(["branch", "--list", "orch/*"], cwd);
+					if (!result.ok) return [];
+					return result.stdout
+						.split("\n")
+						.map((b: string) => b.replace(/^\*?\s+/, "").trim())
+						.filter(Boolean);
+				},
+				orchBranchExists: (branch: string) => runGit(["rev-parse", "--verify", `refs/heads/${branch}`], cwd).ok,
+			});
+
+			if ("error" in resolution) {
+				ctx.ui.notify(resolution.error, resolution.severity === "info" ? "info" : "error");
+				return;
+			}
+
+			const opId = resolveOperatorId();
+			const executor = buildIntegrationExecutor(cwd, opId, cwd);
+			const result = executor(parsed.mode, resolution);
+
+			if (result.success) {
+				ctx.ui.notify(result.message || "Integration complete.", "info");
+			} else {
+				ctx.ui.notify(result.error ?? result.message ?? "Integration failed.", "error");
+			}
+		},
+	});
+
 	// Hydrate persisted batch on session start; pause running batch on end.
 	pi.on("session_start", async () => {
 		try {
@@ -719,4 +862,16 @@ export default function missionExtension(pi: ExtensionAPI): void {
 	// Persistent reviewer tool — self-gates on REVIEWER_SIGNAL_DIR env var,
 	// so this is a no-op in non-review agent contexts.
 	reviewerExtension(pi);
+
+	// Worker-side agent bridge — self-gates on MISSION_AGENT_ID +
+	// MISSION_OUTBOX_DIR env vars, so this is a no-op outside lane-runner
+	// spawned worker/reviewer/merger agent processes.
+	registerAgentBridge(pi);
+
+	// Supervisor-side orch_* tools — referenced by the supervisor prompt
+	// templates. Self-gate on NOT being a worker process (MISSION_AGENT_ID
+	// is only set on lane-runner-spawned workers).
+	if (!process.env.MISSION_AGENT_ID) {
+		registerSupervisorTools(pi, getState, setState, process.cwd(), engine);
+	}
 }

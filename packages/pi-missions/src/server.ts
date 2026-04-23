@@ -12,6 +12,7 @@ import * as path from "node:path";
 import { isEnoent, logger } from "@oh-my-pi/pi-utils";
 import { $ } from "bun";
 import {
+	appendSupervisorConversation,
 	getMission,
 	getMissionActivity,
 	getMissionAgentStatus,
@@ -20,9 +21,23 @@ import {
 	getSupervisorDetail,
 	listMissions,
 } from "./dashboard-api";
-import { dispatchStartRequest, type MissionStartRequest } from "./gui-bridge";
+import { dispatchStartRequest, getDefaultToken, type MissionStartRequest } from "./gui-bridge";
+import type { BehavioralAssertion } from "./missioncontrol";
 import {
 	abortBatch,
+	handleApprovePlan,
+	handleCreateMilestone,
+	handleKnowledgeEntries,
+	handleListSkills,
+	handleLoadMilestones,
+	handleReadKnowledge,
+	handleReadPlanManifest,
+	handleReadRoleModels,
+	handleReadValidationContract,
+	handleReadValidationStatus,
+	handleSetRoleModel,
+	handleTelemetryRollup,
+	handleWriteValidationContract,
 	loadActiveBatch,
 	mailboxRoot,
 	missionHistoryPath,
@@ -31,9 +46,12 @@ import {
 	readAuditTrail,
 	readRegistrySnapshot,
 	resumeBatch,
+	runtimeAgentEventsPath,
 	saveActiveBatch,
 	supervisorEventsPath,
 } from "./missioncontrol";
+import { readDashboardPreferences, writeDashboardPreferences } from "./preferences";
+import { getMissionServerHooks, type MissionMetaPatch } from "./server-hooks";
 
 const CLIENT_DIR = path.join(import.meta.dir, "client");
 const STATIC_DIR = path.join(import.meta.dir, "..", "dist", "client");
@@ -228,25 +246,221 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 		return jsonResponse(summary ?? {});
 	}
 
+	// ── Track J: orch_* surface over HTTP ─────────────────
+	// Read-side endpoints parallel the read-side orch_* tools: the same
+	// backend handlers are called, so the CLI + web UI can't diverge.
+
+	const contractMatch = p.match(/^\/api\/mission\/([^/]+)\/validation-contract$/);
+	if (contractMatch) {
+		if (req.method === "GET") {
+			const contract = await handleReadValidationContract(cwd);
+			return jsonResponse(contract ?? null);
+		}
+		if (req.method === "POST") {
+			const missionId = contractMatch[1] ?? "mission";
+			const body = (await req.json().catch(() => null)) as { assertions?: unknown } | null;
+			if (!body || !Array.isArray(body.assertions)) {
+				return jsonResponse({ ok: false, reason: "invalid_payload" }, { status: 400 });
+			}
+			try {
+				const contract = await handleWriteValidationContract({
+					cwd,
+					missionId,
+					assertions: body.assertions as BehavioralAssertion[],
+				});
+				return jsonResponse({ ok: true, contract });
+			} catch (err) {
+				return jsonResponse(
+					{ ok: false, reason: err instanceof Error ? err.message : String(err) },
+					{ status: 400 },
+				);
+			}
+		}
+	}
+
+	const milestonesMatch = p.match(/^\/api\/mission\/([^/]+)\/milestones$/);
+	if (milestonesMatch) {
+		if (req.method === "GET") {
+			const milestones = await handleLoadMilestones(cwd);
+			return jsonResponse({ milestones });
+		}
+		if (req.method === "POST") {
+			const body = (await req.json().catch(() => null)) as {
+				id?: string;
+				name?: string;
+				featureIds?: string[];
+				assertionIds?: string[];
+				maxValidationRounds?: number;
+			} | null;
+			if (!body || typeof body.id !== "string" || typeof body.name !== "string") {
+				return jsonResponse({ ok: false, reason: "invalid_payload" }, { status: 400 });
+			}
+			try {
+				const result = await handleCreateMilestone({
+					cwd,
+					id: body.id,
+					name: body.name,
+					featureIds: body.featureIds,
+					assertionIds: body.assertionIds,
+					maxValidationRounds: body.maxValidationRounds,
+				});
+				return jsonResponse({ ok: true, ...result });
+			} catch (err) {
+				return jsonResponse(
+					{ ok: false, reason: err instanceof Error ? err.message : String(err) },
+					{ status: 400 },
+				);
+			}
+		}
+	}
+
+	const statusMatch = p.match(/^\/api\/mission\/([^/]+)\/validation-status$/);
+	if (statusMatch && req.method === "GET") {
+		const milestoneId = url.searchParams.get("milestoneId") ?? undefined;
+		const result = await handleReadValidationStatus(cwd, milestoneId);
+		if (!result) return new Response("Not Found", { status: 404 });
+		return jsonResponse(result);
+	}
+
+	const knowledgeMatch = p.match(/^\/api\/mission\/([^/]+)\/knowledge$/);
+	if (knowledgeMatch && req.method === "GET") {
+		const entries = await handleKnowledgeEntries(cwd);
+		const summaryScope = url.searchParams.get("scope") ?? undefined;
+		const limitRaw = url.searchParams.get("limit");
+		const limit = limitRaw ? Math.max(1, Math.min(200, Number.parseInt(limitRaw, 10) || 20)) : 20;
+		const summary = await handleReadKnowledge(cwd, summaryScope, limit);
+		return jsonResponse({ entries, summary });
+	}
+
+	const planMatch = p.match(/^\/api\/mission\/([^/]+)\/plan$/);
+	if (planMatch) {
+		if (req.method === "GET") {
+			const manifest = await handleReadPlanManifest(cwd);
+			return jsonResponse(manifest ?? null);
+		}
+	}
+
+	const approveMatch = p.match(/^\/api\/mission\/([^/]+)\/plan\/approve$/);
+	if (approveMatch && req.method === "POST") {
+		const missionId = approveMatch[1] ?? "mission";
+		const body = (await req.json().catch(() => null)) as {
+			milestoneIds?: string[];
+			featureIds?: string[];
+			approvedBy?: string;
+		} | null;
+		if (!body || !Array.isArray(body.milestoneIds) || !Array.isArray(body.featureIds)) {
+			return jsonResponse({ ok: false, reason: "invalid_payload" }, { status: 400 });
+		}
+		try {
+			const manifest = await handleApprovePlan({
+				cwd,
+				missionId,
+				milestoneIds: body.milestoneIds,
+				featureIds: body.featureIds,
+				approvedBy: body.approvedBy ?? "dashboard",
+			});
+			return jsonResponse({ ok: true, manifest });
+		} catch (err) {
+			return jsonResponse({ ok: false, reason: err instanceof Error ? err.message : String(err) }, { status: 400 });
+		}
+	}
+
+	const rollupMatch = p.match(/^\/api\/mission\/([^/]+)\/telemetry-rollup$/);
+	if (rollupMatch && req.method === "GET") {
+		const rollup = await handleTelemetryRollup(cwd);
+		return jsonResponse(rollup ?? null);
+	}
+
+	const rolesMatch = p.match(/^\/api\/mission\/([^/]+)\/role-models$/);
+	if (rolesMatch) {
+		if (req.method === "GET") {
+			return jsonResponse({ roles: await handleReadRoleModels(cwd) });
+		}
+		if (req.method === "POST") {
+			const body = (await req.json().catch(() => null)) as { role?: string; model?: string } | null;
+			if (!body || typeof body.role !== "string" || typeof body.model !== "string") {
+				return jsonResponse({ ok: false, reason: "invalid_payload" }, { status: 400 });
+			}
+			try {
+				const result = handleSetRoleModel({ cwd, role: body.role, model: body.model });
+				return jsonResponse({ ok: true, ...result });
+			} catch (err) {
+				return jsonResponse(
+					{ ok: false, reason: err instanceof Error ? err.message : String(err) },
+					{ status: 400 },
+				);
+			}
+		}
+	}
+
+	const skillsMatch = p.match(/^\/api\/mission\/([^/]+)\/skills$/);
+	if (skillsMatch && req.method === "GET") {
+		return jsonResponse(await handleListSkills(cwd));
+	}
+
 	const controlMatch = p.match(/^\/api\/mission\/([^/]+)\/(pause|resume|abort)$/);
 	if (controlMatch && req.method === "POST") {
 		const [, id, action] = controlMatch;
+		const body = (await req.json().catch(() => ({}))) as { reason?: string };
 		const state = await loadActiveBatch(cwd);
-		if (!state?.batch || (state.batch.batchId !== id && id !== "active")) {
-			return new Response("No active batch mission", { status: 404 });
+		if (state?.batch && (state.batch.batchId === id || id === "active")) {
+			let next = state;
+			if (action === "pause") next = pauseBatch(state);
+			else if (action === "resume") next = resumeBatch(state);
+			else next = abortBatch(state, body.reason ?? "aborted via dashboard");
+			await saveActiveBatch(cwd, next);
+			return jsonResponse({ ok: true, phase: next.batch?.phase });
 		}
-		let next = state;
-		if (action === "pause") next = pauseBatch(state);
-		else if (action === "resume") next = resumeBatch(state);
-		else if (action === "abort") {
-			const body = (await req.json().catch(() => ({}))) as { reason?: string };
-			next = abortBatch(state, body.reason ?? "aborted via dashboard");
+		// Simple mission — dispatch to hook so the extension can mutate +
+		// persist via saveMissionState / updateWidget.
+		const control = getMissionServerHooks().controlSimple;
+		if (!control) return new Response("No active mission", { status: 404 });
+		const result = control(action as "pause" | "resume" | "abort", { reason: body.reason });
+		if (!result.ok) return jsonResponse({ ok: false, reason: result.reason }, { status: 400 });
+		return jsonResponse({ ok: true });
+	}
+
+	const redirectMatch = p.match(/^\/api\/mission\/([^/]+)\/redirect$/);
+	if (redirectMatch && req.method === "POST") {
+		const body = (await req.json().catch(() => ({}))) as { message?: string };
+		const message = (body.message ?? "").trim();
+		if (!message) return jsonResponse({ ok: false, reason: "empty_message" }, { status: 400 });
+		const redirect = getMissionServerHooks().redirect;
+		if (!redirect) return jsonResponse({ ok: false, reason: "no_hook" }, { status: 503 });
+		const result = redirect(message);
+		if (!result.ok) return jsonResponse({ ok: false, reason: result.reason }, { status: 400 });
+		return jsonResponse({ ok: true });
+	}
+
+	const skipPhaseMatch = p.match(/^\/api\/mission\/([^/]+)\/skip-phase$/);
+	if (skipPhaseMatch && req.method === "POST") {
+		const skip = getMissionServerHooks().skipPhase;
+		if (!skip) return jsonResponse({ ok: false, reason: "no_hook" }, { status: 503 });
+		const result = skip();
+		if (!result.ok) return jsonResponse({ ok: false, reason: result.reason }, { status: 400 });
+		return jsonResponse({ ok: true, completedPhaseName: result.completedPhaseName });
+	}
+
+	const patchMatch = p.match(/^\/api\/mission\/([^/]+)$/);
+	if (patchMatch && req.method === "PATCH") {
+		const body = (await req.json().catch(() => null)) as MissionMetaPatch | null;
+		if (!body || typeof body !== "object") {
+			return jsonResponse({ ok: false, reason: "invalid_payload" }, { status: 400 });
 		}
-		await saveActiveBatch(cwd, next);
-		return jsonResponse({ ok: true, phase: next.batch?.phase });
+		const patchMission = getMissionServerHooks().patchMission;
+		if (!patchMission) return jsonResponse({ ok: false, reason: "no_hook" }, { status: 503 });
+		const result = patchMission(body);
+		if (!result.ok) return jsonResponse({ ok: false, reason: result.reason }, { status: 400 });
+		return jsonResponse({ ok: true });
 	}
 
 	// --- /mission-gui: browser → chat dispatch ---------------------------
+	if (p === "/api/mission-gui/token" && req.method === "GET") {
+		const token = getDefaultToken();
+		if (!token) return new Response("Not Found", { status: 404 });
+		return jsonResponse({ token, kind: "default" });
+	}
+
 	if (p === "/api/mission/start" && req.method === "POST") {
 		const body = (await req.json().catch(() => null)) as MissionStartRequest | null;
 		if (!body) return jsonResponse({ ok: false, reason: "invalid_payload" }, { status: 400 });
@@ -255,7 +469,19 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 			const status = result.reason === "unknown_token" ? 403 : 400;
 			return jsonResponse({ ok: false, reason: result.reason }, { status });
 		}
-		return jsonResponse({ ok: true, dispatchedTo: "chat" }, { status: 202 });
+		return jsonResponse({ ok: true, dispatchedTo: "chat", kind: result.kind }, { status: 202 });
+	}
+
+	if (p === "/api/preferences" && req.method === "GET") {
+		return jsonResponse(await readDashboardPreferences(cwd));
+	}
+	if (p === "/api/preferences" && req.method === "POST") {
+		const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+		if (!body || typeof body !== "object") {
+			return jsonResponse({ ok: false, reason: "invalid_payload" }, { status: 400 });
+		}
+		const merged = await writeDashboardPreferences(cwd, body);
+		return jsonResponse({ ok: true, preferences: merged });
 	}
 
 	// --- History (past batches) ------------------------------------------
@@ -294,6 +520,16 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 		return jsonResponse(detail);
 	}
 
+	// --- Supervisor conversation send (Start-tab chat terminal) ---------
+	if (p === "/api/supervisor/send" && req.method === "POST") {
+		const body = (await req.json().catch(() => null)) as { content?: string; role?: string } | null;
+		const content = typeof body?.content === "string" ? body.content.trim() : "";
+		if (!content) return jsonResponse({ ok: false, reason: "empty_message" }, { status: 400 });
+		const role = body?.role === "supervisor" ? "supervisor" : "operator";
+		await appendSupervisorConversation(cwd, { ts: new Date().toISOString(), role, content });
+		return jsonResponse({ ok: true });
+	}
+
 	// --- Mailbox events --------------------------------------------------
 	if (p === "/api/mailbox/events" && req.method === "GET") {
 		const batchId = url.searchParams.get("batchId") ?? (await activeBatchId(cwd));
@@ -312,6 +548,12 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 	}
 
 	// --- Worker conversation transcript ----------------------------------
+	const conversationEventsMatch = p.match(/^\/api\/conversation\/([^/]+)\/events$/);
+	if (conversationEventsMatch && req.method === "GET") {
+		const events = await readLaneConversationEvents(cwd, conversationEventsMatch[1]);
+		return jsonResponse({ events });
+	}
+
 	const conversationMatch = p.match(/^\/api\/conversation\/([^/]+)$/);
 	if (conversationMatch && req.method === "GET") {
 		const content = await readLaneConversation(cwd, conversationMatch[1]);
@@ -337,6 +579,11 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 	if (agentStatusMatch && req.method === "GET") {
 		const result = await getMissionAgentStatus(cwd, agentStatusMatch[1]);
 		return jsonResponse(result);
+	}
+
+	const agentEventsMatch = p.match(/^\/api\/agent-events\/([^/]+)$/);
+	if (agentEventsMatch && req.method === "GET") {
+		return handleAgentEvents(cwd, agentEventsMatch[1], url);
 	}
 
 	return new Response("Not Found", { status: 404 });
@@ -412,6 +659,76 @@ async function readLaneConversation(cwd: string, rawLaneId: string): Promise<str
 		}
 	}
 	return null;
+}
+
+async function readLaneConversationEvents(cwd: string, rawLaneId: string): Promise<Array<Record<string, unknown>>> {
+	const [maybeBatch, maybeLane] = rawLaneId.includes(":") ? rawLaneId.split(":") : [null, rawLaneId];
+	const batchId = maybeBatch ?? (await activeBatchId(cwd));
+	if (!batchId) return [];
+	const laneSegment = (maybeLane ?? rawLaneId).replace(/[^a-zA-Z0-9._-]/g, "");
+	if (!laneSegment) return [];
+	const candidates = [
+		path.join(missionsDir(cwd), batchId, "lanes", laneSegment, "conversation.jsonl"),
+		path.join(missionsDir(cwd), batchId, "lanes", laneSegment, "log.jsonl"),
+	];
+	for (const candidate of candidates) {
+		try {
+			const raw = await Bun.file(candidate).text();
+			return Bun.JSONL.parse(raw) as Array<Record<string, unknown>>;
+		} catch (err) {
+			if (!isEnoent(err)) {
+				logger.warn("[missioncontrol] readLaneConversationEvents failed", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+				return [];
+			}
+		}
+	}
+	return [];
+}
+
+const AGENT_EVENTS_MAX = 300;
+const AGENT_ID_PATTERN = /^[\w-]+$/;
+
+async function handleAgentEvents(cwd: string, rawAgentId: string, url: URL): Promise<Response> {
+	if (!AGENT_ID_PATTERN.test(rawAgentId)) {
+		return jsonResponse({ error: "invalid_agent_id" }, { status: 400 });
+	}
+	const batchId = await activeBatchId(cwd);
+	if (!batchId) return new Response("Not Found", { status: 404 });
+
+	// Path containment — defence in depth against future regex loosening.
+	const agentsDir = path.resolve(cwd, ".omp", "runtime", batchId, "agents");
+	const agentDir = path.resolve(agentsDir, rawAgentId);
+	if (!agentDir.startsWith(agentsDir + path.sep)) {
+		return jsonResponse({ error: "forbidden" }, { status: 403 });
+	}
+
+	const eventsFile = runtimeAgentEventsPath(cwd, batchId, rawAgentId);
+	let events: Array<Record<string, unknown>>;
+	try {
+		const raw = await Bun.file(eventsFile).text();
+		events = Bun.JSONL.parse(raw) as Array<Record<string, unknown>>;
+	} catch (err) {
+		if (isEnoent(err)) return new Response("Not Found", { status: 404 });
+		logger.warn("[missioncontrol] handleAgentEvents failed", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return jsonResponse({ events: [] });
+	}
+
+	const sinceRaw = url.searchParams.get("sinceTs");
+	const sinceTs = sinceRaw ? Number.parseInt(sinceRaw, 10) : 0;
+	if (Number.isFinite(sinceTs) && sinceTs > 0) {
+		events = events.filter(e => {
+			const ts = typeof e.ts === "number" ? e.ts : 0;
+			return ts > sinceTs;
+		});
+	}
+	if (events.length > AGENT_EVENTS_MAX) {
+		events = events.slice(-AGENT_EVENTS_MAX);
+	}
+	return jsonResponse({ events });
 }
 
 async function readTaskStatusMd(cwd: string, rawTaskId: string): Promise<string | null> {

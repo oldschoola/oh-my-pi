@@ -42,6 +42,8 @@ import {
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { logger } from "@oh-my-pi/pi-utils";
+
 import { missionBatchPath, projectDir, supervisorEventsPath } from "./adapter";
 import { parseAgentFile } from "./agent-def";
 import { runGit } from "./git";
@@ -50,6 +52,8 @@ import type {
 	BatchSummaryData,
 	BranchProtectionStatus,
 	CiDeps,
+	EngineEvent,
+	EngineEventType,
 	EventTailerState,
 	IntegrationPlan,
 	MissionBatchRuntimeState,
@@ -546,6 +550,99 @@ export function isLockStale(lock: SupervisorLockfile): boolean {
 	return Date.now() - hb > STALE_LOCK_THRESHOLD_MS;
 }
 
+/**
+ * Live handle for an active supervisor. Created by
+ * {@link activateSupervisor}; released by {@link deactivateSupervisor}.
+ *
+ * The handle owns the heartbeat interval and the lockfile it wrote.
+ * Stopping the handle stops the heartbeat without touching the lockfile;
+ * {@link deactivateSupervisor} additionally removes the lockfile so the
+ * dashboard reports "inactive" immediately.
+ */
+export interface SupervisorHandle {
+	readonly batchId: string;
+	readonly sessionId: string;
+	readonly stateRoot: string;
+	/** Stop the heartbeat interval. Idempotent. */
+	stop(): void;
+}
+
+/**
+ * Heartbeat cadence for an active supervisor. 30 s is three times the
+ * 90 s `STALE_LOCK_THRESHOLD_MS` tolerance, which means the lockfile
+ * survives two missed beats before the dashboard considers it stale.
+ */
+const SUPERVISOR_HEARTBEAT_INTERVAL_MS = 30_000;
+
+/**
+ * Mark this process as the active supervisor for `batchId`:
+ * write the lockfile, start a heartbeat timer that refreshes the
+ * `heartbeat` field at {@link SUPERVISOR_HEARTBEAT_INTERVAL_MS}, and
+ * return a handle the caller can stop on teardown.
+ *
+ * The heartbeat timer is `unref`'d so it never blocks process exit; a
+ * hard crash leaves a lockfile that {@link isLockStale} flips to `stale`
+ * on the next read.
+ *
+ * Safe to call when a stale or foreign lockfile already exists —
+ * {@link writeLockfile} replaces it atomically.
+ */
+export function activateSupervisor(stateRoot: string, batchId: string): SupervisorHandle {
+	const sessionId = `supervisor-${Date.now()}-${process.pid}`;
+	const startedAt = new Date().toISOString();
+	const lock: SupervisorLockfile = {
+		pid: process.pid,
+		sessionId,
+		batchId,
+		startedAt,
+		heartbeat: startedAt,
+	};
+	writeLockfile(stateRoot, lock);
+
+	const timer = setInterval(() => {
+		try {
+			writeLockfile(stateRoot, { ...lock, heartbeat: new Date().toISOString() });
+		} catch (err) {
+			logger.warn("[missioncontrol] supervisor heartbeat failed", {
+				batchId,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}, SUPERVISOR_HEARTBEAT_INTERVAL_MS);
+	if (typeof timer.unref === "function") timer.unref();
+
+	let stopped = false;
+	return {
+		batchId,
+		sessionId,
+		stateRoot,
+		stop() {
+			if (stopped) return;
+			stopped = true;
+			clearInterval(timer);
+		},
+	};
+}
+
+/**
+ * Stop the supervisor heartbeat and remove the lockfile.
+ *
+ * Tolerates `handle === null` (no-op) so callers can call it
+ * unconditionally during teardown. Lockfile removal is best-effort —
+ * failure leaves the lockfile in place but still stops the heartbeat.
+ */
+export function deactivateSupervisor(handle: SupervisorHandle | null, stateRoot: string): void {
+	if (handle) handle.stop();
+	try {
+		const file = lockfilePath(stateRoot);
+		if (existsSync(file)) unlinkSync(file);
+	} catch (err) {
+		logger.warn("[missioncontrol] supervisor deactivate failed to remove lockfile", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+}
+
 /** Check whether a batch phase indicates the batch is no longer active. */
 export function isBatchTerminal(phase: string): boolean {
 	return TERMINAL_BATCH_PHASES.has(phase);
@@ -964,6 +1061,100 @@ export function readTier0EventsForBatch(stateRoot: string, batchId: string): Tie
 		} catch {
 			/* skip malformed */
 		}
+	}
+	return results;
+}
+
+const ENGINE_EVENT_TYPES: ReadonlySet<EngineEventType> = new Set<EngineEventType>([
+	"wave_start",
+	"task_complete",
+	"task_failed",
+	"merge_start",
+	"merge_success",
+	"merge_failed",
+	"merge_health_warning",
+	"merge_health_dead",
+	"merge_health_stuck",
+	"batch_complete",
+	"batch_paused",
+	"milestone_started",
+	"milestone_validating",
+	"milestone_passed",
+	"milestone_failed",
+	"validator_started",
+	"validator_completed",
+	"fix_feature_generated",
+]);
+
+/**
+ * Minimal projection of {@link EngineEvent} fields the supervisor timeline
+ * renders. Mirrors {@link Tier0EventSummary} shape — enough to decide the
+ * row label, outcome, and optional detail without forcing consumers to
+ * understand every engine-event field.
+ */
+export interface EngineEventSummary {
+	timestamp: string;
+	type: EngineEventType;
+	waveIndex: number;
+	phase: string;
+	taskId?: string;
+	laneNumber?: number;
+	durationMs?: number;
+	reason?: string;
+	error?: string;
+	succeededTasks?: number;
+	failedTasks?: number;
+	skippedTasks?: number;
+	blockedTasks?: number;
+}
+
+/**
+ * Read engine lifecycle events from `.omp/supervisor/events.jsonl`, filtered
+ * by batchId. Shares the file with Tier 0 events — the type-set filter
+ * separates the two streams. Returns empty array when the file is missing,
+ * unreadable, or has no matching entries.
+ */
+export function readEngineEventsForBatch(stateRoot: string, batchId: string): EngineEventSummary[] {
+	const eventsPath = supervisorEventsPath(stateRoot);
+	if (!existsSync(eventsPath)) return [];
+
+	let raw: string;
+	try {
+		raw = readFileSync(eventsPath, "utf-8").trim();
+	} catch {
+		return [];
+	}
+	if (!raw) return [];
+
+	const results: EngineEventSummary[] = [];
+	for (const line of raw.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		let parsed: Record<string, unknown>;
+		try {
+			parsed = JSON.parse(trimmed) as Record<string, unknown>;
+		} catch {
+			continue;
+		}
+		if (parsed.batchId !== batchId) continue;
+		if (typeof parsed.type !== "string" || !ENGINE_EVENT_TYPES.has(parsed.type as EngineEventType)) continue;
+
+		const entry: EngineEventSummary = {
+			timestamp: typeof parsed.timestamp === "string" ? parsed.timestamp : "",
+			type: parsed.type as EngineEventType,
+			waveIndex: typeof parsed.waveIndex === "number" ? parsed.waveIndex : 0,
+			phase: typeof parsed.phase === "string" ? parsed.phase : "",
+		};
+		if (typeof parsed.taskId === "string") entry.taskId = parsed.taskId;
+		if (typeof parsed.laneNumber === "number") entry.laneNumber = parsed.laneNumber;
+		if (typeof parsed.durationMs === "number") entry.durationMs = parsed.durationMs;
+		if (typeof parsed.reason === "string") entry.reason = parsed.reason;
+		if (typeof parsed.error === "string") entry.error = parsed.error;
+		if (typeof parsed.succeededTasks === "number") entry.succeededTasks = parsed.succeededTasks;
+		if (typeof parsed.failedTasks === "number") entry.failedTasks = parsed.failedTasks;
+		if (typeof parsed.skippedTasks === "number") entry.skippedTasks = parsed.skippedTasks;
+		if (typeof parsed.blockedTasks === "number") entry.blockedTasks = parsed.blockedTasks;
+		results.push(entry);
 	}
 	return results;
 }
@@ -1819,23 +2010,23 @@ ${guardrailsSection}
 
 You can invoke these tools directly — no need to ask the operator or use slash commands:
 
-- **mission_start(target)** — Start a new batch. Target is \`"all"\` for all pending tasks, or a task area name/path.
-- **mission_status()** — Check current batch status (phase, wave progress, task counts, elapsed time)
-- **mission_pause()** — Pause the running batch (current tasks finish, no new tasks start)
-- **mission_resume(force?)** — Resume a paused or interrupted batch. Use \`force=true\` for stuck batches.
-- **mission_abort(hard?)** — Abort the running batch. Use \`hard=true\` for immediate kill.
-- **mission_integrate(mode?, force?, branch?)** — Integrate completed batch into working branch.
+- **orch_start(target)** — Start a new batch. Target is \`"all"\` for all pending tasks, or a task area name/path.
+- **orch_status()** — Check current batch status (phase, wave progress, task counts, elapsed time)
+- **orch_pause()** — Pause the running batch (current tasks finish, no new tasks start)
+- **orch_resume(force?)** — Resume a paused or interrupted batch. Use \`force=true\` for stuck batches.
+- **orch_abort(hard?)** — Abort the running batch. Use \`hard=true\` for immediate kill.
+- **orch_integrate(mode?, force?, branch?)** — Integrate completed batch into working branch.
   Modes: \`"fast-forward"\` (default), \`"merge"\`, \`"pr"\`.
 
 ### When to Use These Tools
 
 Use tools **proactively** when the situation calls for it:
-- Operator asks to run tasks or start a batch → call \`mission_start(target="all")\` (or a specific area)
-- Operator asks "how's it going?" → call \`mission_status()\` first, then summarize
-- Batch paused due to a failure you diagnosed and fixed → call \`mission_resume()\`
-- Batch completed successfully → offer to call \`mission_integrate(mode="pr")\` or the operator's preferred mode
-- Batch is stuck or failing repeatedly → call \`mission_status()\` to diagnose, then \`mission_abort()\` if needed
-- Need to investigate before more tasks launch → call \`mission_pause()\` first
+- Operator asks to run tasks or start a batch → call \`orch_start(target="all")\` (or a specific area)
+- Operator asks "how's it going?" → call \`orch_status()\` first, then summarize
+- Batch paused due to a failure you diagnosed and fixed → call \`orch_resume()\`
+- Batch completed successfully → offer to call \`orch_integrate(mode="pr")\` or the operator's preferred mode
+- Batch is stuck or failing repeatedly → call \`orch_status()\` to diagnose, then \`orch_abort()\` if needed
+- Need to investigate before more tasks launch → call \`orch_pause()\` first
 
 These tools are preferred over reading mission-batch.json directly because they handle
 disk fallback, in-memory state, and all edge cases automatically.
@@ -2059,12 +2250,12 @@ Use these to:
 ### Orchestrator Tools
 
 You also have orchestrator tools available for batch management:
-- **mission_start(target)** — Start a new batch (target: "all" or a task area name/path)
-- **mission_status()** — Check batch status
-- **mission_resume(force?)** — Resume a paused batch
-- **mission_integrate(mode?, force?, branch?)** — Integrate completed batch (modes: "fast-forward", "merge", "pr")
-- **mission_pause()** — Pause running batch
-- **mission_abort(hard?)** — Abort running batch
+- **orch_start(target)** — Start a new batch (target: "all" or a task area name/path)
+- **orch_status()** — Check batch status
+- **orch_resume(force?)** — Resume a paused batch
+- **orch_integrate(mode?, force?, branch?)** — Integrate completed batch (modes: "fast-forward", "merge", "pr")
+- **orch_pause()** — Pause running batch
+- **orch_abort(hard?)** — Abort running batch
 
 Use these when the conversation leads to batch operations (e.g., starting a batch, integrating a completed batch).
 

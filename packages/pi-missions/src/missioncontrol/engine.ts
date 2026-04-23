@@ -8,6 +8,7 @@
  */
 
 import type { BatchPhase, BatchState, LaneStatus, MissionState, TaskOutcome, TaskStatus } from "../types";
+import { groupWavesIntoMilestones, onTaskOutcomeRecorded, toBatchMilestone } from "./engine-milestones";
 import type { MissionControlConfig, PromoteBatchOptions } from "./types";
 import { DEFAULT_MISSIONCONTROL_CONFIG } from "./types";
 import { chunkIntoWaves, nextWaveIndex } from "./waves";
@@ -62,6 +63,7 @@ export function promoteToBatch(
 		tasksFailed: 0,
 		startTime: Date.now(),
 		errors: [],
+		milestones: taskIds.length > 0 ? groupWavesIntoMilestones(waves.map(w => w.taskIds)).map(toBatchMilestone) : [],
 	};
 
 	return { ...state, kind: "batch", batch };
@@ -77,9 +79,11 @@ export function pauseBatch(state: MissionState): MissionState {
 	return withBatch(state, b => ({ ...b, phase: "paused" }));
 }
 
-export function resumeBatch(state: MissionState): MissionState {
+export function resumeBatch(state: MissionState, opts: { force?: boolean } = {}): MissionState {
 	if (!state.batch) return state;
-	if (state.batch.phase !== "paused") return state;
+	const phase = state.batch.phase;
+	if (phase === "running" || phase === "complete" || phase === "aborted") return state;
+	if (phase !== "paused" && !opts.force) return state;
 	return withBatch(state, b => ({ ...b, phase: "running" }));
 }
 
@@ -99,7 +103,10 @@ export function recordTaskOutcome(state: MissionState, outcome: TaskOutcome): Mi
 		const tasks = b.tasks.map(t => (t.taskId === outcome.taskId ? { ...t, ...outcome } : t));
 		const tasksComplete = tasks.filter(t => t.status === "succeeded").length;
 		const tasksFailed = tasks.filter(t => t.status === "failed").length;
-		return { ...b, tasks, tasksComplete, tasksFailed };
+		const next: BatchState = { ...b, tasks, tasksComplete, tasksFailed };
+		const milestones = onTaskOutcomeRecorded(next, outcome);
+		if (milestones !== next.milestones) next.milestones = milestones;
+		return next;
 	});
 }
 

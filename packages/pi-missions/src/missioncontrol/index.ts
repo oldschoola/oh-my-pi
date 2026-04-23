@@ -88,6 +88,7 @@ export {
 	toTaskRunnerConfig,
 } from "./config-loader";
 export type {
+	ApprovalPolicy,
 	AssignmentConfig,
 	ContextConfig,
 	DeepPartial,
@@ -96,7 +97,11 @@ export type {
 	GlobalPreferences,
 	InitAgentDefaultsPreferences,
 	MergeConfig,
+	MissionPolicy,
 	MissionProjectConfig,
+	MissionRole,
+	MissionRoleModels,
+	MissionsSection,
 	ModelFallbackMode,
 	MonitoringConfig,
 	OrchestratorCoreConfig,
@@ -107,6 +112,8 @@ export type {
 	ProjectMetadataConfig,
 	QualityGateConfig,
 	ReviewerConfig,
+	RiskLevel,
+	SecretScannerMode,
 	SelfDocTarget,
 	StandardsConfig,
 	StandardsOverride,
@@ -124,6 +131,8 @@ export {
 	CONFIG_VERSION,
 	DEFAULT_BOOTSTRAP_GLOBAL_PREFERENCES,
 	DEFAULT_GLOBAL_PREFERENCES,
+	DEFAULT_MISSION_POLICY,
+	DEFAULT_MISSIONS_SECTION,
 	DEFAULT_ORCHESTRATOR_SECTION,
 	DEFAULT_PROJECT_CONFIG,
 	DEFAULT_TASK_RUNNER_SECTION,
@@ -216,6 +225,25 @@ export {
 	upsertPendingExpandedSegmentRecords,
 	validateSegmentExpansionRequestAtBoundary,
 } from "./engine-expansion";
+export {
+	advanceMilestonePhase,
+	bumpValidationRound,
+	canAttemptAnotherValidationRound,
+	currentMilestone,
+	defaultMilestone,
+	emptyFixFeatureSet,
+	findMilestone,
+	groupWavesIntoMilestones,
+	markMilestoneFailed,
+	markMilestonePassed,
+	milestoneAllFeaturesComplete,
+	milestoneAnyFeatureStarted,
+	onTaskOutcomeRecorded,
+	recomputeMilestones,
+	TERMINAL_MILESTONE_STATUSES,
+	toBatchMilestone,
+	updateMilestoneInArray,
+} from "./engine-milestones";
 export { buildSegmentFrontierWaves, linearizeTaskSegmentPlan, resolveDisplayWaveNumber } from "./engine-segment-waves";
 export { resolveBatchHistoryTaskTokens, taskTokensFromOutcomeTelemetry } from "./engine-tokens";
 export type {
@@ -266,6 +294,21 @@ export type { IntegrateArgs, IntegrateMode, ResumeArgs } from "./extension-args"
 export { parseIntegrateArgs, parseResumeArgs } from "./extension-args";
 export type { DetachEngineRunDeps, Notify, NotifyLevel } from "./extension-async";
 export { detachEngineRun } from "./extension-async";
+export type {
+	GeneratedFixFeature,
+	GenerateFixFeaturesOptions,
+	ValidatorFinding,
+	ValidatorFindingSeverity,
+	ValidatorKind,
+} from "./fix-features";
+export {
+	buildFixFeatureId,
+	FIX_FEATURE_TEMPLATE_FILENAME,
+	generateFixFeatures,
+	MaxValidationRoundsExceededError,
+	renderTemplate,
+	slugify,
+} from "./fix-features";
 export type { MissionWidget, ModelCheckResult, ThemeLike } from "./formatting";
 export {
 	buildDashboardViewModel,
@@ -284,8 +327,20 @@ export { collectRepoCleanupFindings } from "./integrate-cleanup";
 export { resolveIntegrationContext } from "./integration-context";
 export { buildCiDeps, buildIntegrationExecutor } from "./integration-executor";
 export { killAllMergeAgentsV2, killMergeAgentV2 } from "./killers";
+export type { KnowledgeEntry } from "./knowledge";
+export {
+	appendKnowledgeEntry,
+	ingestValidatorLessons,
+	KNOWLEDGE_FILENAME,
+	KNOWLEDGE_GLOBAL_SCOPE,
+	knowledgePath,
+	parseKnowledgeText,
+	readKnowledgeEntries,
+	summariseKnowledge,
+} from "./knowledge";
 export type { LaneRunnerDeps, LaneRunnerHandle, ReviewerTelemetryContext, SegmentCheckboxCounts } from "./lane-runner";
 export {
+	buildTaskPrompt,
 	getSegmentCheckboxes,
 	getStepsForRepoId,
 	hasPendingExpansionRequestFiles,
@@ -303,6 +358,7 @@ export {
 	ackMessage,
 	ackOutboxMessage,
 	appendMailboxAuditEvent,
+	atomicWriteJsonFile,
 	broadcastInboxDir,
 	checkRateLimit,
 	discoverMailboxAgentIds,
@@ -333,8 +389,48 @@ export {
 export { computeIntegrateCleanupResult, MISSION_MESSAGES } from "./messages";
 export type { AppliedMigration, Migration, MigrationRunResult, MigrationState, MissionMeta } from "./migrations";
 export { loadMissionMeta, MIGRATION_REGISTRY, runMigrations, saveMissionMeta } from "./migrations";
+export type { ReconcileMilestoneValidatorsOptions } from "./milestone-resume";
+export { reconcileMilestoneValidators } from "./milestone-resume";
+export type { MilestoneRuntime, ValidationRoundDeps, ValidationRoundResult } from "./milestone-runner";
+export {
+	countFixFeaturesForMilestone,
+	insertFixFeaturesIntoBatch,
+	runValidationRound,
+} from "./milestone-runner";
+export type { CheckpointInput } from "./mission-checkpoint";
+export {
+	CHECKPOINTS_DIRNAME,
+	checkpointPath,
+	checkpointsDir,
+	renderCheckpointMarkdown,
+	timestampSlug,
+	writeMissionCheckpoint,
+} from "./mission-checkpoint";
 export type { MissionDepsReport } from "./mission-deps";
 export { buildMissionDepsReport, parseMissionDepsArgs } from "./mission-deps";
+export type { MissionPlanReport } from "./mission-plan";
+export { buildMissionPlanReport, parseMissionPlanArgs } from "./mission-plan";
+export type { CreateSkillDraftOptions, SkillEntry, TaskSkillContext } from "./mission-skills";
+export {
+	buildSkillPromptBlock,
+	createSkillDraft,
+	discardSkillDraft,
+	findMatchingSkills,
+	listAvailableSkills,
+	listDraftSkills,
+	listPromotedSkills,
+	loadSkillContent,
+	normaliseSkillName,
+	parseSkillFrontMatter,
+	promoteSkillDraft,
+	resolveTaskSkills,
+	SKILL_DRAFTS_DIRNAME,
+	SKILLS_DIRNAME,
+	skillDir,
+	skillDraftDir,
+	skillDraftsRoot,
+	skillsRoot,
+} from "./mission-skills";
 export { detectMissionState } from "./mission-state-detect";
 export type { MissionStatusReport } from "./mission-status";
 export { buildMissionStatusReport } from "./mission-status";
@@ -347,6 +443,35 @@ export {
 	resolveRepoSlug,
 	sanitizeNameComponent,
 } from "./naming";
+export type {
+	AddAssertionInput,
+	ApprovePlanInput,
+	CreateMilestoneInput,
+	ListSkillsResult,
+	MilestoneStatusRow,
+	MilestoneWriteResult,
+	SetRoleModelInput,
+	SetRoleModelResult,
+	ValidationStatusResult,
+	WriteValidationContractInput,
+} from "./orch-handlers";
+export {
+	handleAddAssertion,
+	handleApprovePlan,
+	handleCreateMilestone,
+	handleKnowledgeEntries,
+	handleListSkills,
+	handleLoadBatchState,
+	handleLoadMilestones,
+	handleReadKnowledge,
+	handleReadPlanManifest,
+	handleReadRoleModels,
+	handleReadValidationContract,
+	handleReadValidationStatus,
+	handleSetRoleModel,
+	handleTelemetryRollup,
+	handleWriteValidationContract,
+} from "./orch-handlers";
 export {
 	packageFileExists,
 	packageRoot,
@@ -384,6 +509,7 @@ export {
 	upconvertV1toV2,
 	upconvertV2toV3,
 	upconvertV3toV4,
+	upconvertV4toV5,
 	updateBatchHistoryIntegration,
 	upsertTaskOutcome,
 	VALID_BATCH_PHASES,
@@ -391,6 +517,34 @@ export {
 	VALID_TASK_STATUSES,
 	validatePersistedState,
 } from "./persistence";
+export type {
+	Clarification,
+	DraftedFeature,
+	DraftFeatureOptions,
+	FinalizePlanOptions,
+	PlanManifest,
+} from "./planning";
+export {
+	clarificationsPath,
+	draftFeature,
+	finalizePlan,
+	listClarifications,
+	loadPlanManifest,
+	PLANNING_DIRNAME,
+	parseClarifications,
+	planManifestPath,
+	planningDir,
+	recordClarification,
+	renderFeaturePrompt,
+} from "./planning";
+export type { PolicyDecision } from "./policy";
+export {
+	classifyToolCall,
+	DEFAULT_RISK_TABLE,
+	DESTRUCTIVE_BASH_PATTERNS,
+	evaluateToolCall,
+	mergePolicy,
+} from "./policy";
 export { dropBatchAutostash, selectBatchAutostashIndices, withPreservedMissionHistory } from "./post-integration";
 export {
 	appendAgentEvent,
@@ -445,6 +599,7 @@ export {
 	collectDoneTaskIdsForResume,
 	collectRepoRoots,
 	computeResumePoint,
+	enrichResumePointWithMilestoneValidators,
 	getMergeStatusForWave,
 	reconcileTaskStates,
 	reconstructAllocatedLanes,
@@ -459,12 +614,35 @@ export {
 	REVIEWER_WAIT_TIMEOUT_MS,
 	reviewerExtension,
 } from "./reviewer";
+export type { ModelSource, ResolvedRoleModel } from "./role-models";
+export {
+	applyRoleModelOverride,
+	describeAllRoleModels,
+	describeModelResolution,
+	isMissionRole,
+	MISSION_ROLES,
+	persistRoleModelOverride,
+	projectConfigPath,
+	resolveModelForRole,
+} from "./role-models";
 export type { Engine, EngineDeps } from "./runtime";
 export { createEngine } from "./runtime";
+export type { ScanVerdict, SecretMatch, SecretPattern } from "./secret-scanner";
+export {
+	BUILTIN_SECRET_PATTERNS,
+	compileExtraPatterns,
+	evaluateTextForSecrets,
+	redactSecret,
+	scanForSecrets,
+	scanWithPolicy,
+	verdictForMatches,
+} from "./secret-scanner";
 export type { SidecarTailState, SidecarTelemetryDelta } from "./sidecar-telemetry";
 export { createSidecarTailState, tailSidecarJsonl } from "./sidecar-telemetry";
+export type { EngineEventSummary, SupervisorHandle } from "./supervisor";
 export {
 	ACTION_CLASSIFICATION_EXAMPLES,
+	activateSupervisor,
 	appendAuditEntry,
 	auditTrailPath,
 	bufferDigestEvent,
@@ -475,6 +653,7 @@ export {
 	buildSupervisorSystemPrompt,
 	buildTakeoverSummary,
 	collectBatchSummaryData,
+	deactivateSupervisor,
 	detectBranchProtection,
 	formatBatchSummary,
 	formatDurationMs,
@@ -500,6 +679,7 @@ export {
 	pollPrCiStatus,
 	processEvents,
 	readAuditTrail,
+	readEngineEventsForBatch,
 	readLockfile,
 	readLockfileAsync,
 	readNewBytes,
@@ -537,6 +717,22 @@ export {
 } from "./task-executor-core";
 export type { ResolvedTaskPaths } from "./task-paths";
 export { resolveCanonicalTaskPaths } from "./task-paths";
+export type {
+	DurationBucket,
+	MissionRollup,
+	RoleRollup,
+	TelemetryRole,
+	TelemetrySample,
+} from "./telemetry-rollup";
+export {
+	bucketDurations,
+	DEFAULT_DURATION_BUCKETS,
+	extractDurations,
+	rollupBatchState,
+	rollupTelemetry,
+	TELEMETRY_ROLES,
+	taskRecordToSample,
+} from "./telemetry-rollup";
 export type { LaneSessionAliasTarget } from "./tmux-compat";
 export { normalizeLaneSessionAlias, readLaneSessionAliases } from "./tmux-compat";
 export type {
@@ -601,6 +797,10 @@ export type {
 	MergeSessionSnapshot,
 	MergeVerification,
 	MergeWaveResult,
+	Milestone,
+	MilestoneStatus,
+	MilestoneValidatorReconciliation,
+	MilestoneValidatorSlot,
 	MissionBatchPhase,
 	MissionBatchRuntimeState,
 	MissionControlConfig,
@@ -715,6 +915,8 @@ export {
 	buildExpansionRequestId,
 	buildRuntimeAgentId,
 	buildSegmentId,
+	DEFAULT_MILESTONE_ID,
+	DEFAULT_MILESTONE_MAX_VALIDATION_ROUNDS,
 	DEFAULT_MISSIONCONTROL_CONFIG,
 	DEFAULT_ORCHESTRATOR_CONFIG,
 	DEFAULT_SUPERVISOR_CONFIG,
@@ -770,6 +972,57 @@ export {
 } from "./types";
 export type { ValidateModelDeps } from "./validate-models";
 export { validateModelAvailability } from "./validate-models";
+export type {
+	AssertionId,
+	BehavioralAssertion,
+	ValidationContract,
+} from "./validation-contract";
+export {
+	addAssertion,
+	assertionsForMilestone,
+	createEmptyContract,
+	findAssertion,
+	loadValidationContract,
+	saveValidationContract,
+	VALIDATION_CONTRACT_FILENAME,
+	VALIDATION_CONTRACT_SCHEMA_VERSION,
+	validateAssertionId,
+	validateContractShape,
+	validationContractPath,
+} from "./validation-contract";
+export type { ValidatorRunOutcome, WithStallTimeoutOptions } from "./validator-stall";
+export {
+	DEFAULT_HEARTBEAT_INTERVAL_MS,
+	DEFAULT_VALIDATOR_STALL_TIMEOUT_MS,
+	elapsedDays,
+	heartbeatAgeMs,
+	idleSinceLabel,
+	isHeartbeatStale,
+	withStallTimeout,
+} from "./validator-stall";
+export type {
+	MilestoneValidationRound,
+	MilestoneValidatorOutput,
+	MilestoneValidatorVerdict,
+	SpawnScrutinyValidatorOptions,
+	SpawnUserTestingValidatorOptions,
+} from "./validators";
+export {
+	combineValidatorVerdicts,
+	MILESTONE_VALIDATOR_SCHEMA_VERSION,
+	mergeValidatorRound,
+	parseMilestoneValidatorResult,
+	parseScrutinyValidatorResult,
+	parseUserTestingValidatorResult,
+	renderScrutinyPrompt,
+	renderUserTestingPrompt,
+	spawnScrutinyValidator,
+	spawnUserTestingValidator,
+	unionFindings,
+	unionLessons,
+	validationOutputDir,
+	validationOutputPath,
+} from "./validators";
 export type {
 	CommandResult,
 	FingerprintDiff,

@@ -76,6 +76,13 @@ function buildSimpleModeProtocol(state: MissionState): string {
 		"",
 	];
 
+	if (state.constraints && state.constraints.trim().length > 0) {
+		lines.push("## Constraints");
+		lines.push("");
+		lines.push(state.constraints.trim());
+		lines.push("");
+	}
+
 	// Phase list with status icons
 	for (let i = 0; i < state.phases.length; i++) {
 		const phase = state.phases[i];

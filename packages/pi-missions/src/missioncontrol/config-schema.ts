@@ -257,7 +257,92 @@ export interface OrchestratorSection {
 	supervisor: SupervisorSectionConfig;
 }
 
-// ── Workspace Section Interfaces ─────────────────────────────────────
+// ── Missions Section (Track G) ──────────────────────────
+
+/**
+ * Roles that receive per-role model overrides. Fresh-context spawns
+ * only — persistent workflows (lane-runner, merger) keep their existing
+ * plumbing because they predate Track G.
+ */
+export type MissionRole = "orchestrator" | "worker" | "scrutiny_validator" | "user_testing_validator";
+
+/**
+ * Per-role model bindings. Unset values defer to the role-specific
+ * fallback chain (see `resolveModelForRole`). `""` is treated the same
+ * as unset.
+ */
+export interface MissionRoleModels {
+	orchestrator?: string;
+	worker?: string;
+	scrutiny_validator?: string;
+	user_testing_validator?: string;
+}
+
+/** Missions-wide configuration (Track G + future tracks). */
+export interface MissionsSection {
+	/** Per-role model bindings. Absent or `""` → fallback chain kicks in. */
+	models: MissionRoleModels;
+	/** Policy controls (Track I). Absent → DEFAULT_MISSION_POLICY. */
+	policy?: MissionPolicy;
+}
+
+// ── Mission Policy (Track I) ──────────────────────────
+
+/**
+ * Risk classification for individual tool calls.
+ *
+ *   safe         — read-only, no side effects, no network egress.
+ *   privileged   — writes to the workspace OR talks to the network.
+ *   destructive  — irreversible side effects (delete, force-push, DB
+ *                   drops, etc.). Triggers the operator approval gate
+ *                   when `approval: "destructive"` policy is in force.
+ */
+export type RiskLevel = "safe" | "privileged" | "destructive";
+
+/** Approval policies for destructive tool calls. */
+export type ApprovalPolicy =
+	| "never" // all tool calls pass without approval (not recommended).
+	| "destructive" // operator must approve destructive calls.
+	| "privileged" // operator must approve privileged + destructive calls.
+	| "all"; // operator must approve every tool call (paranoid mode).
+
+/** Scanner enforcement stance for secrets. */
+export type SecretScannerMode =
+	| "off" // scanner disabled
+	| "warn" // surface warnings but don't block
+	| "block"; // refuse the spawn when secrets detected
+
+/**
+ * Policy configuration governing orchestrator + worker behavior in
+ * regulated / enterprise environments. Every field is optional so
+ * projects opt into controls one at a time.
+ */
+export interface MissionPolicy {
+	/** Approval policy for destructive / privileged tool calls. Default: `"destructive"`. */
+	approval: ApprovalPolicy;
+	/** Deny-list of tool names (exact match). These tools are rejected unconditionally. */
+	deniedTools: string[];
+	/** Allow-list; when non-empty, only listed tool names are permitted. */
+	allowedTools: string[];
+	/** Deny-list of bash command substrings. Matches against the full command line. */
+	deniedBashPatterns: string[];
+	/** Additional regex patterns the secret scanner considers "sensitive". */
+	secretPatterns: string[];
+	/** Scanner mode. Default: `"warn"`. */
+	secretScanner: SecretScannerMode;
+}
+
+/** Defaults: nothing denied, destructive calls need approval, scanner in warn mode. */
+export const DEFAULT_MISSION_POLICY: MissionPolicy = {
+	approval: "destructive",
+	deniedTools: [],
+	allowedTools: [],
+	deniedBashPatterns: [],
+	secretPatterns: [],
+	secretScanner: "warn",
+};
+
+// ── Workspace Section Interfaces ─────────────────────────
 
 /** Workspace repo definition (JSON config shape). */
 export interface WorkspaceRepoSectionConfig {
@@ -304,6 +389,8 @@ export interface MissionProjectConfig {
 	taskRunner: TaskRunnerSection;
 	orchestrator: OrchestratorSection;
 	workspace?: WorkspaceSectionConfig;
+	/** Missions-wide overrides (Track G). Absent = all defaults + fallback chain. */
+	missions?: MissionsSection;
 }
 
 // ── Global Preferences (Layer 2) ─────────────────────────────────────
@@ -462,6 +549,11 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 		model: "",
 		autonomy: "supervised",
 	},
+};
+
+/** Default missions section — no per-role model overrides. */
+export const DEFAULT_MISSIONS_SECTION: MissionsSection = {
+	models: {},
 };
 
 /** Default unified config */

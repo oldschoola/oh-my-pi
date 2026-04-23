@@ -59,6 +59,8 @@ export const MissionStateSchema = Type.Object({
 
 	startedAt: Type.String(),
 	completedAt: Type.Optional(Type.String()),
+
+	constraints: Type.Optional(Type.String()),
 });
 
 // ---------------------------------------------------------------------------
@@ -210,6 +212,34 @@ export function completeMission(state: MissionState): MissionState {
 	return { ...state, phases, completedAt: now };
 }
 
+/**
+ * Abort the mission. Marks the active phase `skipped`, any remaining
+ * pending phases `skipped`, stamps `completedAt`, clears `paused`, and
+ * writes a `mission_complete` event with the supplied reason. Returns a
+ * shallow-cloned state; callers persist via `saveMissionState`.
+ */
+export function abortMissionState(state: MissionState, reason: string): MissionState {
+	const now = new Date().toISOString();
+	const phases = state.phases.map(p => {
+		if (p.status === "active") return { ...p, status: "skipped" as const, completedAt: now };
+		if (p.status === "pending") return { ...p, status: "skipped" as const };
+		return { ...p };
+	});
+	const aborted: MissionState = {
+		...state,
+		phases,
+		paused: false,
+		pausedAt: undefined,
+		completedAt: now,
+	};
+	return {
+		...aborted,
+		progressLog: [
+			...aborted.progressLog,
+			{ timestamp: now, type: "mission_complete", detail: `Mission aborted: ${reason}` },
+		],
+	};
+}
 // ---------------------------------------------------------------------------
 // Pause / Resume
 // ---------------------------------------------------------------------------
