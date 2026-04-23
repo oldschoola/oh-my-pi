@@ -88,27 +88,30 @@ describe("validatePersistedState — schemaVersion", () => {
 		expect(() => validatePersistedState(obj)).toThrow(/schemaVersion/);
 	});
 
-	test("unsupported schemaVersion 5 rejected", () => {
-		expect(() => validatePersistedState(mkV4({ schemaVersion: 5 }))).toThrow(/Unsupported schema version 5/);
+	test("unsupported schemaVersion 6 rejected", () => {
+		expect(() => validatePersistedState(mkV4({ schemaVersion: 6 }))).toThrow(/Unsupported schema version 6/);
 	});
 
-	test("accepts v1, v2, v3, v4", () => {
-		// v4 = happy path
+	test("accepts v1, v2, v3, v4, v5", () => {
+		// v5 (current schema) = happy path — milestones field is optional.
+		expect(() => validatePersistedState(mkV4({ schemaVersion: 5 }))).not.toThrow();
+
+		// v4 missing milestones → upconvert seeds them.
 		expect(() => validatePersistedState(mkV4())).not.toThrow();
 
-		// v3 missing segments → upconvert fills []
+		// v3 missing segments → upconvert fills [].
 		const v3 = mkV4({ schemaVersion: 3 });
 		delete v3.segments;
 		expect(() => validatePersistedState(v3)).not.toThrow();
 
-		// v2 missing resilience/diagnostics/segments → upconvert fills defaults
+		// v2 missing resilience/diagnostics/segments → upconvert fills defaults.
 		const v2 = mkV4({ schemaVersion: 2 });
 		delete v2.resilience;
 		delete v2.diagnostics;
 		delete v2.segments;
 		expect(() => validatePersistedState(v2)).not.toThrow();
 
-		// v1 missing mode (and everything v2+) → upconvert chain fills defaults
+		// v1 missing mode (and everything v2+) → upconvert chain fills defaults.
 		const v1 = mkV4({ schemaVersion: 1 });
 		delete v1.mode;
 		delete v1.resilience;
@@ -395,15 +398,16 @@ describe("validatePersistedState — return value", () => {
 		expect(result).toBe(obj as unknown as typeof result);
 	});
 
-	test("v1 input is upconverted to v4 in place", () => {
+	test("v1 input is upconverted to current schema in place", () => {
 		const v1 = mkV4({ schemaVersion: 1 });
 		delete v1.mode;
 		delete v1.resilience;
 		delete v1.diagnostics;
 		delete v1.segments;
 		validatePersistedState(v1);
-		expect(v1.schemaVersion).toBe(4);
+		expect(v1.schemaVersion).toBe(5);
 		expect(v1.mode).toBe("repo");
 		expect(v1.segments).toEqual([]);
+		expect(Array.isArray(v1.milestones)).toBe(true);
 	});
 });

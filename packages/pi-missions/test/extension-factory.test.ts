@@ -40,6 +40,7 @@ interface StubApi {
 	sendUserMessage(): void;
 	setLabel(): void;
 	setModel(): Promise<boolean>;
+	registerTool(options: unknown): void;
 }
 
 /** One-liner to invoke the factory with the stub as a narrowed ExtensionAPI. */
@@ -93,6 +94,7 @@ function makeStubPi() {
 		sendUserMessage: () => {},
 		setLabel: () => {},
 		setModel: () => Promise.resolve(true),
+		registerTool: () => {},
 	};
 
 	return {
@@ -176,6 +178,9 @@ describe("extension factory contract", () => {
 			"before_agent_start",
 			"auto_retry_start",
 			"auto_retry_end",
+			"auto_compaction_start",
+			"tool_execution_start",
+			"tool_execution_end",
 		]);
 
 		for (const event of stub.events.keys()) {

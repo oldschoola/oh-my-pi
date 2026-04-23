@@ -687,6 +687,42 @@ test("GET /api/supervisor/detail marks lock as stale beyond threshold", async ()
 	expect(body.status.heartbeatAgeMs).toBeGreaterThan(0);
 });
 
+test("POST /api/supervisor/send appends operator entries to conversation.jsonl", async () => {
+	// Cleanup conversation.jsonl so preceding tests don't colour this assertion.
+	const convPath = join(workDir, ".omp", "supervisor", "conversation.jsonl");
+	try {
+		rmSync(convPath, { force: true });
+	} catch {}
+
+	const res = await fetch(`${baseUrl}/api/supervisor/send`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ content: "hello from the start tab" }),
+	});
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as { ok: boolean };
+	expect(body.ok).toBe(true);
+
+	// The appended row is visible via /api/supervisor/detail.
+	const detail = await fetch(`${baseUrl}/api/supervisor/detail`);
+	const parsed = (await detail.json()) as { conversation: Array<{ role: string; content: string }> };
+	const match = parsed.conversation.find(e => e.content === "hello from the start tab");
+	expect(match).toBeTruthy();
+	expect(match?.role).toBe("operator");
+});
+
+test("POST /api/supervisor/send rejects empty content with 400", async () => {
+	const res = await fetch(`${baseUrl}/api/supervisor/send`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ content: "   " }),
+	});
+	expect(res.status).toBe(400);
+	const body = (await res.json()) as { ok: boolean; reason?: string };
+	expect(body.ok).toBe(false);
+	expect(body.reason).toBe("empty_message");
+});
+
 test("GET /api/supervisor/detail skips malformed conversation lines", async () => {
 	const ts = new Date().toISOString();
 	// Line 2 is corrupt. A JSONL reader that parses the whole blob would

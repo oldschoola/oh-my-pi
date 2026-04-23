@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEngine } from "../src/missioncontrol/runtime";
+import { readLockfile } from "../src/missioncontrol/supervisor";
 import type { MissionState } from "../src/types";
 
 function seedMission(description = "port taskplane"): MissionState {
@@ -124,5 +125,48 @@ describe("createEngine runtime surface", () => {
 		await engineB.hooks.onSessionStart();
 		expect(rehydrated).not.toBeNull();
 		expect((rehydrated as MissionState | null)?.batch?.batchId).toBe(persistedBatchId!);
+	});
+
+	it("activates supervisor on batch start and deactivates on pause/abort", async () => {
+		let mission: MissionState | null = seedMission();
+		const engine = createEngine({
+			cwd,
+			getMission: () => mission,
+			setMission: state => {
+				mission = state;
+			},
+		});
+
+		await engine.handlers.batch({ taskIds: ["TP-A"], laneCount: 1 });
+		const lockActive = readLockfile(cwd);
+		expect(lockActive).not.toBeNull();
+		expect(lockActive?.batchId).toBe(mission?.batch?.batchId);
+		expect(lockActive?.pid).toBe(process.pid);
+
+		await engine.handlers.pause();
+		expect(readLockfile(cwd)).toBeNull();
+
+		await engine.handlers.resume({ force: true });
+		const lockResumed = readLockfile(cwd);
+		expect(lockResumed).not.toBeNull();
+		expect(lockResumed?.batchId).toBe(mission?.batch?.batchId);
+
+		await engine.handlers.abort("test teardown");
+		expect(readLockfile(cwd)).toBeNull();
+	});
+
+	it("onSessionEnd releases the supervisor lockfile", async () => {
+		let mission: MissionState | null = seedMission();
+		const engine = createEngine({
+			cwd,
+			getMission: () => mission,
+			setMission: state => {
+				mission = state;
+			},
+		});
+		await engine.handlers.batch({ taskIds: ["TP-B"], laneCount: 1 });
+		expect(readLockfile(cwd)).not.toBeNull();
+		await engine.hooks.onSessionEnd();
+		expect(readLockfile(cwd)).toBeNull();
 	});
 });

@@ -159,14 +159,14 @@ describe("upconvertV3toV4", () => {
 	});
 });
 
-describe("chained upconvert v1 → v2 → v3 → v4", () => {
+describe("chained upconvert v1 → v2 → v3 → v4 (partial chain)", () => {
 	test("produces a fully populated v4 object from a v1 object", () => {
 		const obj = v1();
 		upconvertV1toV2(obj);
 		upconvertV2toV3(obj);
 		upconvertV3toV4(obj);
 
-		expect(obj.schemaVersion).toBe(BATCH_STATE_SCHEMA_VERSION);
+		expect(obj.schemaVersion).toBe(4);
 		expect(obj.baseBranch).toBe("");
 		expect(obj.mode).toBe("repo");
 		expect(obj.resilience).toEqual({
@@ -179,7 +179,7 @@ describe("chained upconvert v1 → v2 → v3 → v4", () => {
 		expect(obj.segments).toEqual([]);
 	});
 
-	test("re-running the whole chain is idempotent", () => {
+	test("re-running v1→v4 is idempotent", () => {
 		const obj = v1();
 		upconvertV1toV2(obj);
 		upconvertV2toV3(obj);
@@ -193,8 +193,8 @@ describe("chained upconvert v1 → v2 → v3 → v4", () => {
 		expect(obj).toEqual(snapshot);
 	});
 
-	test("BATCH_STATE_SCHEMA_VERSION constant is 4", () => {
-		expect(BATCH_STATE_SCHEMA_VERSION).toBe(4);
+	test("BATCH_STATE_SCHEMA_VERSION constant is 5 (current)", () => {
+		expect(BATCH_STATE_SCHEMA_VERSION).toBe(5);
 	});
 });
 

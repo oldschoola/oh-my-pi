@@ -57,3 +57,24 @@ pi-*.html
 # Generated files
 packages/coding-agent/src/internal-urls/docs-index.generated.ts
 packages/typescript-edit-benchmark/runs/
+
+# Local / user scratch
+.claude/
+local/
+.omp/local/
+/.omp/supervisor/
+
+# pi-missions dev artifacts
+packages/pi-missions/.omp/
+packages/pi-missions/omp-live-sandbox/
+packages/pi-missions/scripts/*.png
+packages/pi-missions/scripts/ui-polish-tmp/
+
+# coding-agent runtime sandboxes (not for commit)
+packages/coding-agent/.omp/
+packages/coding-agent/.pi/
+packages/coding-agent/local/
+packages/coding-agent/packages/
+
+# Stale native bindings
+packages/natives/native/*.stale-*

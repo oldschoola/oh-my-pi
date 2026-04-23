@@ -1,5 +1,13 @@
-import { expect, test } from "bun:test";
-import { createGuiBridge, dispatchStartRequest, type MissionStartRequest, pendingBridgeCount } from "./gui-bridge";
+import { afterEach, expect, test } from "bun:test";
+import {
+	createGuiBridge,
+	dispatchStartRequest,
+	getDefaultToken,
+	type MissionStartRequest,
+	pendingBridgeCount,
+	registerDefaultBridge,
+	removeDefaultBridge,
+} from "./gui-bridge";
 
 function sampleRequest(token: string): MissionStartRequest {
 	return {
@@ -12,6 +20,10 @@ function sampleRequest(token: string): MissionStartRequest {
 		waveSize: 2,
 	};
 }
+
+afterEach(() => {
+	removeDefaultBridge();
+});
 
 test("createGuiBridge issues a UUID token", () => {
 	const bridge = createGuiBridge();
@@ -41,6 +53,7 @@ test("dispatchStartRequest resolves the bridge promise on valid submit", async (
 	const pending = bridge.waitForStart();
 	const result = dispatchStartRequest(sampleRequest(bridge.token));
 	expect(result.ok).toBe(true);
+	if (result.ok) expect(result.kind).toBe("explicit");
 	const received = await pending;
 	expect(received.description).toBe("test mission");
 	expect(pendingBridgeCount()).toBe(0);
@@ -55,4 +68,50 @@ test("close cleans up pending bridges without resolving", () => {
 	// After close, dispatch with the same token should fail.
 	const result = dispatchStartRequest(sampleRequest(bridge.token));
 	expect(result.ok).toBe(false);
+});
+
+test("registerDefaultBridge routes submits through the handler without clearing the bridge", async () => {
+	const received: MissionStartRequest[] = [];
+	const token = registerDefaultBridge(req => {
+		received.push(req);
+	});
+	expect(token).toMatch(/[0-9a-f-]{36}/);
+	expect(getDefaultToken()).toBe(token);
+
+	const first = dispatchStartRequest(sampleRequest(token));
+	expect(first.ok).toBe(true);
+	if (first.ok) expect(first.kind).toBe("default");
+
+	// The default bridge must persist across submits.
+	const second = dispatchStartRequest({ ...sampleRequest(token), description: "second" });
+	expect(second.ok).toBe(true);
+
+	// Let the microtask queue flush so handler calls resolve.
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(received.map(r => r.description)).toEqual(["test mission", "second"]);
+	expect(getDefaultToken()).toBe(token);
+});
+
+test("registering a new default bridge replaces the previous one", () => {
+	const firstToken = registerDefaultBridge(() => {});
+	const secondToken = registerDefaultBridge(() => {});
+	expect(secondToken).not.toBe(firstToken);
+	expect(getDefaultToken()).toBe(secondToken);
+	const stale = dispatchStartRequest(sampleRequest(firstToken));
+	expect(stale.ok).toBe(false);
+});
+
+test("explicit bridges win over the default bridge", async () => {
+	let defaultCalls = 0;
+	registerDefaultBridge(() => {
+		defaultCalls += 1;
+	});
+	const bridge = createGuiBridge();
+	const pending = bridge.waitForStart();
+	const result = dispatchStartRequest(sampleRequest(bridge.token));
+	expect(result.ok).toBe(true);
+	if (result.ok) expect(result.kind).toBe("explicit");
+	await pending;
+	expect(defaultCalls).toBe(0);
 });

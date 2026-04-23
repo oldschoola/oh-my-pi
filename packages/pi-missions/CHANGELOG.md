@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added (Start tab — supervisor chat terminal + opus model options)
+
+- **Start tab now renders a supervisor chat terminal below the mission form.** The new terminal polls `/api/supervisor/detail` every 3 s for the shared conversation stream and posts operator messages via the new `POST /api/supervisor/send` endpoint, which appends `{ ts, role: "operator", content }` entries to `.omp/supervisor/conversation.jsonl`. Messages typed here survive into the Active tab's `SupervisorPanel` when a batch is running, giving operators a continuous conversation across tabs. Empty messages (all whitespace) are rejected with `400 empty_message`.
+- **`claude-opus-4-7` and `claude-opus-4-6` added to `MODEL_OPTIONS` in `MissionStartForm.tsx`.** Ordered above `claude-opus-4-5` so the newest options surface first in each role dropdown (planner/worker/reviewer).
+
+### Changed (Start tab — defaults)
+
+- **`MissionStartForm` defaults updated.** Template now defaults to `adaptive` (was `standard`); autonomy now defaults to `auto` (was `medium`). Matches operator preference for the "run to completion with phase list growing from plan complexity" flow.
+
+### Tests
+
+- **`src/server.e2e.test.ts` — supervisor send endpoint.** Two new tests assert `POST /api/supervisor/send` appends an `operator` entry that round-trips through `/api/supervisor/detail`'s `conversation` array, and rejects all-whitespace content with `400 empty_message`.
+
 ### Changed (Active tab — page-swap layout)
 
 - **Active tab now uses a page-swap layout instead of a 3-column grid.** The mission list is the primary view; clicking a mission swaps the entire view to a full mission detail page with a back button. No mission is auto-selected on initial load or page refresh (`lastSelectedMissionId` preference is no longer restored on bootstrap), so users always see the list first. The inspector rail (Supervisor / Mailbox / Agents) moves to the detail view so list browsing stays focused. Cross-tab navigation from History → Active still opens the mission detail directly via `handleHistorySelect`.

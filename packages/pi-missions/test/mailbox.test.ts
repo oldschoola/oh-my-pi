@@ -184,6 +184,42 @@ describe("appendMailboxAuditEvent", () => {
 		expect(parsed.type).toBe("message_sent");
 		expect(parsed.batchId).toBe("b-1");
 	});
+
+	test("writeMailboxMessage emits a message_sent audit row", () => {
+		const msg = writeMailboxMessage(ROOT, "b-1", "lane-1", {
+			from: "supervisor",
+			type: "steer",
+			content: "focus on lane 1 tests",
+		});
+		const eventsPath = join(mailboxRoot(ROOT, "b-1"), "events.jsonl");
+		expect(existsSync(eventsPath)).toBe(true);
+		const rows = readFileSync(eventsPath, "utf-8")
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map(l => JSON.parse(l));
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			type: "message_sent",
+			from: "supervisor",
+			to: "lane-1",
+			messageId: msg.id,
+			messageType: "steer",
+			contentPreview: "focus on lane 1 tests",
+			broadcast: false,
+		});
+	});
+
+	test("writeBroadcastMessage emits an audit row with broadcast=true and to=_broadcast", () => {
+		writeBroadcastMessage(ROOT, "b-1", { from: "supervisor", type: "info", content: "all hands" });
+		const rows = readFileSync(join(mailboxRoot(ROOT, "b-1"), "events.jsonl"), "utf-8")
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map(l => JSON.parse(l));
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ type: "message_sent", to: "_broadcast", broadcast: true });
+	});
 });
 
 describe("rate limiting", () => {
