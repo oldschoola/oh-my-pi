@@ -1,0 +1,29 @@
+packages/pi-missions/src/server.e2e.test.ts
+  8176c49269c355db 1698-1832
+packages/pi-missions/src/dashboard-api.ts
+  8176c49269c355db 43,111-124,129-133,140-276,356-363,375-380,387-388
+packages/pi-missions/CHANGELOG.md
+  8176c49269c355db 9-20
+packages/pi-missions/src/client/App.tsx
+  8176c49269c355db 1,3,5,14,41-48,51,53,59,61-66,68,71,74-92,97-112,124,132-134,159-164,170-183,186-189,201-206,238,242-248,250-290,292-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "1c62d2a9a66a58aa58e0598add6a92fe8b60d2ba",
+  "prompts": {
+    "8176c49269c355db": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "f3679b9a-f19b-4316-81ef-eec497b56745",
+        "model": "custom:claude-opus-4-7"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 407,
+      "total_deletions": 96,
+      "accepted_lines": 385,
+      "overriden_lines": 0
+    }
+  }
+}
