@@ -1,0 +1,27 @@
+packages/pi-missions/src/server.ts
+  98126f6e7ff50ade 25,28-30,45,411-438,441,632-648
+packages/pi-missions/src/server.e2e.test.ts
+  98126f6e7ff50ade 1492-1624
+packages/pi-missions/CHANGELOG.md
+  98126f6e7ff50ade 9-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "c757df3b175c3fea45f0e0de742a2a544ee2eb64",
+  "prompts": {
+    "98126f6e7ff50ade": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "38237c67-d6aa-4f68-8e1f-79d9833cea61",
+        "model": "custom:claude-opus-4-7"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 194,
+      "total_deletions": 5,
+      "accepted_lines": 192,
+      "overriden_lines": 0
+    }
+  }
+}
