@@ -53,6 +53,18 @@ export interface TaskTelemetry {
 	costUsd: number;
 	toolCalls: number;
 	durationMs: number;
+	/** Live context window utilisation (0–100). @since round3 */
+	contextPct?: number;
+	/** Last tool invocation string (name + arg preview). @since round3 */
+	lastTool?: string;
+	/** Total retry events observed; absent when zero. @since round3 */
+	retries?: number;
+	/** True while the worker is in a retry backoff window. @since round3 */
+	retryActive?: boolean;
+	/** Last retry error message; only present when retries > 0. @since round3 */
+	lastRetryError?: string;
+	/** Auto-compaction count; absent when zero. @since round3 */
+	compactions?: number;
 }
 
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
@@ -78,6 +90,32 @@ export interface TaskOutcome {
 	laneNumber?: number;
 	telemetry?: TaskTelemetry;
 	statusData?: TaskStatusData;
+	/** Repo this task runs in (workspace mode). @since round3 */
+	repoId?: string;
+	/** Resolved repo after workspace routing (preferred over `repoId`). @since round3 */
+	resolvedRepoId?: string;
+	/** Ordered segment IDs for multi-repo tasks. @since round3 */
+	segmentIds?: string[];
+	/** Currently-active segment ID when running. @since round3 */
+	activeSegmentId?: string | null;
+}
+
+/** Per-repo outcome within a wave merge (workspace mode). @since round3 */
+export interface RepoMergeResult {
+	repoId?: string;
+	status: "succeeded" | "failed" | "partial";
+	laneNumbers: number[];
+	failedLane?: number | null;
+	failureReason?: string | null;
+}
+
+/** Per-wave merge outcome. @since round3 */
+export interface MergeResult {
+	waveIndex: number;
+	status: "succeeded" | "failed" | "partial";
+	failedLane?: number | null;
+	failureReason?: string | null;
+	repoResults?: RepoMergeResult[];
 }
 
 /** Per-lane runtime status (mirrors server LaneStatus). */
@@ -95,6 +133,26 @@ export interface LaneStatus {
 	elapsed: number;
 	/** Session identifier used by the worker (e.g. "orch-abc123-lane-1"). */
 	sessionName: string;
+	/** Repo identity for workspace-mode lanes. @since round3 */
+	repoId?: string;
+	/** Reviewer sub-row telemetry when a reviewer is running on this lane. @since round3 */
+	reviewer?: ReviewerStatus;
+}
+
+/** Per-lane reviewer telemetry snapshot. @since round3 */
+export interface ReviewerStatus {
+	active: boolean;
+	reviewType?: string;
+	reviewStep?: number;
+	elapsedMs?: number;
+	toolCalls?: number;
+	contextPct?: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	cacheReadTokens?: number;
+	cacheWriteTokens?: number;
+	costUsd?: number;
+	lastTool?: string;
 }
 
 /** Wave assignment (mirrors server WaveAssignment). */
@@ -118,6 +176,10 @@ export interface BatchState {
 	startTime: number;
 	endTime?: number;
 	errors: string[];
+	/** Workspace mode. @since round3 */
+	mode?: "repo" | "workspace";
+	/** Per-wave merge outcomes. @since round3 */
+	mergeResults?: MergeResult[];
 }
 
 export interface ProgressEvent {
@@ -135,6 +197,10 @@ export interface MissionState {
 	phases?: MissionPhase[];
 	progressLog?: ProgressEvent[];
 	batch?: BatchState;
+	/** Operator autonomy level mirrored from server-side `MissionState`. */
+	autonomy?: "low" | "medium" | "high" | "auto";
+	/** Free-form operator constraints — editable from `MissionMetaEditor`. */
+	constraints?: string;
 }
 
 export interface MissionDetail extends MissionSummary {
@@ -259,10 +325,14 @@ export interface SupervisorLock {
 	heartbeat: string;
 }
 
+export type SupervisorAutonomyLevel = "interactive" | "supervised" | "autonomous";
+
 export interface SupervisorStatus {
 	state: "active" | "stale" | "inactive";
 	lock: SupervisorLock | null;
 	heartbeatAgeMs: number | null;
+	/** Supervisor autonomy level from project config. @since round3 */
+	autonomy?: SupervisorAutonomyLevel;
 }
 
 export interface SupervisorConversationEntry {
@@ -312,4 +382,130 @@ export interface AgentSnapshot {
 		agents?: Array<Record<string, unknown>>;
 		[key: string]: unknown;
 	} | null;
+}
+
+// ---------------------------------------------------------------------------
+// Factory-alignment: validation contract, milestones, knowledge, plan,
+// role models, telemetry rollup, and skills (Track J2–J10 API shapes)
+// ---------------------------------------------------------------------------
+
+export interface BehavioralAssertion {
+	id: string;
+	area: string;
+	title: string;
+	description: string;
+	acceptanceCriteria: string[];
+	milestoneId?: string;
+	notes?: string;
+}
+
+export interface ValidationContract {
+	schemaVersion: number;
+	missionId: string;
+	updatedAt?: number;
+	assertions: BehavioralAssertion[];
+}
+
+export type BatchMilestoneStatus = "pending" | "in_progress" | "validating" | "passed" | "failed";
+
+export interface ClientMilestone {
+	id: string;
+	name: string;
+	featureIds: string[];
+	assertionIds: string[];
+	status: BatchMilestoneStatus;
+	validationRounds: number;
+	maxValidationRounds: number;
+	startedAt?: number;
+	endedAt?: number;
+}
+
+export interface MilestoneStatusRow {
+	milestone: ClientMilestone;
+	boundAssertions: BehavioralAssertion[];
+	/**
+	 * Findings are not yet persisted server-side; the field stays
+	 * optional so forward-compatible panels can render them when the
+	 * engine starts emitting them.
+	 */
+	findings?: Array<{ id: string; severity: string; summary: string }>;
+}
+
+export interface ValidationStatusResult {
+	batchId: string;
+	contract: ValidationContract | null;
+	rows: MilestoneStatusRow[];
+}
+
+export interface KnowledgeEntry {
+	scope: string;
+	timestamp: string;
+	author: string;
+	body: string;
+	title?: string;
+}
+
+export interface KnowledgeResponse {
+	entries: KnowledgeEntry[];
+	summary: string;
+}
+
+export type PlanStatus = "draft" | "awaiting-approval" | "approved";
+
+export interface PlanManifest {
+	schemaVersion: number;
+	missionId: string;
+	status: PlanStatus;
+	milestoneIds: string[];
+	featureIds: string[];
+	createdAt: string;
+	updatedAt: string;
+	approvedBy?: string;
+	approvedAt?: string;
+}
+
+export type ResolvedModelSource = "missions-override" | "legacy-seat" | "default" | "none";
+
+export interface ResolvedRoleModel {
+	role: "orchestrator" | "worker" | "scrutiny_validator" | "user_testing_validator";
+	model: string;
+	source: ResolvedModelSource;
+}
+
+export interface RoleModelsResponse {
+	roles: ResolvedRoleModel[];
+}
+
+export interface RoleRollup {
+	role: "orchestrator" | "worker" | "fix_worker" | "scrutiny_validator" | "user_testing_validator";
+	count: number;
+	durationMs: number;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	totalTokens: number;
+	costUsd: number;
+	toolCalls: number;
+}
+
+export interface MissionRollup {
+	perRole: RoleRollup[];
+	totals: Omit<RoleRollup, "role">;
+}
+
+export interface SkillEntry {
+	name: string;
+	version: string;
+	description: string;
+	origin: "promoted" | "draft";
+	folderPath: string;
+	skillPath: string;
+	tools?: string;
+	tags?: string[];
+}
+
+export interface SkillsResponse {
+	promoted: SkillEntry[];
+	drafts: SkillEntry[];
 }

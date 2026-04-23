@@ -1,83 +1,69 @@
-import { Layers, Moon, RefreshCw, Sun } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Moon, RefreshCw, Sun } from "lucide-react";
+import type { ConnectionState } from "../hooks/useConnectionStatus";
+import type { MissionDetail, MissionSummary } from "../types";
+import { ActiveMissionPill } from "./ActiveMissionPill";
+import { ConnectionDot } from "./ConnectionDot";
+import { MissionSwitcher } from "./MissionSwitcher";
 
 export function Header({
 	onRefresh,
 	refreshing,
 	theme,
 	onToggleTheme,
+	connection,
+	activeMission,
+	allMissions,
+	selectedId,
+	onPickMission,
+	onJumpToActive,
 }: {
 	onRefresh: () => void;
 	refreshing: boolean;
 	theme: "light" | "dark";
 	onToggleTheme: () => void;
+	connection: ConnectionState;
+	activeMission: MissionDetail | null;
+	allMissions: MissionSummary[];
+	selectedId: string | null;
+	onPickMission: (id: string) => void;
+	onJumpToActive: () => void;
 }) {
-	// Track seconds since last successful refresh
-	const [staleSecs, setStaleSecs] = useState(0);
-	const [fresh, setFresh] = useState(false);
-	const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
-
-	// Reset staleness counter whenever a refresh completes
-	const prevRefreshing = useRef(refreshing);
-	useEffect(() => {
-		if (prevRefreshing.current && !refreshing) {
-			// Refresh just completed
-			setStaleSecs(0);
-			setFresh(true);
-			const fadeTimeout = setTimeout(() => setFresh(false), 2000);
-			return () => clearTimeout(fadeTimeout);
-		}
-		prevRefreshing.current = refreshing;
-	}, [refreshing]);
-
-	useEffect(() => {
-		timerRef.current = setInterval(() => {
-			setStaleSecs(s => s + 1);
-		}, 1000);
-		return () => clearInterval(timerRef.current);
-	}, []);
-
-	const isStale = staleSecs > 60;
-	const dotColor = refreshing
-		? "var(--accent-amber)"
-		: isStale
-			? "var(--accent-amber)"
-			: fresh
-				? "var(--accent-green)"
-				: "var(--border-default)";
-
 	return (
 		<header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 mb-8 border-b border-[var(--border-subtle)]">
 			<div className="flex items-center gap-3">
-				<div
-					className="w-10 h-10 flex items-center justify-center shadow-lg flex-shrink-0"
-					style={{
-						borderRadius: "var(--radius-md)",
-						background: "linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-indigo) 100%)",
-					}}
-				>
-					<Layers size={20} color="white" />
+				<div className="pi-logo" aria-hidden="true">
+					<svg viewBox="0 0 36 36" width="36" height="36" role="img">
+						<title>pi-missions</title>
+						<rect x="0.5" y="0.5" width="35" height="35" rx="8" fill="none" stroke="var(--border-default)" />
+						{/* π glyph: top crossbar + two descending strokes */}
+						<path
+							d="M9 14 H27 M14 14 V26 M22 14 V26"
+							stroke="var(--text-primary)"
+							strokeWidth="1.8"
+							strokeLinecap="round"
+							fill="none"
+						/>
+						{/* cyan accent under the glyph */}
+						<line
+							x1="10"
+							y1="29"
+							x2="26"
+							y2="29"
+							stroke="var(--accent-cyan)"
+							strokeWidth="1.8"
+							strokeLinecap="round"
+						/>
+					</svg>
 				</div>
 				<div>
-					<h1 className="text-xl font-semibold text-[var(--text-primary)]">MissionControl</h1>
+					<h1 className="text-xl font-semibold text-[var(--text-primary)] tracking-tight">MissionControl</h1>
 					<p className="text-sm text-[var(--text-muted)]">Orchestrated multi-agent missions</p>
 				</div>
 			</div>
-			<div className="flex items-center gap-3">
-				{/* Freshness indicator */}
-				<div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-					<span
-						className="inline-block w-2 h-2 rounded-full transition-colors duration-700"
-						style={{ backgroundColor: dotColor }}
-					/>
-					{isStale ? (
-						<span className="text-[var(--accent-amber)]">
-							{staleSecs < 120 ? `${staleSecs}s ago` : `${Math.floor(staleSecs / 60)}m ago`}
-						</span>
-					) : fresh ? (
-						<span className="text-[var(--accent-green)]">Updated</span>
-					) : null}
-				</div>
+			<div className="flex items-center gap-3 flex-wrap">
+				<ConnectionDot state={connection} />
+				<ActiveMissionPill detail={activeMission} onClick={onJumpToActive} />
+				<MissionSwitcher missions={allMissions} selectedId={selectedId} onPick={onPickMission} />
 				<button
 					type="button"
 					className="btn"
@@ -89,7 +75,7 @@ export function Header({
 				</button>
 				<button
 					type="button"
-					className="btn btn-primary"
+					className="btn btn-accent"
 					onClick={onRefresh}
 					disabled={refreshing}
 					aria-label="Refresh missions"

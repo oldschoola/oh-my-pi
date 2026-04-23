@@ -1,5 +1,5 @@
 import { pctClass } from "../format";
-import type { TaskOutcome, WaveAssignment } from "../types";
+import type { BatchPhase, TaskOutcome, WaveAssignment } from "../types";
 
 /**
  * Per-wave segmented progress bar.
@@ -12,12 +12,15 @@ import type { TaskOutcome, WaveAssignment } from "../types";
 export function SegmentedBar({
 	waves,
 	currentWave,
+	phase,
 	tasksTotal,
 	taskMap,
 	compact = false,
 }: {
 	waves: WaveAssignment[];
 	currentWave: number;
+	/** Batch phase — enables the merging pulse on the current wave when `merging`. */
+	phase?: BatchPhase;
 	tasksTotal: number;
 	taskMap: Map<string, TaskOutcome>;
 	/** Reduces height and hides numeric wave labels. */
@@ -59,14 +62,14 @@ export function SegmentedBar({
 				const isCurrent = i === currentWave;
 				const isFuture = i > currentWave;
 				const isPast = i < currentWave;
+				const isMerging = phase === "merging" && isCurrent;
 				const liveFill = ws.total > 0 ? Math.round((ws.checked / ws.total) * 100) : 0;
 				const fillPct = isPast ? 100 : isCurrent ? (liveFill > 0 ? liveFill : 50) : 0;
-
 				return (
 					<div
 						key={i}
-						className="wave-seg"
-						title={`W${i + 1}: ${ws.checked}/${ws.total} (${w.taskIds.join(", ")})`}
+						className={`wave-seg${isMerging ? " wave-seg-merging" : ""}`}
+						title={`W${i + 1}: ${ws.checked}/${ws.total} (${w.taskIds.join(", ")})${isMerging ? " — merging" : ""}`}
 						style={{
 							width: `${widthPct}%`,
 							boxShadow: isCurrent ? "inset 0 0 0 1px var(--accent-blue)" : undefined,

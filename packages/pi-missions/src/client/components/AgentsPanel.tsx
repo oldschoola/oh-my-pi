@@ -1,22 +1,19 @@
 import { Bot } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getAgentsSnapshot, getMissionAgentStatus } from "../api";
-import type { AgentSnapshot } from "../types";
+import type { MissionAgentStatus } from "../api";
+import { getMissionAgentStatus } from "../api";
 
 export function AgentsPanel({ batchId, missionId }: { batchId?: string; missionId?: string }) {
-	const [snapshot, setSnapshot] = useState<AgentSnapshot>({ batchId: null, registry: null });
+	const [snapshot, setSnapshot] = useState<MissionAgentStatus>({ batchId: null, registry: null });
 
 	useEffect(() => {
 		let cancelled = false;
 		async function tick() {
-			let snap: AgentSnapshot;
-			if (batchId) {
-				snap = await getAgentsSnapshot(batchId);
-			} else if (missionId) {
-				snap = await getMissionAgentStatus(missionId);
-			} else {
-				snap = { batchId: null, registry: null };
+			if (!missionId) {
+				if (!cancelled) setSnapshot({ batchId: null, registry: null });
+				return;
 			}
+			const snap = await getMissionAgentStatus(missionId);
 			if (!cancelled) setSnapshot(snap);
 		}
 		void tick();
@@ -27,9 +24,7 @@ export function AgentsPanel({ batchId, missionId }: { batchId?: string; missionI
 		};
 	}, [batchId, missionId]);
 
-	const agents = Array.isArray(snapshot.registry?.agents)
-		? (snapshot.registry.agents as Array<Record<string, unknown>>)
-		: [];
+	const agents = snapshot.registry?.agents ?? [];
 
 	return (
 		<section className="surface p-4">
@@ -58,10 +53,10 @@ export function AgentsPanel({ batchId, missionId }: { batchId?: string; missionI
 				<ul className="grid gap-1 text-xs font-mono max-h-64 overflow-y-auto">
 					{agents.map((a, i) => (
 						<li key={i} className="flex gap-3 py-0.5">
-							<span className="font-medium">{String(a.agentId ?? a.id ?? i)}</span>
-							<span style={{ color: "var(--accent-blue)" }}>{String(a.role ?? "")}</span>
-							<span className="text-[var(--text-secondary)]">{String(a.status ?? "")}</span>
-							{a.pid ? <span className="text-[var(--text-muted)]">pid {String(a.pid)}</span> : null}
+							<span className="font-medium">{a.agentId}</span>
+							<span style={{ color: "var(--accent-blue)" }}>{a.role}</span>
+							<span className="text-[var(--text-secondary)]">{a.status}</span>
+							{a.pid ? <span className="text-[var(--text-muted)]">pid {a.pid}</span> : null}
 						</li>
 					))}
 				</ul>

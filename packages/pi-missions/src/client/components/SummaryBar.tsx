@@ -60,6 +60,7 @@ export function SummaryBar({ batch, summary }: SummaryBarProps) {
 			<SegmentedBar
 				waves={batch.waves}
 				currentWave={batch.currentWave}
+				phase={batch.phase}
 				tasksTotal={batch.tasksTotal}
 				taskMap={taskMap}
 			/>

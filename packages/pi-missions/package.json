@@ -37,6 +37,10 @@
 	"dependencies": {
 		"@oh-my-pi/pi-utils": "catalog:",
 		"@tailwindcss/node": "catalog:",
+		"@xterm/addon-clipboard": "catalog:",
+		"@xterm/addon-fit": "catalog:",
+		"@xterm/addon-web-links": "catalog:",
+		"@xterm/xterm": "catalog:",
 		"date-fns": "catalog:",
 		"jiti": "^2.6.1",
 		"lucide-react": "catalog:",

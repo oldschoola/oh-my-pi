@@ -40,12 +40,16 @@ const compiler = await compile(sourceCss, {
 	onDependency: () => {},
 });
 const tailwindOutput = compiler.build([...candidates]);
-await Bun.write("./dist/client/styles.css", tailwindOutput);
+
+const xtermCssPath = await resolveXtermCss();
+const xtermCss = await Bun.file(xtermCssPath).text();
+await Bun.write("./dist/client/styles.css", `${tailwindOutput}\n${xtermCss}`);
 
 console.log("Building React app...");
 const result = await Bun.build({
 	entrypoints: ["./src/client/index.tsx"],
 	outdir: "./dist/client",
+	target: "browser",
 	minify: true,
 	naming: "[dir]/[name].[ext]",
 });
@@ -75,3 +79,16 @@ const indexHtml = `<!DOCTYPE html>
 await Bun.write("./dist/client/index.html", indexHtml);
 
 console.log("Build complete");
+
+async function resolveXtermCss(): Promise<string> {
+	// Prefer Bun.resolveSync — follows the resolution Bun will use at runtime.
+	try {
+		return Bun.resolveSync("@xterm/xterm/css/xterm.css", import.meta.dir);
+	} catch {}
+	// Workspace fallback: scan for a hoisted copy.
+	const glob = new Bun.Glob("**/node_modules/@xterm/xterm/css/xterm.css");
+	for await (const p of glob.scan({ cwd: path.resolve("../.."), absolute: true })) {
+		return p;
+	}
+	throw new Error("Could not locate @xterm/xterm/css/xterm.css — did `bun install` run?");
+}

@@ -1,7 +1,8 @@
-import { ChevronRight, MessageCircle, RadioTower } from "lucide-react";
+import { MessageCircle, RadioTower } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getSupervisorDetail } from "../api";
 import type {
+	SupervisorAutonomyLevel,
 	SupervisorConversationEntry,
 	SupervisorDetail,
 	SupervisorStatus,
@@ -18,7 +19,6 @@ const EMPTY_DETAIL: SupervisorDetail = {
 export function SupervisorPanel({ batchId }: { batchId?: string; missionId?: string }) {
 	const [detail, setDetail] = useState<SupervisorDetail>(EMPTY_DETAIL);
 	const [error, setError] = useState<string | null>(null);
-	const [collapsed, setCollapsed] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -45,30 +45,24 @@ export function SupervisorPanel({ batchId }: { batchId?: string; missionId?: str
 
 	return (
 		<section>
-			<button type="button" className="collapsible-header" onClick={() => setCollapsed(c => !c)}>
-				<div className="flex items-center gap-2">
-					<div
-						className="p-1.5"
-						style={{
-							borderRadius: "var(--radius-sm)",
-							background: "color-mix(in srgb, var(--accent-cyan) 12%, transparent)",
-						}}
-					>
-						<RadioTower size={13} style={{ color: "var(--accent-cyan)" }} />
-					</div>
-					<h3 className="font-medium text-sm">Supervisor</h3>
+			<header className="flex items-center gap-2 mb-3">
+				<div
+					className="p-1.5"
+					style={{
+						borderRadius: "var(--radius-sm)",
+						background: "color-mix(in srgb, var(--accent-cyan) 12%, transparent)",
+					}}
+				>
+					<RadioTower size={13} style={{ color: "var(--accent-cyan)" }} />
 				</div>
+				<h3 className="font-medium text-sm">Supervisor</h3>
 				<StateSummary status={status} timelineLen={timeline.length} />
-				<ChevronRight size={14} className={`collapsible-chevron ${collapsed ? "" : "open"}`} />
-			</button>
-			<div className={`collapsible-body-tall ${collapsed ? "collapsed" : "expanded"}`}>
-				{error && <div className="text-xs text-[var(--accent-red)] mb-2">{error}</div>}
-
-				<StatusSection status={status} />
-				<ConversationSection conversation={conversation} />
-				<TimelineSection entries={timeline} />
-				<SummarySection content={summary} />
-			</div>
+			</header>
+			{error && <div className="text-xs text-[var(--accent-red)] mb-2">{error}</div>}
+			<StatusSection status={status} />
+			<ConversationSection conversation={conversation} />
+			<TimelineSection entries={timeline} />
+			<SummarySection content={summary} />
 		</section>
 	);
 }
@@ -110,6 +104,7 @@ function StatusSection({ status }: { status: SupervisorStatus }) {
 						<span className="font-semibold" style={{ color: dot }}>
 							{label}
 						</span>
+						{status.autonomy && <AutonomyBadge level={status.autonomy} />}
 						{status.heartbeatAgeMs !== null && (
 							<span className="text-[var(--text-muted)]">
 								(heartbeat {formatAge(status.heartbeatAgeMs)} ago)
@@ -286,6 +281,28 @@ function renderMarkdown(md: string): React.ReactNode {
 	}
 	flushList();
 	return blocks;
+}
+
+function AutonomyBadge({ level }: { level: SupervisorAutonomyLevel }) {
+	const color =
+		level === "autonomous"
+			? "var(--accent-green)"
+			: level === "supervised"
+				? "var(--accent-amber)"
+				: "var(--accent-blue)";
+	return (
+		<span
+			className="autonomy-badge"
+			style={{
+				color,
+				background: `color-mix(in srgb, ${color} 12%, transparent)`,
+				border: `1px solid color-mix(in srgb, ${color} 22%, transparent)`,
+			}}
+			title={`Supervisor autonomy: ${level}`}
+		>
+			{level}
+		</span>
+	);
 }
 
 function formatAge(ms: number): string {
