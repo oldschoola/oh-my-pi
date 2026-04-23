@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed (History tab — archived batch visibility)
+
+- **`resolveStatus()` in `dashboard-api.ts` now honors terminal `batch.phase` values even when the top-level `state.completedAt` is unset.** Archived batch missions written to `.omp/missions/<batchId>.json` frequently carry `batch.phase === "complete"`, `"error"`, or `"aborted"` without a sibling `completedAt`. The previous implementation only considered `completedAt`, so those archives were misclassified as `"active"` and never surfaced on the History tab. The summary returned by `/api/missions` now maps `batch.phase === "complete"` → `status: "completed"`, `"aborted"` / `"error"` → `"failed"`, before falling back to the existing `completedAt` / `paused` checks — keeping simple-mission semantics unchanged.
+
+### Tests
+
+- **`src/server.e2e.test.ts` — archived batch history visibility.** Two new tests seed MissionState archives with `batch.phase === "complete"` and `batch.phase === "aborted"` (no `state.completedAt`) and assert `/api/missions` returns `status: "completed"` and `status: "failed"` respectively. Protects the History tab against regressions that hide archived batches behind "active" filtering.
+
 ### Added (Start tab — supervisor chat terminal + opus model options)
 
 - **Start tab now renders a supervisor chat terminal below the mission form.** The new terminal polls `/api/supervisor/detail` every 3 s for the shared conversation stream and posts operator messages via the new `POST /api/supervisor/send` endpoint, which appends `{ ts, role: "operator", content }` entries to `.omp/supervisor/conversation.jsonl`. Messages typed here survive into the Active tab's `SupervisorPanel` when a batch is running, giving operators a continuous conversation across tabs. Empty messages (all whitespace) are rejected with `400 empty_message`.

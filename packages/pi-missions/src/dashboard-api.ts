@@ -344,9 +344,16 @@ function aggregateBatchTelemetry(batch: BatchState): {
 }
 
 function resolveStatus(state: MissionState): MissionSummary["status"] {
+	// Terminal batch phases map to history-visible statuses regardless of
+	// whether the top-level `state.completedAt` was populated. Archived
+	// MissionState snapshots for batch missions may omit `completedAt` while
+	// still recording a terminal `batch.phase` — without this fallback those
+	// missions are misclassified as "active" and never appear on the
+	// History tab.
+	if (state.batch?.phase === "error" || state.batch?.phase === "aborted") return "failed";
+	if (state.batch?.phase === "complete") return "completed";
 	if (state.completedAt) return "completed";
 	if (state.paused) return "paused";
-	if (state.batch?.phase === "error" || state.batch?.phase === "aborted") return "failed";
 	return "active";
 }
 

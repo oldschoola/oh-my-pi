@@ -1866,3 +1866,86 @@ test("list missions: V5 paused batch surfaces with paused status", async () => {
 		cleanupActiveBatch();
 	}
 });
+
+// ---------------------------------------------------------------------------
+// History tab visibility for archived batch missions
+//
+// Regression for the History panel: archived MissionState snapshots written
+// for terminated batch missions may carry `batch.phase === "complete"`,
+// `"error"`, or `"aborted"` without a top-level `state.completedAt` field.
+// resolveStatus() must honor the terminal batch phase so the mission gets
+// a "completed"/"failed" badge and surfaces on the History tab.
+// ---------------------------------------------------------------------------
+
+test("archived batch with phase=complete and no completedAt surfaces as 'completed' (history-visible)", async () => {
+	const id = "history-batch-complete";
+	writeMission(id, {
+		description: "completed batch without completedAt",
+		mode: "simple",
+		phases: [],
+		autonomy: "auto",
+		modelAssignment: {},
+		paused: false,
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: "2025-01-01T10:00:00Z",
+		kind: "batch",
+		batch: {
+			batchId: id,
+			phase: "complete",
+			waves: [],
+			currentWave: 0,
+			laneCount: 1,
+			laneStatuses: [],
+			tasks: [],
+			tasksTotal: 2,
+			tasksComplete: 2,
+			tasksFailed: 0,
+			startTime: 0,
+			endTime: 1,
+			errors: [],
+		},
+	});
+	const res = await fetch(`${baseUrl}/api/missions`);
+	const summaries = (await res.json()) as Array<{ id: string; status: string; batchPhase?: string }>;
+	const found = summaries.find(m => m.id === id);
+	expect(found).toBeDefined();
+	expect(found?.status).toBe("completed");
+	expect(found?.batchPhase).toBe("complete");
+});
+
+test("archived batch with phase=aborted surfaces as 'failed' (history-visible)", async () => {
+	const id = "history-batch-aborted";
+	writeMission(id, {
+		description: "aborted batch",
+		mode: "simple",
+		phases: [],
+		autonomy: "auto",
+		modelAssignment: {},
+		paused: false,
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: "2025-01-01T10:00:00Z",
+		kind: "batch",
+		batch: {
+			batchId: id,
+			phase: "aborted",
+			waves: [],
+			currentWave: 0,
+			laneCount: 1,
+			laneStatuses: [],
+			tasks: [],
+			tasksTotal: 1,
+			tasksComplete: 0,
+			tasksFailed: 0,
+			startTime: 0,
+			errors: [],
+		},
+	});
+	const res = await fetch(`${baseUrl}/api/missions`);
+	const summaries = (await res.json()) as Array<{ id: string; status: string; batchPhase?: string }>;
+	const found = summaries.find(m => m.id === id);
+	expect(found).toBeDefined();
+	expect(found?.status).toBe("failed");
+	expect(found?.batchPhase).toBe("aborted");
+});
