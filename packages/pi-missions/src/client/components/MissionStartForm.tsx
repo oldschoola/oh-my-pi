@@ -1,6 +1,13 @@
 import { CheckCircle2, Grid3x3, MessageCircle, Minus, RefreshCw, SendHorizontal, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { getMissionGuiToken, getSupervisorDetail, sendSupervisorMessage, startMissionFromGui } from "../api";
+import {
+	getMissionGuiToken,
+	getSupervisorDetail,
+	readStoredGuiToken,
+	sendSupervisorMessage,
+	startMissionFromGui,
+	writeStoredGuiToken,
+} from "../api";
 import type { AutonomyLevel, MissionStartRequest, SupervisorConversationEntry } from "../types";
 
 type SubmitState = "idle" | "submitting" | "dispatched" | "error";
@@ -66,8 +73,12 @@ export function MissionStartForm({
 	token?: string;
 	onDispatched?: () => void;
 }) {
-	const [resolvedToken, setResolvedToken] = useState<string | null>(providedToken ?? null);
-	const [tokenKind, setTokenKind] = useState<"default" | "explicit" | null>(providedToken ? "explicit" : null);
+	// Seed resolvedToken from the explicit prop first, then from localStorage
+	// so a page refresh stays submittable without waiting on the network.
+	const [resolvedToken, setResolvedToken] = useState<string | null>(providedToken ?? readStoredGuiToken());
+	const [tokenKind, setTokenKind] = useState<"default" | "explicit" | null>(
+		providedToken ? "explicit" : readStoredGuiToken() ? "default" : null,
+	);
 	const [description, setDescription] = useState("");
 	const [templateKey, setTemplateKey] = useState<TemplateKey>("adaptive");
 	const [autonomy, setAutonomy] = useState<AutonomyLevel>("auto");
@@ -84,20 +95,48 @@ export function MissionStartForm({
 
 	// Fetch the default GUI bridge token when no explicit prop is provided.
 	// This lets the Start form work on a bare `http://localhost:3848` open
-	// without a `?gui=<token>` query param.
+	// without a `?gui=<token>` query param. The resolved token is cached to
+	// localStorage so refreshing the page stays submittable even if the
+	// endpoint is momentarily unreachable.
 	useEffect(() => {
-		if (providedToken) return;
+		if (providedToken) {
+			// Explicit `?gui=` tokens are one-shot and owned by /mission-gui;
+			// don't cache them — they expire after a single submit.
+			return;
+		}
 		let cancelled = false;
-		void getMissionGuiToken().then(info => {
-			if (cancelled) return;
-			if (info) {
-				setResolvedToken(info.token);
-				setTokenKind(info.kind);
-			}
-		});
+		void getMissionGuiToken()
+			.then(info => {
+				if (cancelled) return;
+				if (info) {
+					setResolvedToken(info.token);
+					setTokenKind(info.kind);
+					writeStoredGuiToken(info.token);
+				} else if (!readStoredGuiToken()) {
+					// No server token AND no cache — surface the actionable
+					// error immediately so the operator isn't guessing why
+					// submit is disabled.
+					setErrorMsg(
+						"Dashboard bridge is not registered. Run `/mission-gui` in chat (or start an omp session with pi-missions enabled) to mint a bridge token.",
+					);
+					setState("error");
+				}
+			})
+			.catch(() => {
+				// Network failure — keep whatever cached token we seeded
+				// with, but surface a hint when the form has no token at all.
+				if (!cancelled && !resolvedToken) {
+					setErrorMsg("Dashboard bridge is unreachable. Check that the omp session is running, then reload.");
+					setState("error");
+				}
+			});
 		return () => {
 			cancelled = true;
 		};
+		// Only run on mount / when the providedToken prop changes. We
+		// intentionally leave resolvedToken out of deps — the catch path
+		// reads it at call-time to decide whether to show the hint.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [providedToken]);
 	async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
@@ -107,7 +146,9 @@ export function MissionStartForm({
 			return;
 		}
 		if (!resolvedToken) {
-			setErrorMsg("Dashboard bridge not ready — wait a moment and try again");
+			setErrorMsg(
+				"Dashboard bridge token unavailable. Run `/mission-gui` in your omp chat session to register a bridge, then refresh this page.",
+			);
 			setState("error");
 			return;
 		}
@@ -130,9 +171,26 @@ export function MissionStartForm({
 				onDispatched?.();
 			} else {
 				setState("error");
-				setErrorMsg(
-					result.reason === "unknown_token" ? "Token expired — rerun /mission-gui in chat" : "Invalid payload",
-				);
+				if (result.reason === "unknown_token") {
+					// The cached token no longer matches a registered bridge.
+					// Clear the cache and try to re-fetch so the next submit
+					// picks up the new token automatically.
+					writeStoredGuiToken(null);
+					setResolvedToken(null);
+					setTokenKind(null);
+					void getMissionGuiToken().then(info => {
+						if (info) {
+							setResolvedToken(info.token);
+							setTokenKind(info.kind);
+							writeStoredGuiToken(info.token);
+						}
+					});
+					setErrorMsg(
+						"Bridge token expired. Run `/mission-gui` in your omp chat session (or restart the extension) and retry — a fresh token will be fetched automatically.",
+					);
+				} else {
+					setErrorMsg("Invalid payload");
+				}
 			}
 		} catch (err) {
 			setState("error");

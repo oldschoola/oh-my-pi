@@ -9,11 +9,12 @@
  * oblivious to the phase change.
  */
 
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { getDefaultToken, removeDefaultBridge } from "../src/gui-bridge";
 import { bindMissionServer } from "../src/mission-server-binding";
 import { clearMissionServerHooks, getMissionServerHooks } from "../src/server-hooks";
 import type { BatchPhase, MissionState } from "../src/types";
@@ -240,5 +241,61 @@ describe("bindMissionServer controlBatch hook", () => {
 		expect(getMissionServerHooks().controlBatch).toBeUndefined();
 		// controlSimple is still wired.
 		expect(getMissionServerHooks().controlSimple).toBeDefined();
+	});
+});
+
+describe("bindMissionServer default bridge registration", () => {
+	let cwd = "";
+	beforeEach(() => {
+		// The `controlBatch` suite above does not unregister the default bridge
+		// between tests. Start from a clean slate so the first assertion in
+		// each test here is deterministic.
+		removeDefaultBridge();
+	});
+	afterEach(() => {
+		clearMissionServerHooks();
+		removeDefaultBridge();
+		if (cwd) {
+			rmSync(cwd, { recursive: true, force: true });
+			cwd = "";
+		}
+	});
+
+	it("registers a default GUI bridge synchronously so the dashboard can resolve a token immediately", () => {
+		cwd = mkdtempSync(join(tmpdir(), "omp-bind-"));
+		expect(getDefaultToken()).toBeNull();
+		bindMissionServer({
+			pi: stubPi(),
+			cwd,
+			getState: () => null,
+			setState: () => {},
+			getCtx: () => null,
+		});
+		const token = getDefaultToken();
+		expect(token).not.toBeNull();
+		expect(token).toMatch(/^[0-9a-f-]{36}$/);
+	});
+
+	it("replaces any prior default bridge on re-bind so extension reloads mint a fresh token", () => {
+		cwd = mkdtempSync(join(tmpdir(), "omp-bind-"));
+		bindMissionServer({
+			pi: stubPi(),
+			cwd,
+			getState: () => null,
+			setState: () => {},
+			getCtx: () => null,
+		});
+		const first = getDefaultToken();
+		expect(first).not.toBeNull();
+		bindMissionServer({
+			pi: stubPi(),
+			cwd,
+			getState: () => null,
+			setState: () => {},
+			getCtx: () => null,
+		});
+		const second = getDefaultToken();
+		expect(second).not.toBeNull();
+		expect(second).not.toBe(first);
 	});
 });

@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
 	approvePlan,
+	GUI_TOKEN_STORAGE_KEY,
 	getKnowledge,
 	getMilestones,
 	getPlanManifest,
@@ -22,7 +23,9 @@ import {
 	getTelemetryRollup,
 	getValidationContract,
 	getValidationStatus,
+	readStoredGuiToken,
 	setRoleModel,
+	writeStoredGuiToken,
 } from "./api";
 
 type FetchCall = { url: string; method: string; body?: string };
@@ -278,5 +281,63 @@ describe("getSkills", () => {
 	test("returns empty shape on 404", async () => {
 		mockFetch(() => notFound());
 		expect(await getSkills("m1")).toEqual({ promoted: [], drafts: [] });
+	});
+});
+
+describe("readStoredGuiToken / writeStoredGuiToken", () => {
+	// Minimal localStorage stub so `writeStoredGuiToken` / `readStoredGuiToken`
+	// behave inside Bun's Node-like test runner. Installed per-test and the
+	// prior state is restored after so tests outside this block still see a
+	// `typeof window === "undefined"` baseline.
+	let originalWindow: unknown;
+	beforeEach(() => {
+		originalWindow = (globalThis as { window?: unknown }).window;
+		const store = new Map<string, string>();
+		(globalThis as { window?: unknown }).window = {
+			localStorage: {
+				getItem(key: string): string | null {
+					return store.has(key) ? (store.get(key) ?? null) : null;
+				},
+				setItem(key: string, value: string): void {
+					store.set(key, value);
+				},
+				removeItem(key: string): void {
+					store.delete(key);
+				},
+			},
+		};
+	});
+	afterEach(() => {
+		if (originalWindow === undefined) {
+			delete (globalThis as { window?: unknown }).window;
+		} else {
+			(globalThis as { window?: unknown }).window = originalWindow as typeof globalThis.window;
+		}
+	});
+
+	test("round-trips a UUID token through localStorage", () => {
+		const token = "12345678-1234-1234-1234-1234567890ab";
+		writeStoredGuiToken(token);
+		expect(readStoredGuiToken()).toBe(token);
+		expect(window.localStorage.getItem(GUI_TOKEN_STORAGE_KEY)).toBe(token);
+	});
+
+	test("passing null clears the cached token", () => {
+		writeStoredGuiToken("12345678-1234-1234-1234-1234567890ab");
+		writeStoredGuiToken(null);
+		expect(readStoredGuiToken()).toBeNull();
+		expect(window.localStorage.getItem(GUI_TOKEN_STORAGE_KEY)).toBeNull();
+	});
+
+	test("returns null and clears cache when stored value is not a UUID", () => {
+		window.localStorage.setItem(GUI_TOKEN_STORAGE_KEY, "not-a-uuid");
+		expect(readStoredGuiToken()).toBeNull();
+		// Corrupt entry is cleared so the next read doesn't keep rejecting
+		// the same bad value.
+		expect(window.localStorage.getItem(GUI_TOKEN_STORAGE_KEY)).toBeNull();
+	});
+
+	test("returns null when no token has been stored", () => {
+		expect(readStoredGuiToken()).toBeNull();
 	});
 });

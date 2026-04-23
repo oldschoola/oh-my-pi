@@ -301,6 +301,45 @@ export async function getMissionGuiToken(): Promise<MissionGuiTokenInfo | null> 
 	return res.json() as Promise<MissionGuiTokenInfo>;
 }
 
+// ---------------------------------------------------------------------------
+// GUI bridge token persistence
+//
+// Cached in localStorage so a page refresh stays submittable even when the
+// `/api/mission-gui/token` endpoint is momentarily unreachable (extension
+// cold-booting, offline). Tokens are UUID v4 strings; anything else is
+// treated as corrupt cache and cleared.
+// ---------------------------------------------------------------------------
+
+export const GUI_TOKEN_STORAGE_KEY = "missioncontrol-gui-token";
+
+const TOKEN_SHAPE = /^[0-9a-f-]{36}$/i;
+
+export function readStoredGuiToken(): string | null {
+	if (typeof window === "undefined") return null;
+	try {
+		const stored = window.localStorage.getItem(GUI_TOKEN_STORAGE_KEY);
+		if (!stored) return null;
+		if (!TOKEN_SHAPE.test(stored)) {
+			window.localStorage.removeItem(GUI_TOKEN_STORAGE_KEY);
+			return null;
+		}
+		return stored;
+	} catch {
+		return null;
+	}
+}
+
+export function writeStoredGuiToken(token: string | null): void {
+	if (typeof window === "undefined") return;
+	try {
+		if (token) window.localStorage.setItem(GUI_TOKEN_STORAGE_KEY, token);
+		else window.localStorage.removeItem(GUI_TOKEN_STORAGE_KEY);
+	} catch {
+		// localStorage can throw in private browsing / quota-exceeded modes;
+		// persistence is best-effort.
+	}
+}
+
 export interface DashboardPreferences {
 	theme?: "dark" | "light";
 	rightRailCollapsed?: Record<string, boolean>;

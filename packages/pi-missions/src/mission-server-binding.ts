@@ -85,7 +85,8 @@ export function bindMissionServer(deps: MissionServerBindingDeps): void {
 		}
 	};
 
-	registerDefaultBridge(defaultHandler);
+	const bridgeToken = registerDefaultBridge(defaultHandler);
+	logger.debug("[pi-mission] default GUI bridge registered", { tokenPrefix: bridgeToken.slice(0, 8) });
 
 	setMissionServerHooks({
 		redirect: (message: string) => {
