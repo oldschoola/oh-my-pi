@@ -1,0 +1,25 @@
+packages/pi-missions/test/persistence-serialize.test.ts
+  cbaeb1348b003918 109-113
+packages/pi-missions/src/server.e2e.test.ts
+  cbaeb1348b003918 411,415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "015f588ddc3528cd4c8f4737d92cf5f7def46f8d",
+  "prompts": {
+    "cbaeb1348b003918": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "c0240d61-ea69-4a70-9ce3-ed1debe17729",
+        "model": "custom:qwen3.6-plus"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 7,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    }
+  }
+}
