@@ -43,6 +43,7 @@ import {
 	handleWriteValidationContract,
 	loadActiveBatch,
 	loadBatchState,
+	MAILBOX_MAX_CONTENT_BYTES,
 	mailboxRoot,
 	missionHistoryPath,
 	missionsDir,
@@ -53,6 +54,7 @@ import {
 	runtimeAgentEventsPath,
 	saveActiveBatch,
 	supervisorEventsPath,
+	writeBroadcastMessage,
 } from "./missioncontrol";
 import { readDashboardPreferences, writeDashboardPreferences } from "./preferences";
 import { getMissionServerHooks, type MissionMetaPatch } from "./server-hooks";
@@ -477,9 +479,55 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 
 	const redirectMatch = p.match(/^\/api\/mission\/([^/]+)\/redirect$/);
 	if (redirectMatch && req.method === "POST") {
+		const [, redirectId] = redirectMatch;
 		const body = (await req.json().catch(() => ({}))) as { message?: string };
 		const message = (body.message ?? "").trim();
 		if (!message) return jsonResponse({ ok: false, reason: "empty_message" }, { status: 400 });
+
+		// Batch missions have no in-process redirect hook (the chat agent
+		// only exists for simple missions). Route operator messages through
+		// the supervisor conversation log + a broadcast mailbox entry so
+		// the running supervisor and lane agents see the steer at their
+		// next turn boundary, and the Active-tab SupervisorPanel reflects
+		// the entry immediately.
+		const activeBatch = await loadActiveBatch(cwd);
+		if (activeBatch?.batch && (activeBatch.batch.batchId === redirectId || redirectId === "active")) {
+			const batchId = activeBatch.batch.batchId;
+			if (Buffer.byteLength(message, "utf8") > MAILBOX_MAX_CONTENT_BYTES) {
+				return jsonResponse({ ok: false, reason: "message_too_large" }, { status: 400 });
+			}
+			try {
+				await appendSupervisorConversation(cwd, {
+					ts: new Date().toISOString(),
+					role: "operator",
+					content: message,
+				});
+			} catch (err) {
+				logger.warn("[missioncontrol] redirect: append supervisor conversation failed", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+			try {
+				writeBroadcastMessage(cwd, batchId, {
+					from: "operator",
+					type: "steer",
+					content: message,
+				});
+			} catch (err) {
+				return jsonResponse(
+					{
+						ok: false,
+						reason: err instanceof Error ? err.message : String(err),
+					},
+					{ status: 500 },
+				);
+			}
+			return jsonResponse({ ok: true, route: "batch" });
+		}
+
+		// Simple mission path — dispatch through the registered redirect
+		// hook so the chat agent sees the operator follow-up and the
+		// `mission_redirect` progress event is recorded.
 		const redirect = getMissionServerHooks().redirect;
 		if (!redirect) return jsonResponse({ ok: false, reason: "no_hook" }, { status: 503 });
 		const result = redirect(message);

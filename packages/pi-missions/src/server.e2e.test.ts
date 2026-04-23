@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createGuiBridge, type MissionStartRequest, registerDefaultBridge, removeDefaultBridge } from "./gui-bridge";
@@ -1440,6 +1440,94 @@ test("POST /api/mission/:id/redirect returns 400 on empty message", async () => 
 		expect(res.status).toBe(400);
 	} finally {
 		clearMissionServerHooks();
+	}
+});
+
+test("POST /api/mission/:id/redirect on batch mission routes through supervisor mailbox (no redirect hook required)", async () => {
+	// Batch missions have no in-process redirect hook — the handler must
+	// fall back to appending to the supervisor conversation log and
+	// writing a broadcast mailbox message so running agents see the
+	// steer at their next turn boundary.
+	const batchId = "batch-redirect-wiring-1";
+	writeActiveBatch(batchId);
+	clearMissionServerHooks();
+	// Start from a clean conversation log so prior tests (including the
+	// malformed-line fixture) don't colour the last-line assertion.
+	try {
+		rmSync(join(workDir, ".omp", "supervisor", "conversation.jsonl"), { force: true });
+	} catch {}
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/redirect`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ message: "please prioritize lane 2" }),
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; route?: string; reason?: string };
+		expect(body.ok).toBe(true);
+		expect(body.reason).toBeUndefined();
+		expect(body.route).toBe("batch");
+
+		// Supervisor conversation log captured the operator message.
+		const convoPath = join(workDir, ".omp", "supervisor", "conversation.jsonl");
+		const convoLines = readFileSync(convoPath, "utf8")
+			.split("\n")
+			.map(l => l.trim())
+			.filter(l => l.length > 0);
+		expect(convoLines.length).toBeGreaterThan(0);
+		const lastEntry = JSON.parse(convoLines[convoLines.length - 1]) as {
+			role: string;
+			content: string;
+		};
+		expect(lastEntry.role).toBe("operator");
+		expect(lastEntry.content).toBe("please prioritize lane 2");
+
+		// Broadcast mailbox entry is written under .omp/mailbox/<batchId>/_broadcast/inbox.
+		const broadcastDir = join(workDir, ".omp", "mailbox", batchId, "_broadcast", "inbox");
+		const entries = readdirSync(broadcastDir).filter(f => f.endsWith(".msg.json"));
+		expect(entries.length).toBeGreaterThan(0);
+		const msg = JSON.parse(readFileSync(join(broadcastDir, entries[0]), "utf8")) as {
+			from: string;
+			type: string;
+			content: string;
+			batchId: string;
+			to: string;
+		};
+		expect(msg.from).toBe("operator");
+		expect(msg.type).toBe("steer");
+		expect(msg.content).toBe("please prioritize lane 2");
+		expect(msg.batchId).toBe(batchId);
+		expect(msg.to).toBe("_broadcast");
+	} finally {
+		cleanupActiveBatchFile();
+		try {
+			rmSync(join(workDir, ".omp", "mailbox"), { recursive: true, force: true });
+		} catch {}
+		try {
+			rmSync(join(workDir, ".omp", "supervisor"), { recursive: true, force: true });
+		} catch {}
+	}
+});
+
+test("POST /api/mission/:id/redirect on batch mission returns 400 on empty message without touching mailbox", async () => {
+	const batchId = "batch-redirect-wiring-empty";
+	writeActiveBatch(batchId);
+	clearMissionServerHooks();
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/redirect`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ message: "   " }),
+		});
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as { ok: boolean; reason?: string };
+		expect(body.ok).toBe(false);
+		expect(body.reason).toBe("empty_message");
+		// No mailbox broadcast written.
+		const broadcastDir = join(workDir, ".omp", "mailbox", batchId, "_broadcast", "inbox");
+		expect(existsSync(broadcastDir)).toBe(false);
+	} finally {
+		cleanupActiveBatchFile();
 	}
 });
 
