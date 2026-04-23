@@ -1,0 +1,121 @@
+packages/pi-missions/test/milestone-resume.test.ts
+  3b44cd2f50ee8dc0 1-236
+packages/pi-missions/test/role-models.test.ts
+  3b44cd2f50ee8dc0 1-240
+packages/pi-missions/test/engine-milestones.test.ts
+  3b44cd2f50ee8dc0 1-311
+packages/pi-missions/test/lane-runner-skill-injection.test.ts
+  3b44cd2f50ee8dc0 1-88
+packages/pi-missions/test/mission-checkpoint.test.ts
+  3b44cd2f50ee8dc0 1-199
+packages/pi-missions/test/planning.test.ts
+  3b44cd2f50ee8dc0 1-306
+packages/pi-missions/test/runtime-resume-reconciliation.test.ts
+  3b44cd2f50ee8dc0 1-219
+.gitignore
+  3b44cd2f50ee8dc0 60-80
+packages/pi-missions/scripts/smoke-integration.ts
+  3b44cd2f50ee8dc0 1-1140
+packages/pi-missions/test/killers.test.ts
+  3b44cd2f50ee8dc0 1-150
+packages/pi-missions/test/knowledge.test.ts
+  3b44cd2f50ee8dc0 1-289
+packages/pi-missions/test/discovery-milestone-parse.test.ts
+  3b44cd2f50ee8dc0 1-127
+packages/pi-missions/test/scrutiny-validator-spawn.test.ts
+  3b44cd2f50ee8dc0 1-228
+packages/pi-missions/CHANGELOG.md
+  3b44cd2f50ee8dc0 9-21
+packages/pi-missions/test/supervisor-activation.test.ts
+  3b44cd2f50ee8dc0 1-113
+packages/pi-missions/src/gui-bridge.test.ts
+  3b44cd2f50ee8dc0 1-10,24-27,56,72-116
+packages/pi-missions/test/validation-contract.test.ts
+  3b44cd2f50ee8dc0 1-237
+packages/pi-missions/test/extension-factory.test.ts
+  3b44cd2f50ee8dc0 43,97,181-183
+packages/pi-missions/test/orch-handlers.test.ts
+  3b44cd2f50ee8dc0 1-327
+packages/pi-missions/scripts/seed-dashboard-sandbox.ts
+  3b44cd2f50ee8dc0 1-284
+packages/pi-missions/test/agent-bridge.test.ts
+  3b44cd2f50ee8dc0 1-380
+packages/pi-missions/test/user-testing-validator.test.ts
+  3b44cd2f50ee8dc0 1-329
+packages/pi-missions/test/mission-plan.test.ts
+  3b44cd2f50ee8dc0 1-156
+packages/pi-missions/test/lane-runner.test.ts
+  3b44cd2f50ee8dc0 4-6,10-14,17,38-39,42,47,60,84-135,147
+packages/pi-missions/src/server.e2e.test.ts
+  3b44cd2f50ee8dc0 690-725
+packages/pi-missions/scripts/live-mission-check.ts
+  3b44cd2f50ee8dc0 1-223
+packages/pi-missions/test/mission-status.test.ts
+  3b44cd2f50ee8dc0 15,17,73-74,80-81,88-89,94-95,100,102,106,108,112-113,127-128,144-145,156-157,161-162,175-176,180-181,185-186,193-194,198-199,203-266
+packages/pi-missions/test/policy.test.ts
+  3b44cd2f50ee8dc0 1-175
+packages/pi-missions/test/validator-stall.test.ts
+  3b44cd2f50ee8dc0 1-160
+packages/pi-missions/src/client/api.test.ts
+  3b44cd2f50ee8dc0 1-282
+packages/pi-missions/test/skill-resolution.test.ts
+  3b44cd2f50ee8dc0 1-135
+packages/pi-missions/test/lane-runner-mvp-skill-injection.test.ts
+  3b44cd2f50ee8dc0 1-70
+packages/pi-missions/test/persistence-upconvert.test.ts
+  3b44cd2f50ee8dc0 162,169,182,196-197
+packages/pi-missions/test/secret-scanner.test.ts
+  3b44cd2f50ee8dc0 1-153
+packages/pi-missions/test/mailbox.test.ts
+  3b44cd2f50ee8dc0 187-222
+packages/pi-missions/test/telemetry-rollup.test.ts
+  3b44cd2f50ee8dc0 1-235
+packages/pi-missions/test/mission-skills.test.ts
+  3b44cd2f50ee8dc0 1-299
+packages/pi-missions/test/mission-integrate-command.test.ts
+  3b44cd2f50ee8dc0 1-277
+packages/pi-missions/test/engine-recordOutcome-milestones.test.ts
+  3b44cd2f50ee8dc0 1-109
+packages/pi-missions/test/persistence-v5-upconvert.test.ts
+  3b44cd2f50ee8dc0 1-287
+packages/pi-missions/test/milestone-runner-lane-integration.test.ts
+  3b44cd2f50ee8dc0 1-373
+packages/pi-missions/test/engine-runtime-surface.test.ts
+  3b44cd2f50ee8dc0 6,129-170
+packages/pi-missions/test/scrutiny-validator-parse.test.ts
+  3b44cd2f50ee8dc0 1-281
+packages/pi-missions/test/client-format.test.ts
+  3b44cd2f50ee8dc0 1-137
+packages/pi-missions/test/persistence-validate.test.ts
+  3b44cd2f50ee8dc0 91-92,95-99,102,107,114,401,408,411
+packages/pi-missions/test/supervisor-tools.test.ts
+  3b44cd2f50ee8dc0 1-707
+packages/pi-missions/test/milestone-runner.test.ts
+  3b44cd2f50ee8dc0 1-610
+packages/pi-missions/test/fix-feature-generation.test.ts
+  3b44cd2f50ee8dc0 1-210
+packages/pi-missions/test/discovery-skills-parse.test.ts
+  3b44cd2f50ee8dc0 1-98
+packages/pi-missions/scripts/boot-server.ts
+  3b44cd2f50ee8dc0 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "ef88add7abd1692a774f44483380d03133892e79",
+  "prompts": {
+    "3b44cd2f50ee8dc0": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "a4e73759-0026-4485-b680-97cf41ad34e1",
+        "model": "custom:claude-opus-4-7"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 10610,
+      "total_deletions": 52,
+      "accepted_lines": 10610,
+      "overriden_lines": 0
+    }
+  }
+}
