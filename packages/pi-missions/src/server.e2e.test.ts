@@ -2,8 +2,10 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGuiBridge, type MissionStartRequest } from "./gui-bridge";
+import { createGuiBridge, type MissionStartRequest, registerDefaultBridge, removeDefaultBridge } from "./gui-bridge";
+import { appendMailboxAuditEvent } from "./missioncontrol/mailbox";
 import { startServer } from "./server";
+import { clearMissionServerHooks, setMissionServerHooks } from "./server-hooks";
 
 let baseUrl = "";
 let stop: () => void = () => {};
@@ -826,4 +828,1005 @@ test("GET /api/mailbox/events preserves event.type (for status badge mapping)", 
 	expect(body.events[0].type).toBe("message_sent");
 	expect(body.events[0].messageType).toBe("request");
 	expect(body.events[1].type).toBe("message_rate_limited");
+});
+
+// ---------------------------------------------------------------------------
+// Round 3 — dashboard parity with engine fields
+// ---------------------------------------------------------------------------
+
+interface TaskRecord {
+	taskId: string;
+	laneNumber: number;
+	sessionName: string;
+	status: "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
+	taskFolder: string;
+	startedAt: number | null;
+	endedAt: number | null;
+	doneFileFound: boolean;
+	exitReason: string;
+	repoId?: string;
+	resolvedRepoId?: string;
+	segmentIds?: string[];
+	activeSegmentId?: string | null;
+}
+
+interface LaneRecord {
+	laneNumber: number;
+	laneId: string;
+	laneSessionId: string;
+	worktreePath: string;
+	branch: string;
+	taskIds: string[];
+	repoId?: string;
+}
+
+interface PersistedBatchFixture {
+	batchId: string;
+	phase: string;
+	mode: "repo" | "workspace";
+	tasks: TaskRecord[];
+	lanes: LaneRecord[];
+	wavePlan: string[][];
+	mergeResults?: Array<{
+		waveIndex: number;
+		status: "succeeded" | "failed" | "partial";
+		failedLane: number | null;
+		failureReason: string | null;
+		repoResults?: Array<{
+			repoId: string;
+			status: "succeeded" | "failed" | "partial";
+			laneNumbers: number[];
+			failedLane: number | null;
+			failureReason: string | null;
+		}>;
+	}>;
+}
+
+function writePersistedBatch(fixture: PersistedBatchFixture): void {
+	const now = Date.now();
+	const totalTasks = fixture.tasks.length;
+	const succeeded = fixture.tasks.filter(t => t.status === "succeeded").length;
+	const failed = fixture.tasks.filter(t => t.status === "failed").length;
+	const persisted = {
+		schemaVersion: 4,
+		batchId: fixture.batchId,
+		phase: fixture.phase,
+		baseBranch: "main",
+		orchBranch: "orch/main",
+		mode: fixture.mode,
+		startedAt: now - 60_000,
+		updatedAt: now,
+		endedAt: null,
+		currentWaveIndex: 0,
+		totalWaves: fixture.wavePlan.length,
+		totalTasks,
+		succeededTasks: succeeded,
+		failedTasks: failed,
+		skippedTasks: 0,
+		blockedTasks: 0,
+		blockedTaskIds: [] as string[],
+		lanes: fixture.lanes,
+		tasks: fixture.tasks,
+		wavePlan: fixture.wavePlan,
+		mergeResults: fixture.mergeResults ?? [],
+		lastError: null as unknown,
+		errors: [] as string[],
+		resilience: {
+			resumeForced: false,
+			retryCountByScope: {} as Record<string, number>,
+			lastFailureClass: null,
+			repairHistory: [] as unknown[],
+		},
+		diagnostics: {
+			taskExits: {} as Record<string, unknown>,
+			batchCost: 0,
+		},
+		segments: [] as unknown[],
+	};
+	mkdirSync(join(workDir, ".omp"), { recursive: true });
+	writeFileSync(join(workDir, ".omp", "mission-batch.json"), JSON.stringify(persisted));
+}
+
+function writeV2LaneSnapshot(batchId: string, laneNumber: number, snapshot: unknown): void {
+	const dir = join(workDir, ".omp", "runtime", batchId, "lanes");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, `lane-${laneNumber}.json`), JSON.stringify(snapshot));
+}
+
+function writeReviewerState(batchId: string, taskId: string, state: unknown): void {
+	const dir = join(workDir, ".omp", "missions", batchId, "tasks", taskId);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, ".reviewer-state.json"), JSON.stringify(state));
+}
+
+function writeMissionConfig(content: unknown): void {
+	const dir = join(workDir, ".omp");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "mission.json"), JSON.stringify(content));
+}
+
+function minimalBatchMission(id: string, batchId: string, extras: Partial<Record<string, unknown>> = {}): void {
+	writeMission(id, {
+		description: "round3",
+		mode: "simple",
+		phases: [{ name: "Plan", emoji: "P", status: "active" }],
+		autonomy: "high",
+		modelAssignment: {},
+		paused: false,
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: "2025-01-01T10:00:00Z",
+		kind: "batch",
+		batch: {
+			batchId,
+			phase: "running",
+			waves: [{ wave: 0, taskIds: ["T-1"] }],
+			currentWave: 0,
+			laneCount: 1,
+			laneStatuses: [
+				{
+					lane: 1,
+					taskId: "T-1",
+					status: "running",
+					stepProgress: "",
+					iteration: 1,
+					elapsed: 0,
+					sessionName: "s",
+				},
+			],
+			tasks: [
+				{
+					taskId: "T-1",
+					status: "running",
+					startTime: null,
+					endTime: null,
+					exitReason: "",
+					sessionName: "s",
+					doneFileFound: false,
+				},
+			],
+			tasksTotal: 1,
+			tasksComplete: 0,
+			tasksFailed: 0,
+			startTime: 0,
+			errors: [],
+			...extras,
+		},
+	});
+}
+
+test("GET /api/mission/:id exposes mode/repoId/segmentIds from persisted batch state", async () => {
+	const batchId = "r3-workspace-1";
+	minimalBatchMission(batchId, batchId);
+	writePersistedBatch({
+		batchId,
+		phase: "executing",
+		mode: "workspace",
+		wavePlan: [["T-1"]],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "mission-xy-lane-1",
+				worktreePath: "/tmp/wt",
+				branch: "orch/l-1",
+				taskIds: ["T-1"],
+				repoId: "frontend",
+			},
+		],
+		tasks: [
+			{
+				taskId: "T-1",
+				laneNumber: 1,
+				sessionName: "mission-xy-lane-1",
+				status: "running",
+				taskFolder: "/tmp/tf",
+				startedAt: null,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				repoId: "backend",
+				resolvedRepoId: "backend",
+				segmentIds: ["T-1::backend", "T-1::frontend"],
+				activeSegmentId: "T-1::backend",
+			},
+		],
+	});
+	const res = await fetch(`${baseUrl}/api/mission/${batchId}`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		state: {
+			batch: {
+				mode?: string;
+				laneStatuses: Array<{ repoId?: string }>;
+				tasks: Array<{
+					taskId: string;
+					repoId?: string;
+					resolvedRepoId?: string;
+					segmentIds?: string[];
+					activeSegmentId?: string | null;
+				}>;
+			};
+		};
+	};
+	expect(body.state.batch.mode).toBe("workspace");
+	expect(body.state.batch.laneStatuses[0].repoId).toBe("frontend");
+	const task = body.state.batch.tasks[0];
+	expect(task.repoId).toBe("backend");
+	expect(task.resolvedRepoId).toBe("backend");
+	expect(task.segmentIds).toEqual(["T-1::backend", "T-1::frontend"]);
+	expect(task.activeSegmentId).toBe("T-1::backend");
+});
+
+test("GET /api/mission/:id exposes mergeResults with per-repo sub-rows", async () => {
+	const batchId = "r3-merge-1";
+	minimalBatchMission(batchId, batchId);
+	writePersistedBatch({
+		batchId,
+		phase: "executing",
+		mode: "workspace",
+		wavePlan: [["T-1"]],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "mission-xy-lane-1",
+				worktreePath: "/tmp/wt",
+				branch: "orch/l-1",
+				taskIds: ["T-1"],
+			},
+		],
+		tasks: [
+			{
+				taskId: "T-1",
+				laneNumber: 1,
+				sessionName: "mission-xy-lane-1",
+				status: "succeeded",
+				taskFolder: "/tmp/tf",
+				startedAt: 1,
+				endedAt: 2,
+				doneFileFound: true,
+				exitReason: "",
+			},
+		],
+		mergeResults: [
+			{
+				waveIndex: 0,
+				status: "partial",
+				failedLane: 2,
+				failureReason: "conflict in frontend",
+				repoResults: [
+					{
+						repoId: "backend",
+						status: "succeeded",
+						laneNumbers: [1],
+						failedLane: null,
+						failureReason: null,
+					},
+					{
+						repoId: "frontend",
+						status: "failed",
+						laneNumbers: [2],
+						failedLane: 2,
+						failureReason: "conflict in frontend",
+					},
+				],
+			},
+		],
+	});
+	const res = await fetch(`${baseUrl}/api/mission/${batchId}`);
+	const body = (await res.json()) as {
+		state: {
+			batch: {
+				mergeResults?: Array<{
+					waveIndex: number;
+					status: string;
+					failureReason?: string | null;
+					repoResults?: Array<{ repoId?: string; status: string; laneNumbers: number[] }>;
+				}>;
+			};
+		};
+	};
+	const mr = body.state.batch.mergeResults?.[0];
+	expect(mr?.waveIndex).toBe(0);
+	expect(mr?.status).toBe("partial");
+	expect(mr?.failureReason).toBe("conflict in frontend");
+	expect(mr?.repoResults?.length).toBe(2);
+	expect(mr?.repoResults?.[0].repoId).toBe("backend");
+	expect(mr?.repoResults?.[1].status).toBe("failed");
+});
+
+test("GET /api/mission/:id surfaces per-task contextPct/lastTool from V2 lane snapshot", async () => {
+	const batchId = "r3-v2-snap";
+	minimalBatchMission(batchId, batchId);
+	writeV2LaneSnapshot(batchId, 1, {
+		batchId,
+		laneNumber: 1,
+		laneId: "lane-1",
+		repoId: "main",
+		taskId: "T-1",
+		segmentId: null,
+		status: "running",
+		worker: {
+			agentId: "mission-xy-lane-1-worker",
+			status: "running",
+			elapsedMs: 12_000,
+			toolCalls: 5,
+			contextPct: 34.5,
+			costUsd: 0.012,
+			lastTool: "read src/main.ts",
+			inputTokens: 2000,
+			outputTokens: 500,
+			cacheReadTokens: 100,
+			cacheWriteTokens: 50,
+		},
+		reviewer: null,
+		progress: null,
+		updatedAt: Date.now(),
+	});
+	const res = await fetch(`${baseUrl}/api/mission/${batchId}`);
+	const body = (await res.json()) as {
+		state: {
+			batch: {
+				tasks: Array<{ taskId: string; telemetry?: { contextPct?: number; lastTool?: string } }>;
+			};
+		};
+	};
+	const task = body.state.batch.tasks.find(t => t.taskId === "T-1");
+	expect(task?.telemetry?.contextPct).toBe(34.5);
+	expect(task?.telemetry?.lastTool).toBe("read src/main.ts");
+});
+
+test("GET /api/mission/:id exposes reviewer sub-row from V2 snapshot", async () => {
+	const batchId = "r3-reviewer-v2";
+	minimalBatchMission(batchId, batchId);
+	writeV2LaneSnapshot(batchId, 1, {
+		batchId,
+		laneNumber: 1,
+		laneId: "lane-1",
+		repoId: "main",
+		taskId: "T-1",
+		segmentId: null,
+		status: "running",
+		worker: null,
+		reviewer: {
+			agentId: "mission-xy-lane-1-reviewer",
+			status: "running",
+			elapsedMs: 4_000,
+			toolCalls: 2,
+			contextPct: 12.1,
+			costUsd: 0.004,
+			lastTool: "read reviews/step-1.md",
+			inputTokens: 400,
+			outputTokens: 200,
+			cacheReadTokens: 20,
+			cacheWriteTokens: 10,
+		},
+		progress: null,
+		updatedAt: Date.now(),
+	});
+	const res = await fetch(`${baseUrl}/api/mission/${batchId}`);
+	const body = (await res.json()) as {
+		state: {
+			batch: {
+				laneStatuses: Array<{
+					lane: number;
+					reviewer?: { active: boolean; toolCalls?: number; contextPct?: number; lastTool?: string };
+				}>;
+			};
+		};
+	};
+	const lane = body.state.batch.laneStatuses[0];
+	expect(lane.reviewer?.active).toBe(true);
+	expect(lane.reviewer?.toolCalls).toBe(2);
+	expect(lane.reviewer?.contextPct).toBe(12.1);
+	expect(lane.reviewer?.lastTool).toBe("read reviews/step-1.md");
+});
+
+test("GET /api/mission/:id falls back to .reviewer-state.json when V2 reviewer missing", async () => {
+	const batchId = "r3-reviewer-fs";
+	minimalBatchMission(batchId, batchId);
+	writeReviewerState(batchId, "T-1", {
+		status: "running",
+		elapsedMs: 8_000,
+		toolCalls: 4,
+		contextPct: 22.2,
+		costUsd: 0.008,
+		lastTool: "grep security/*",
+		inputTokens: 800,
+		outputTokens: 300,
+		cacheReadTokens: 40,
+		cacheWriteTokens: 20,
+		updatedAt: Date.now(),
+		reviewType: "step-review",
+		reviewStep: 2,
+	});
+	writeV2LaneSnapshot(batchId, 1, {
+		batchId,
+		laneNumber: 1,
+		laneId: "lane-1",
+		repoId: "main",
+		taskId: "T-1",
+		segmentId: null,
+		status: "running",
+		worker: null,
+		reviewer: null,
+		progress: null,
+		updatedAt: Date.now(),
+	});
+	const res = await fetch(`${baseUrl}/api/mission/${batchId}`);
+	const body = (await res.json()) as {
+		state: {
+			batch: {
+				laneStatuses: Array<{
+					reviewer?: { active: boolean; reviewType?: string; reviewStep?: number; lastTool?: string };
+				}>;
+			};
+		};
+	};
+	const reviewer = body.state.batch.laneStatuses[0].reviewer;
+	expect(reviewer?.active).toBe(true);
+	expect(reviewer?.reviewType).toBe("step-review");
+	expect(reviewer?.reviewStep).toBe(2);
+	expect(reviewer?.lastTool).toBe("grep security/*");
+});
+
+test("GET /api/supervisor/detail surfaces autonomy from mission config", async () => {
+	writeMissionConfig({
+		configVersion: 1,
+		orchestrator: {
+			supervisor: {
+				model: "",
+				autonomy: "autonomous",
+			},
+		},
+	});
+	const res = await fetch(`${baseUrl}/api/supervisor/detail`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		status: { state: string; autonomy?: string };
+	};
+	expect(body.status.autonomy).toBe("autonomous");
+});
+
+test("GET /api/conversation/:laneId/events parses JSONL events", async () => {
+	const batchId = "r3-conv-events";
+	const dir = join(workDir, ".omp", "missions", batchId, "lanes", "lane-1");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(
+		join(dir, "conversation.jsonl"),
+		[
+			JSON.stringify({ ts: 1000, type: "tool_execution_start", toolName: "read", argsPreview: "src/foo.ts" }),
+			JSON.stringify({ ts: 2000, type: "message_end", role: "assistant", text: "hello" }),
+			JSON.stringify({ ts: 3000, type: "auto_retry_start", attempt: 1, maxAttempts: 3 }),
+		].join("\n"),
+	);
+	const res = await fetch(`${baseUrl}/api/conversation/${batchId}:lane-1/events`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as { events: Array<{ type: string; ts: number; toolName?: string; role?: string }> };
+	expect(body.events.length).toBe(3);
+	expect(body.events[0].type).toBe("tool_execution_start");
+	expect(body.events[0].toolName).toBe("read");
+	expect(body.events[1].role).toBe("assistant");
+	expect(body.events[2].type).toBe("auto_retry_start");
+});
+
+// ---------------------------------------------------------------------------
+// Round 4: /mission integration + preferences endpoints
+// ---------------------------------------------------------------------------
+
+test("GET /api/mission-gui/token returns 404 when no default bridge is registered", async () => {
+	removeDefaultBridge();
+	const res = await fetch(`${baseUrl}/api/mission-gui/token`);
+	expect(res.status).toBe(404);
+});
+
+test("GET /api/mission-gui/token returns the default bridge token when registered", async () => {
+	const token = registerDefaultBridge(() => {});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission-gui/token`);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { token: string; kind: string };
+		expect(body.token).toBe(token);
+		expect(body.kind).toBe("default");
+	} finally {
+		removeDefaultBridge();
+	}
+});
+
+test("POST /api/mission/start accepts the default bridge token and fires the handler", async () => {
+	const received: string[] = [];
+	registerDefaultBridge(req => {
+		received.push(req.description);
+	});
+	try {
+		const tokenRes = await fetch(`${baseUrl}/api/mission-gui/token`);
+		const { token } = (await tokenRes.json()) as { token: string };
+		const res = await fetch(`${baseUrl}/api/mission/start`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				token,
+				templateKey: "minimal",
+				description: "default bridge mission",
+				autonomy: "medium",
+				modelAssignment: { planner: "claude-sonnet-4-6", worker: "claude-sonnet-4-6" },
+			}),
+		});
+		expect(res.status).toBe(202);
+		const body = (await res.json()) as { ok: boolean; kind?: string };
+		expect(body.ok).toBe(true);
+		expect(body.kind).toBe("default");
+		await Bun.sleep(10);
+		expect(received).toEqual(["default bridge mission"]);
+
+		// Default bridges persist across submits — a second token request must
+		// still resolve to the same token.
+		const tokenRes2 = await fetch(`${baseUrl}/api/mission-gui/token`);
+		const { token: sameToken } = (await tokenRes2.json()) as { token: string };
+		expect(sameToken).toBe(token);
+	} finally {
+		removeDefaultBridge();
+	}
+});
+
+test("POST /api/mission/:id/redirect dispatches through the redirect hook", async () => {
+	const calls: string[] = [];
+	setMissionServerHooks({
+		redirect: (msg: string) => {
+			calls.push(msg);
+			return { ok: true };
+		},
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/active-session/redirect`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ message: "please pivot to phase B" }),
+		});
+		expect(res.status).toBe(200);
+		expect(calls).toEqual(["please pivot to phase B"]);
+	} finally {
+		clearMissionServerHooks();
+	}
+});
+
+test("POST /api/mission/:id/redirect returns 400 on empty message", async () => {
+	setMissionServerHooks({
+		redirect: () => ({ ok: true }),
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/active-session/redirect`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ message: " " }),
+		});
+		expect(res.status).toBe(400);
+	} finally {
+		clearMissionServerHooks();
+	}
+});
+
+test("POST /api/mission/:id/skip-phase calls the skipPhase hook and surfaces completedPhaseName", async () => {
+	setMissionServerHooks({
+		skipPhase: () => ({ ok: true, completedPhaseName: "Plan" }),
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/active-session/skip-phase`, { method: "POST" });
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; completedPhaseName?: string };
+		expect(body.ok).toBe(true);
+		expect(body.completedPhaseName).toBe("Plan");
+	} finally {
+		clearMissionServerHooks();
+	}
+});
+
+test("PATCH /api/mission/:id calls the patchMission hook with the request body", async () => {
+	const received: Array<Record<string, unknown>> = [];
+	setMissionServerHooks({
+		patchMission: patch => {
+			received.push(patch as unknown as Record<string, unknown>);
+			return { ok: true };
+		},
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/active-session`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ autonomy: "high", constraints: "keep auth module intact" }),
+		});
+		expect(res.status).toBe(200);
+		expect(received).toEqual([{ autonomy: "high", constraints: "keep auth module intact" }]);
+	} finally {
+		clearMissionServerHooks();
+	}
+});
+
+test("PATCH /api/mission/:id returns 503 when no patchMission hook is set", async () => {
+	clearMissionServerHooks();
+	const res = await fetch(`${baseUrl}/api/mission/active-session`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ autonomy: "low" }),
+	});
+	expect(res.status).toBe(503);
+});
+
+test("GET /api/preferences returns {} when the file is missing", async () => {
+	const res = await fetch(`${baseUrl}/api/preferences`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as Record<string, unknown>;
+	expect(body).toEqual({});
+});
+
+test("POST /api/preferences merges and persists values", async () => {
+	const res = await fetch(`${baseUrl}/api/preferences`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ theme: "dark", lastSelectedMissionId: "abc" }),
+	});
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as { ok: boolean; preferences: { theme?: string; lastSelectedMissionId?: string } };
+	expect(body.ok).toBe(true);
+	expect(body.preferences.theme).toBe("dark");
+	expect(body.preferences.lastSelectedMissionId).toBe("abc");
+
+	// Second POST merges only the supplied fields.
+	const res2 = await fetch(`${baseUrl}/api/preferences`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ theme: "light" }),
+	});
+	expect(res2.status).toBe(200);
+	const body2 = (await res2.json()) as { preferences: { theme?: string; lastSelectedMissionId?: string } };
+	expect(body2.preferences.theme).toBe("light");
+	expect(body2.preferences.lastSelectedMissionId).toBe("abc");
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/agent-events/:agentId (Runtime V2 event stream) — round 5
+// ---------------------------------------------------------------------------
+
+function cleanupActiveBatch(): void {
+	try {
+		rmSync(join(workDir, ".omp", "mission-batch.json"), { force: true });
+	} catch {}
+}
+
+function writeActiveBatchMission(batchId: string): void {
+	// Minimal MissionState shape that loadActiveBatch + activeBatchId(server)
+	// can read: must have `.batch.batchId` after JSON.parse.
+	const state = {
+		id: batchId,
+		description: "round5-agent-events",
+		mode: "simple",
+		phases: [{ name: "Plan", emoji: "P", status: "active" }],
+		autonomy: "high",
+		modelAssignment: {},
+		paused: false,
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: "2025-01-01T10:00:00Z",
+		kind: "batch",
+		batch: { batchId, phase: "running", laneCount: 1 },
+	};
+	mkdirSync(join(workDir, ".omp"), { recursive: true });
+	writeFileSync(join(workDir, ".omp", "mission-batch.json"), JSON.stringify(state));
+}
+
+function writeRuntimeAgentEvents(batchId: string, agentId: string, events: Array<Record<string, unknown>>): void {
+	const dir = join(workDir, ".omp", "runtime", batchId, "agents", agentId);
+	mkdirSync(dir, { recursive: true });
+	const body = events.map(e => JSON.stringify(e)).join("\n") + (events.length > 0 ? "\n" : "");
+	writeFileSync(join(dir, "events.jsonl"), body);
+}
+
+test("GET /api/agent-events/:agentId returns 404 when no batch is active", async () => {
+	cleanupActiveBatch();
+	const res = await fetch(`${baseUrl}/api/agent-events/some-agent`);
+	expect(res.status).toBe(404);
+});
+
+test("GET /api/agent-events/:agentId rejects invalid agent ids with 400", async () => {
+	writeActiveBatchMission("mb-agent-events-invalid");
+	try {
+		// Characters outside [\w-]: dot, space. Both must reject as 400 since
+		// the batch exists — ruling out the 404 early-exit path.
+		const bad1 = await fetch(`${baseUrl}/api/agent-events/${encodeURIComponent("foo.bar")}`);
+		expect(bad1.status).toBe(400);
+		const bad2 = await fetch(`${baseUrl}/api/agent-events/${encodeURIComponent("foo bar")}`);
+		expect(bad2.status).toBe(400);
+	} finally {
+		cleanupActiveBatch();
+	}
+});
+
+test("GET /api/agent-events/:agentId returns events for a seeded agent", async () => {
+	const batchId = "mb-agent-events-1";
+	const agentId = "mb-agent-events-1-lane-1-worker";
+	writeActiveBatchMission(batchId);
+	try {
+		writeRuntimeAgentEvents(batchId, agentId, [
+			{ ts: 1000, type: "agent_started", payload: {} },
+			{ ts: 2000, type: "assistant_message", payload: { text: "hi" } },
+			{ ts: 3000, type: "agent_exited", payload: { exitCode: 0 } },
+		]);
+		const res = await fetch(`${baseUrl}/api/agent-events/${agentId}`);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { events: Array<{ ts: number; type: string }> };
+		expect(body.events.length).toBe(3);
+		expect(body.events.map(e => e.type)).toEqual(["agent_started", "assistant_message", "agent_exited"]);
+	} finally {
+		cleanupActiveBatch();
+	}
+});
+
+test("GET /api/agent-events/:agentId?sinceTs=N drops older events", async () => {
+	const batchId = "mb-agent-events-2";
+	const agentId = "mb-agent-events-2-lane-1-worker";
+	writeActiveBatchMission(batchId);
+	try {
+		writeRuntimeAgentEvents(batchId, agentId, [
+			{ ts: 1000, type: "agent_started" },
+			{ ts: 2000, type: "assistant_message" },
+			{ ts: 3000, type: "agent_exited" },
+		]);
+		const res = await fetch(`${baseUrl}/api/agent-events/${agentId}?sinceTs=1500`);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { events: Array<{ ts: number; type: string }> };
+		// Strictly greater than sinceTs: 2000 and 3000 stay; 1000 drops.
+		expect(body.events.map(e => e.ts)).toEqual([2000, 3000]);
+	} finally {
+		cleanupActiveBatch();
+	}
+});
+
+// ---------------------------------------------------------------------------
+// Mailbox live poll — proves that events appended *after* the server boots
+// surface on the next fetch (the contract the MailboxPanel's 2s poll relies
+// on). Uses the real `appendMailboxAuditEvent` writer, not hand-crafted JSON.
+// ---------------------------------------------------------------------------
+
+test("mailbox live poll: each audit-event type survives round-trip", async () => {
+	const batchId = "mb-live-1";
+	appendMailboxAuditEvent(workDir, batchId, {
+		type: "message_sent",
+		from: "supervisor",
+		to: "lane-1",
+		messageId: "live-1",
+		messageType: "steer",
+		contentPreview: "focus on VA-005",
+	});
+	appendMailboxAuditEvent(workDir, batchId, {
+		type: "message_delivered",
+		from: "supervisor",
+		to: "lane-1",
+		messageId: "live-1",
+	});
+	appendMailboxAuditEvent(workDir, batchId, {
+		type: "message_replied",
+		from: "lane-1",
+		to: "supervisor",
+		messageId: "live-1",
+		messageType: "reply",
+		contentPreview: "acknowledged",
+	});
+	appendMailboxAuditEvent(workDir, batchId, {
+		type: "message_escalated",
+		from: "lane-1",
+		to: "supervisor",
+		messageId: "live-2",
+		messageType: "escalate",
+		contentPreview: "blocked on repo-3",
+	});
+	appendMailboxAuditEvent(workDir, batchId, {
+		type: "message_rate_limited",
+		from: "supervisor",
+		to: "lane-1",
+		reason: "cooldown",
+		retryAfterMs: 5_000,
+	});
+
+	const res = await fetch(`${baseUrl}/api/mailbox/events?batchId=${batchId}`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		events: Array<{ type?: string; messageId?: string; reason?: string; retryAfterMs?: number }>;
+	};
+	expect(body.events.length).toBe(5);
+	// Server preserves append order (oldest first). The MailboxPanel reverses
+	// client-side, so the server contract is oldest-first.
+	expect(body.events.map(e => e.type)).toEqual([
+		"message_sent",
+		"message_delivered",
+		"message_replied",
+		"message_escalated",
+		"message_rate_limited",
+	]);
+	expect(body.events[4].reason).toBe("cooldown");
+	expect(body.events[4].retryAfterMs).toBe(5_000);
+});
+
+test("mailbox live poll: delta surfaces on next fetch", async () => {
+	const batchId = "mb-live-2";
+	appendMailboxAuditEvent(workDir, batchId, {
+		type: "message_sent",
+		from: "supervisor",
+		to: "lane-1",
+		messageId: "initial-1",
+	});
+	appendMailboxAuditEvent(workDir, batchId, {
+		type: "message_delivered",
+		from: "supervisor",
+		to: "lane-1",
+		messageId: "initial-1",
+	});
+
+	const first = await fetch(`${baseUrl}/api/mailbox/events?batchId=${batchId}`);
+	const firstBody = (await first.json()) as { events: Array<{ messageId?: string }> };
+	expect(firstBody.events.length).toBe(2);
+	const initialCount = firstBody.events.length;
+
+	// Two more events written *after* the server has served a fetch for this
+	// batch — proves the reader reads fresh state every call (no caching).
+	appendMailboxAuditEvent(workDir, batchId, {
+		type: "message_sent",
+		from: "supervisor",
+		to: "lane-2",
+		messageId: "delta-1",
+		messageType: "info",
+		contentPreview: "new after first fetch",
+	});
+	appendMailboxAuditEvent(workDir, batchId, {
+		type: "message_delivered",
+		from: "supervisor",
+		to: "lane-2",
+		messageId: "delta-1",
+	});
+
+	const second = await fetch(`${baseUrl}/api/mailbox/events?batchId=${batchId}`);
+	const secondBody = (await second.json()) as {
+		events: Array<{ messageId?: string; type?: string }>;
+	};
+	expect(secondBody.events.length).toBe(initialCount + 2);
+	// Delta at the tail — newer events written last, returned last (oldest-first).
+	expect(secondBody.events[secondBody.events.length - 2].messageId).toBe("delta-1");
+	expect(secondBody.events[secondBody.events.length - 2].type).toBe("message_sent");
+	expect(secondBody.events[secondBody.events.length - 1].messageId).toBe("delta-1");
+	expect(secondBody.events[secondBody.events.length - 1].type).toBe("message_delivered");
+});
+
+// ---------------------------------------------------------------------------
+// list missions: V5 PersistedBatchState active batch visibility
+//
+// Regression for the active-tab page-swap layout feature: when the engine
+// has written a V5 `PersistedBatchState` to `.omp/mission-batch.json` but
+// the MissionState archive under `.omp/missions/<id>.json` has not yet been
+// written, the mission must still appear in /api/missions with correct
+// status + task counts. Previously `readActiveBatch()` short-circuited on
+// the V5 shape and returned null, hiding the active batch from the list.
+// ---------------------------------------------------------------------------
+
+test("list missions: V5 active batch is visible with correct status and counts", async () => {
+	const batchId = "v5-active-visible";
+	// Wipe any leftover mission archive from earlier tests.
+	try {
+		rmSync(join(workDir, ".omp", "missions", `${batchId}.json`), { force: true });
+	} catch {}
+	writePersistedBatch({
+		batchId,
+		phase: "executing",
+		mode: "repo",
+		wavePlan: [["T-1", "T-2"]],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "mission-v5-lane-1",
+				worktreePath: "/tmp/wt",
+				branch: "orch/l-1",
+				taskIds: ["T-1"],
+			},
+			{
+				laneNumber: 2,
+				laneId: "lane-2",
+				laneSessionId: "mission-v5-lane-2",
+				worktreePath: "/tmp/wt",
+				branch: "orch/l-2",
+				taskIds: ["T-2"],
+			},
+		],
+		tasks: [
+			{
+				taskId: "T-1",
+				laneNumber: 1,
+				sessionName: "mission-v5-lane-1",
+				status: "succeeded",
+				taskFolder: "/tmp/tf",
+				startedAt: 1,
+				endedAt: 2,
+				doneFileFound: true,
+				exitReason: "",
+			},
+			{
+				taskId: "T-2",
+				laneNumber: 2,
+				sessionName: "mission-v5-lane-2",
+				status: "running",
+				taskFolder: "/tmp/tf",
+				startedAt: 3,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			},
+		],
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/missions`);
+		expect(res.status).toBe(200);
+		const summaries = (await res.json()) as Array<{
+			id: string;
+			kind: string;
+			status: string;
+			tasksTotal?: number;
+			tasksComplete?: number;
+			batchPhase?: string;
+		}>;
+		const found = summaries.find(m => m.id === batchId);
+		expect(found).toBeDefined();
+		expect(found?.kind).toBe("batch");
+		// executing → running wire phase → active list status.
+		expect(found?.status).toBe("active");
+		expect(found?.batchPhase).toBe("running");
+		expect(found?.tasksTotal).toBe(2);
+		expect(found?.tasksComplete).toBe(1);
+	} finally {
+		cleanupActiveBatch();
+	}
+});
+
+test("list missions: V5 paused batch surfaces with paused status", async () => {
+	const batchId = "v5-active-paused";
+	try {
+		rmSync(join(workDir, ".omp", "missions", `${batchId}.json`), { force: true });
+	} catch {}
+	writePersistedBatch({
+		batchId,
+		phase: "paused",
+		mode: "repo",
+		wavePlan: [["T-1"]],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "mission-pz-lane-1",
+				worktreePath: "/tmp/wt",
+				branch: "orch/l-1",
+				taskIds: ["T-1"],
+			},
+		],
+		tasks: [
+			{
+				taskId: "T-1",
+				laneNumber: 1,
+				sessionName: "mission-pz-lane-1",
+				status: "pending",
+				taskFolder: "/tmp/tf",
+				startedAt: null,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			},
+		],
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/missions`);
+		const summaries = (await res.json()) as Array<{ id: string; status: string; batchPhase?: string }>;
+		const found = summaries.find(m => m.id === batchId);
+		expect(found).toBeDefined();
+		expect(found?.status).toBe("paused");
+		expect(found?.batchPhase).toBe("paused");
+	} finally {
+		cleanupActiveBatch();
+	}
 });

@@ -1,7 +1,8 @@
-import { Archive, Play, Rocket } from "lucide-react";
+import { Archive, ArrowLeft, ChevronRight, Play, Rocket } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getMission, listMissions } from "./api";
+import { getMission, getPreferences, listMissions, postPreferences } from "./api";
 import { AgentsPanel } from "./components/AgentsPanel";
+import { CommandCenter } from "./components/CommandCenter";
 import { Header } from "./components/Header";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { MailboxPanel } from "./components/MailboxPanel";
@@ -10,10 +11,10 @@ import { MissionList } from "./components/MissionList";
 import { MissionStartForm } from "./components/MissionStartForm";
 import { SupervisorPanel } from "./components/SupervisorPanel";
 import { TerminalViewer } from "./components/TerminalViewer";
+import { useConnectionStatus } from "./hooks/useConnectionStatus";
 import type { MissionDetail as MissionDetailType, MissionState, MissionSummary } from "./types";
 
 type Tab = "start" | "active" | "history";
-type SecondaryTab = "supervisor" | "mailbox" | "terminal";
 type Theme = "light" | "dark";
 
 const THEME_KEY = "missioncontrol-theme";
@@ -37,26 +38,76 @@ function readGuiToken(): string | null {
 	return params.get("gui");
 }
 
+function readViewParam(): Tab | null {
+	if (typeof window === "undefined") return null;
+	const params = new URLSearchParams(window.location.search);
+	const v = params.get("view");
+	if (v === "start" || v === "active" || v === "history") return v;
+	return null;
+}
+
 export default function App() {
 	const guiToken = useMemo(readGuiToken, []);
+	const initialTab: Tab = guiToken ? "start" : (readViewParam() ?? "active");
 	const [theme, setTheme] = useState<Theme>(readInitialTheme);
-	const [tab, setTab] = useState<Tab>(guiToken ? "start" : "active");
-	const [secondaryTab, setSecondaryTab] = useState<SecondaryTab>("supervisor");
+	const [tab, setTab] = useState<Tab>(initialTab);
 	const [missions, setMissions] = useState<MissionSummary[]>([]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [selectedDetail, setSelectedDetail] = useState<MissionDetailType | null>(null);
 	const [refreshing, setRefreshing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	// Lane selected for conversation viewing (e.g. "batchId:lane-1")
+	// Lane selected for the inline terminal viewer (e.g. "batchId:lane-1").
 	const [viewingLaneId, setViewingLaneId] = useState<string | null>(null);
+	// Collapsed state per inspector-rail card, keyed by cardKey. Persisted via
+	// dashboard preferences so the rail layout survives a reload.
+	const [railCollapsed, setRailCollapsed] = useState<Record<string, boolean>>({});
+	// STATUS.md auto-follow state. Defaults to follow=true; overridden by
+	// persisted preference on first mount.
+	const [followStatusMd, setFollowStatusMd] = useState(true);
 
-	// Apply theme on mount and when it changes
+	// Apply theme on mount and when it changes; sync to server preferences.
 	useEffect(() => {
 		applyTheme(theme);
+		void postPreferences({ theme });
 	}, [theme]);
+
+	// Bootstrap preferences from the server once; fall back to localStorage.
+	// Note: `lastSelectedMissionId` is intentionally NOT restored — the Active
+	// tab uses a page-swap layout that defaults to the list view, so auto-
+	// selecting a mission on reload would skip past the list.
+	useEffect(() => {
+		let cancelled = false;
+		void getPreferences().then(prefs => {
+			if (cancelled) return;
+			if (prefs.theme === "light" || prefs.theme === "dark") setTheme(prefs.theme);
+			if (prefs.rightRailCollapsed && typeof prefs.rightRailCollapsed === "object") {
+				setRailCollapsed(prefs.rightRailCollapsed);
+			}
+			if (typeof prefs.followStatusMd === "boolean") setFollowStatusMd(prefs.followStatusMd);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
 	function toggleTheme() {
 		setTheme(prev => (prev === "dark" ? "light" : "dark"));
+	}
+
+	function toggleRailCard(cardKey: string) {
+		setRailCollapsed(prev => {
+			const next = { ...prev, [cardKey]: !prev[cardKey] };
+			void postPreferences({ rightRailCollapsed: next });
+			return next;
+		});
+	}
+
+	function toggleFollowStatusMd() {
+		setFollowStatusMd(prev => {
+			const next = !prev;
+			void postPreferences({ followStatusMd: next });
+			return next;
+		});
 	}
 
 	const loadMissions = useCallback(async () => {
@@ -64,14 +115,13 @@ export default function App() {
 		try {
 			const list = await listMissions();
 			setMissions(list);
-			if (!selectedId && list.length > 0) setSelectedId(list[0].id);
 			setError(null);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
 			setRefreshing(false);
 		}
-	}, [selectedId]);
+	}, []);
 
 	useEffect(() => {
 		void loadMissions();
@@ -79,6 +129,9 @@ export default function App() {
 		return () => clearInterval(interval);
 	}, [loadMissions]);
 
+	useEffect(() => {
+		if (selectedId) void postPreferences({ lastSelectedMissionId: selectedId });
+	}, [selectedId]);
 	useEffect(() => {
 		if (!selectedId) {
 			setSelectedDetail(null);
@@ -99,22 +152,41 @@ export default function App() {
 
 	const activeMissions = missions.filter(m => m.status === "active" || m.status === "paused");
 	const historyMissions = missions.filter(m => m.status === "completed" || m.status === "failed");
-
 	const activeBatchId = selectedDetail?.state?.batch?.batchId;
-
-	// Build a plain-text progress log for simple missions (no batch lanes).
 	const simpleMissionLog =
 		!activeBatchId && selectedDetail?.state ? formatSimpleMissionLog(selectedDetail.state) : undefined;
 
-	// When History tab selects a mission, switch to Active tab showing that mission
+	const connection = useConnectionStatus(
+		selectedDetail && selectedDetail.status !== "completed" && selectedDetail.status !== "failed"
+			? selectedDetail.id
+			: null,
+	);
+
 	function handleHistorySelect(id: string) {
 		setSelectedId(id);
 		setTab("active");
 	}
 
+	// Swap the Active tab into detail view for the clicked mission.
+	function handleOpenMission(id: string) {
+		setSelectedId(id);
+		setViewingLaneId(null);
+	}
+
+	// Return to the Active tab list view. Clears the selected mission so the
+	// list renders and the next load will not auto-open anything.
+	function handleCloseDetail() {
+		setSelectedId(null);
+		setSelectedDetail(null);
+		setViewingLaneId(null);
+	}
+
 	function handleViewLane(laneId: string) {
 		setViewingLaneId(laneId);
-		setSecondaryTab("terminal");
+	}
+
+	function handleCloseTerminal() {
+		setViewingLaneId(null);
 	}
 
 	return (
@@ -126,6 +198,12 @@ export default function App() {
 						refreshing={refreshing}
 						theme={theme}
 						onToggleTheme={toggleTheme}
+						connection={connection}
+						activeMission={selectedDetail}
+						allMissions={missions}
+						selectedId={selectedId}
+						onPickMission={handleHistorySelect}
+						onJumpToActive={() => setTab("active")}
 					/>
 
 					{/* Pill-container tab strip */}
@@ -157,72 +235,90 @@ export default function App() {
 
 					{tab === "start" && (
 						<div className="grid gap-6">
-							{guiToken ? (
-								<MissionStartForm token={guiToken} onDispatched={() => setTab("active")} />
-							) : (
-								<div className="surface p-6 text-sm text-[var(--text-muted)]">
-									No GUI token in URL. Run <code>/mission-gui</code> in your omp session to launch this form
-									with a fresh token, or use <code>/mission</code> to start interactively.
-								</div>
-							)}
+							<MissionStartForm token={guiToken ?? undefined} onDispatched={() => setTab("active")} />
 						</div>
 					)}
 
-					{tab === "active" && (
-						<div className="grid lg:grid-cols-[380px_1fr] gap-6">
-							{/* Left: mission list + agents */}
-							<div className="grid gap-4 content-start">
-								<MissionList missions={activeMissions} selectedId={selectedId} onSelect={setSelectedId} />
-								<AgentsPanel batchId={activeBatchId} missionId={selectedId ?? undefined} />
+					{tab === "active" && !selectedId && activeMissions.length === 0 && (
+						<CommandCenter
+							recentMissions={historyMissions}
+							onStartClick={() => setTab("start")}
+							onPickRecent={handleHistorySelect}
+						/>
+					)}
+
+					{tab === "active" && !selectedId && activeMissions.length > 0 && (
+						<div className="grid gap-4 content-start max-w-3xl mx-auto" data-testid="active-list-view">
+							<MissionList missions={activeMissions} selectedId={null} onSelect={handleOpenMission} />
+						</div>
+					)}
+
+					{tab === "active" && selectedId && (
+						<div className="grid gap-4" data-testid="active-detail-view">
+							<div className="flex items-center justify-between">
+								<button
+									type="button"
+									className="tab-pill"
+									onClick={handleCloseDetail}
+									data-testid="back-to-missions"
+								>
+									<ArrowLeft size={14} />
+									Back to missions
+								</button>
 							</div>
+							<div className="grid lg:grid-cols-[1fr_360px] gap-6">
+								{/* Detail */}
+								<div className="grid gap-4 content-start min-w-0">
+									{selectedDetail ? (
+										<MissionDetail
+											initialDetail={selectedDetail}
+											onViewLane={handleViewLane}
+											terminalSlot={
+												<TerminalViewer
+													missionId={selectedId ?? undefined}
+													laneId={viewingLaneId ?? (activeBatchId ? `${activeBatchId}:lane-1` : undefined)}
+													taskId={selectedDetail.state.batch?.tasks?.[0]?.taskId}
+													currentTask={selectedDetail.state.batch?.tasks?.[0]}
+													missionLog={simpleMissionLog}
+													follow={followStatusMd}
+													onToggleFollow={toggleFollowStatusMd}
+													onClose={viewingLaneId ? handleCloseTerminal : undefined}
+													lanes={selectedDetail.state.batch?.laneStatuses ?? []}
+													batchId={activeBatchId}
+													onPickLane={setViewingLaneId}
+												/>
+											}
+										/>
+									) : (
+										<div className="surface p-8 text-center text-[var(--text-muted)] text-sm">
+											Loading mission…
+										</div>
+									)}
+								</div>
 
-							{/* Right: detail at top, secondary panels via sub-tabs */}
-							<div className="grid gap-4 content-start">
-								{selectedDetail ? (
-									<MissionDetail initialDetail={selectedDetail} onViewLane={handleViewLane} />
-								) : (
-									<div className="surface p-8 text-center text-[var(--text-muted)] text-sm">
-										Select a mission to view details.
-									</div>
-								)}
-
-								{/* Secondary sub-tab bar */}
-								<div className="surface overflow-hidden">
-									<div className="subtab-bar">
-										<SubTabItem
-											current={secondaryTab}
-											target="supervisor"
-											onClick={setSecondaryTab}
-											label="Supervisor"
-										/>
-										<SubTabItem
-											current={secondaryTab}
-											target="mailbox"
-											onClick={setSecondaryTab}
-											label="Mailbox"
-										/>
-										<SubTabItem
-											current={secondaryTab}
-											target="terminal"
-											onClick={setSecondaryTab}
-											label="Terminal"
-										/>
-									</div>
-									<div className="p-4">
-										{secondaryTab === "supervisor" && (
-											<SupervisorPanel batchId={activeBatchId} missionId={selectedId ?? undefined} />
-										)}
-										{secondaryTab === "mailbox" && (
-											<MailboxPanel batchId={activeBatchId} missionId={selectedId ?? undefined} />
-										)}
-										{secondaryTab === "terminal" && (
-											<TerminalViewer
-												laneId={viewingLaneId ?? (activeBatchId ? `${activeBatchId}:lane-1` : undefined)}
-												taskId={selectedDetail?.state?.batch?.tasks?.[0]?.taskId}
-												missionLog={simpleMissionLog}
-											/>
-										)}
-									</div>
+								{/* Right: inspector rail (Supervisor / Mailbox / Agents) */}
+								<div className="grid gap-4 content-start">
+									<InspectorCard
+										title="Supervisor"
+										collapsed={!!railCollapsed.supervisor}
+										onToggle={() => toggleRailCard("supervisor")}
+									>
+										<SupervisorPanel batchId={activeBatchId} missionId={selectedId ?? undefined} />
+									</InspectorCard>
+									<InspectorCard
+										title="Mailbox"
+										collapsed={!!railCollapsed.mailbox}
+										onToggle={() => toggleRailCard("mailbox")}
+									>
+										<MailboxPanel batchId={activeBatchId} missionId={selectedId ?? undefined} />
+									</InspectorCard>
+									<InspectorCard
+										title="Agents"
+										collapsed={!!railCollapsed.agents}
+										onToggle={() => toggleRailCard("agents")}
+									>
+										<AgentsPanel batchId={activeBatchId} missionId={selectedId ?? undefined} />
+									</InspectorCard>
 								</div>
 							</div>
 						</div>
@@ -243,6 +339,28 @@ export default function App() {
 					<span>Auto-refresh every 10s</span>
 				</div>
 			</footer>
+		</div>
+	);
+}
+
+function InspectorCard({
+	title,
+	collapsed,
+	onToggle,
+	children,
+}: {
+	title: string;
+	collapsed: boolean;
+	onToggle: () => void;
+	children: React.ReactNode;
+}) {
+	return (
+		<div className="surface p-4">
+			<button type="button" className="collapsible-header" onClick={onToggle} aria-expanded={!collapsed}>
+				<h3 className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)]">{title}</h3>
+				<ChevronRight size={14} className={`collapsible-chevron ml-auto ${collapsed ? "" : "open"}`} />
+			</button>
+			{!collapsed && <div className="mt-3">{children}</div>}
 		</div>
 	);
 }
@@ -283,30 +401,6 @@ function TabPill({
 					{badge}
 				</span>
 			)}
-		</button>
-	);
-}
-
-function SubTabItem({
-	current,
-	target,
-	onClick,
-	label,
-}: {
-	current: SecondaryTab;
-	target: SecondaryTab;
-	onClick: (t: SecondaryTab) => void;
-	label: string;
-}) {
-	const active = current === target;
-	return (
-		<button
-			type="button"
-			className={`subtab-item ${active ? "active" : ""}`}
-			onClick={() => onClick(target)}
-			aria-pressed={active}
-		>
-			{label}
 		</button>
 	);
 }
