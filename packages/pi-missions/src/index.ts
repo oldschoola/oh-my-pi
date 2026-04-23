@@ -612,6 +612,10 @@ export default function missionExtension(pi: ExtensionAPI): void {
 		getState,
 		setState,
 		getCtx,
+		engineHandlers: {
+			pause: engine.handlers.pause,
+			resume: engine.handlers.resume,
+		},
 	});
 
 	function parseBatchArgs(args: string): { laneCount?: number; waveSize?: number; taskIds: string[] } {

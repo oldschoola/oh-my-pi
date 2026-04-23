@@ -36,10 +36,22 @@ export interface MissionServerBindingDeps {
 	 * pick up the change on the next agent turn anyway.
 	 */
 	getCtx: () => MissionWidgetCtx | null;
+	/**
+	 * Mission-control engine handlers for batch pause/resume. The server's
+	 * HTTP pause/resume endpoints dispatch through these so the in-memory
+	 * lane-runner observes the phase change (disk-only mutation would not
+	 * stop the running loop). Optional — when unset, the server falls back
+	 * to pure disk mutation so a standalone dashboard boot still records
+	 * the phase change.
+	 */
+	engineHandlers?: {
+		pause: () => Promise<MissionState | null>;
+		resume: (opts?: { force?: boolean }) => Promise<MissionState | null>;
+	};
 }
 
 export function bindMissionServer(deps: MissionServerBindingDeps): void {
-	const { pi, cwd, getState, setState, getCtx } = deps;
+	const { pi, cwd, getState, setState, getCtx, engineHandlers } = deps;
 
 	function persist(state: MissionState): void {
 		setState(state);
@@ -108,6 +120,28 @@ export function bindMissionServer(deps: MissionServerBindingDeps): void {
 			persist(next);
 			return { ok: true, state: next };
 		},
+		controlBatch: engineHandlers
+			? async (action, payload) => {
+					const current = getState();
+					if (!current?.batch) return { ok: false, reason: "no_active_batch" };
+					const phase = current.batch.phase;
+					if (action === "pause") {
+						if (phase !== "running") {
+							return { ok: false, reason: `not_pausable:${phase}` };
+						}
+						const next = await engineHandlers.pause();
+						return { ok: true, phase: next?.batch?.phase };
+					}
+					// resume
+					const forced = payload?.force === true;
+					if (phase === "running") return { ok: true, phase };
+					if (phase !== "paused" && !forced) {
+						return { ok: false, reason: `not_resumable:${phase}` };
+					}
+					const next = await engineHandlers.resume(forced ? { force: true } : {});
+					return { ok: true, phase: next?.batch?.phase };
+				}
+			: undefined,
 		controlSimple: (action, payload) => {
 			const state = getState();
 			if (!state) return { ok: false, reason: "no_active_mission" };

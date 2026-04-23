@@ -436,9 +436,33 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 					sessionsKilled: abortResult.sessionsKilled,
 				});
 			}
-			let next = state;
-			if (action === "pause") next = pauseBatch(state);
-			else next = resumeBatch(state);
+			// Pause/resume: guard against non-pausable/non-resumable phases
+			// up front so the response surface is consistent across the
+			// extension-hosted path (engine handler) and standalone path
+			// (disk-only reducer). The engine's resume function silently
+			// no-ops on invalid phases — which hides operator mistakes.
+			const currentPhase = state.batch.phase;
+			if (action === "pause" && currentPhase !== "running") {
+				return jsonResponse({ ok: false, reason: `not_pausable:${currentPhase}` }, { status: 409 });
+			}
+			if (action === "resume" && currentPhase !== "paused") {
+				return jsonResponse({ ok: false, reason: `not_resumable:${currentPhase}` }, { status: 409 });
+			}
+
+			// When the extension is wired in-process, dispatch through the
+			// live engine so the lane-runner loop stops/starts and the
+			// supervisor lockfile follows the phase. Disk-only mutation
+			// leaves the running loop oblivious to the phase change.
+			const controlBatch = getMissionServerHooks().controlBatch;
+			if (controlBatch) {
+				const result = await controlBatch(action as "pause" | "resume");
+				const status = result.ok ? 200 : 409;
+				return jsonResponse({ ok: result.ok, phase: result.phase, reason: result.reason }, { status });
+			}
+
+			// Standalone fallback (e.g. e2e server started without the
+			// extension): mutate + persist only. No runtime to signal.
+			const next = action === "pause" ? pauseBatch(state) : resumeBatch(state);
 			await saveActiveBatch(cwd, next);
 			return jsonResponse({ ok: true, phase: next.batch?.phase });
 		}

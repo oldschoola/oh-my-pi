@@ -1622,6 +1622,112 @@ test("POST /api/mission/:id/pause on batch mission still transitions phase to pa
 	}
 });
 
+test("POST /api/mission/:id/pause on already-paused batch returns 409 with not_pausable reason", async () => {
+	const batchId = "batch-pause-guard-paused";
+	writeActiveBatch(batchId, "paused");
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/pause`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(409);
+		const body = (await res.json()) as { ok: boolean; reason?: string };
+		expect(body.ok).toBe(false);
+		expect(body.reason).toBe("not_pausable:paused");
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/resume on paused batch transitions phase to running", async () => {
+	const batchId = "batch-resume-wiring";
+	writeActiveBatch(batchId, "paused");
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/resume`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; phase?: string };
+		expect(body.ok).toBe(true);
+		expect(body.phase).toBe("running");
+		const listRes = await fetch(`${baseUrl}/api/missions`);
+		const summaries = (await listRes.json()) as Array<{ id: string; batchPhase?: string }>;
+		expect(summaries.find(m => m.id === batchId)?.batchPhase).toBe("running");
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/resume on already-running batch returns 409 with not_resumable reason", async () => {
+	const batchId = "batch-resume-guard-running";
+	writeActiveBatch(batchId, "running");
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/resume`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(409);
+		const body = (await res.json()) as { ok: boolean; reason?: string };
+		expect(body.ok).toBe(false);
+		expect(body.reason).toBe("not_resumable:running");
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/pause dispatches through controlBatch hook when the extension is wired in-process", async () => {
+	const batchId = "batch-pause-via-hook";
+	writeActiveBatch(batchId);
+	const calls: Array<{ action: string; force?: boolean }> = [];
+	setMissionServerHooks({
+		controlBatch: async (action, payload) => {
+			calls.push({ action, force: payload?.force });
+			return { ok: true, phase: action === "pause" ? "paused" : "running" };
+		},
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/pause`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; phase?: string };
+		expect(body.ok).toBe(true);
+		expect(body.phase).toBe("paused");
+		expect(calls).toEqual([{ action: "pause", force: undefined }]);
+	} finally {
+		clearMissionServerHooks();
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/resume dispatches through controlBatch hook when the extension is wired in-process", async () => {
+	const batchId = "batch-resume-via-hook";
+	writeActiveBatch(batchId, "paused");
+	const calls: Array<{ action: string }> = [];
+	setMissionServerHooks({
+		controlBatch: async action => {
+			calls.push({ action });
+			return { ok: true, phase: "running" };
+		},
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/resume`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; phase?: string };
+		expect(body.ok).toBe(true);
+		expect(body.phase).toBe("running");
+		expect(calls).toEqual([{ action: "resume" }]);
+	} finally {
+		clearMissionServerHooks();
+		cleanupActiveBatchFile();
+	}
+});
+
 test("GET /api/preferences returns {} when the file is missing", async () => {
 	const res = await fetch(`${baseUrl}/api/preferences`);
 	expect(res.status).toBe(200);

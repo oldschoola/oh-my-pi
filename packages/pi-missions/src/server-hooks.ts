@@ -9,9 +9,10 @@
  * standalone), the endpoints that require them return 503.
  */
 
-import type { MissionState } from "./types";
+import type { BatchPhase, MissionState } from "./types";
 
 export type SimpleControlAction = "pause" | "resume" | "abort";
+export type BatchControlAction = "pause" | "resume";
 
 export interface MissionServerHooks {
 	/**
@@ -41,6 +42,20 @@ export interface MissionServerHooks {
 		action: SimpleControlAction,
 		payload?: { reason?: string },
 	) => { ok: boolean; state?: MissionState; reason?: string };
+
+	/**
+	 * Signal pause / resume to the live mission-control engine for the
+	 * currently-active batch. Mutating disk state alone is not enough — the
+	 * engine's in-memory lane-runner only observes phase changes via
+	 * `engine.handlers.*`, which also stops the runner loop and releases the
+	 * supervisor lockfile. When unset (e.g. standalone dashboard boot), the
+	 * server falls back to pure disk-only mutation so the dashboard still
+	 * reflects the phase change for paused/resumed snapshots.
+	 */
+	controlBatch?: (
+		action: BatchControlAction,
+		payload?: { force?: boolean },
+	) => Promise<{ ok: boolean; phase?: BatchPhase; reason?: string }>;
 }
 
 export interface MissionMetaPatch {
