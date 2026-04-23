@@ -1,0 +1,29 @@
+packages/pi-missions/CHANGELOG.md
+  1ae7eae39bd89f11 9-17
+packages/pi-missions/src/server.ts
+  1ae7eae39bd89f11 22,24,27,50,59,416-428,738-863
+packages/pi-missions/src/dashboard-api.ts
+  1ae7eae39bd89f11 146-149,151,187-279
+packages/pi-missions/src/server.e2e.test.ts
+  1ae7eae39bd89f11 1966-2254
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "caa0c2a96388a6b1bd691c049163ff87ddfc32f0",
+  "prompts": {
+    "1ae7eae39bd89f11": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "9a5ca937-a9cf-4033-8cef-8e20271925ea",
+        "model": "custom:claude-opus-4-7"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 553,
+      "total_deletions": 15,
+      "accepted_lines": 540,
+      "overriden_lines": 0
+    }
+  }
+}
