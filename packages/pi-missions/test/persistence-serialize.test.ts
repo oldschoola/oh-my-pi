@@ -106,8 +106,11 @@ describe("serializeBatchState — shape", () => {
 	});
 
 	test("defaults orchBranch to empty string + mode to repo when missing", () => {
-		// biome-ignore lint/suspicious/noExplicitAny: exercising runtime fallbacks
-		const state = { ...mkState(), orchBranch: undefined as unknown as string, mode: undefined as unknown as any };
+		const state = {
+			...mkState(),
+			orchBranch: undefined as unknown as string,
+			mode: undefined as unknown as import("../src/missioncontrol/types").WorkspaceMode,
+		};
 		const json = serializeBatchState(state, [[]], [], []);
 		const parsed = JSON.parse(json);
 		expect(parsed.orchBranch).toBe("");

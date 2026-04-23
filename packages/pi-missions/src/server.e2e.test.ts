@@ -408,11 +408,11 @@ test("GET /api/mission/:id/events skips malformed jsonl lines", async () => {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(
 		join(dir, "worker.jsonl"),
-		[
+		`${[
 			'{"ts":1,"type":"assistant_message","text":"ok"}',
 			"not-json",
 			'{"ts":2,"type":"tool_call","toolName":"write"}',
-		].join("\n") + "\n",
+		].join("\n")}\n`,
 	);
 
 	const res = await fetch(`${baseUrl}/api/mission/events-malformed/events`);
