@@ -1963,6 +1963,295 @@ test("POST /api/mission/:id/resume dispatches through controlBatch hook when the
 	}
 });
 
+// ---------------------------------------------------------------------------
+// Mission control: V5 PersistedBatchState support
+//
+// Real batch missions from the live engine persist as PersistedBatchState
+// (top-level `batchId` / `phase`, no `.batch` wrapper). The control handler
+// must route pause/resume/abort to these missions too — previously it only
+// matched the legacy MissionState shape and returned "No active mission".
+// ---------------------------------------------------------------------------
+
+test("POST /api/mission/:id/pause on V5 PersistedBatchState (phase=executing) transitions phase to paused", async () => {
+	const batchId = "v5-ctrl-pause";
+	writePersistedBatch({
+		batchId,
+		phase: "executing",
+		mode: "repo",
+		wavePlan: [["T-1"]],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "mission-v5ctrl-lane-1",
+				worktreePath: "/tmp/wt",
+				branch: "orch/l-1",
+				taskIds: ["T-1"],
+			},
+		],
+		tasks: [
+			{
+				taskId: "T-1",
+				laneNumber: 1,
+				sessionName: "mission-v5ctrl-lane-1",
+				status: "running",
+				taskFolder: "/tmp/tf",
+				startedAt: 1,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			},
+		],
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/pause`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; phase?: string };
+		expect(body.ok).toBe(true);
+		expect(body.phase).toBe("paused");
+
+		// Disk round-trip preserves V5 shape (top-level batchId / no .batch wrapper)
+		// — the phase field is now "paused" and schemaVersion survives.
+		const rawText = readFileSync(join(workDir, ".omp", "mission-batch.json"), "utf-8");
+		const raw = JSON.parse(rawText) as Record<string, unknown>;
+		expect(raw.batchId).toBe(batchId);
+		expect(raw.phase).toBe("paused");
+		expect(typeof raw.schemaVersion).toBe("number");
+		expect("batch" in raw).toBe(false);
+		expect("description" in raw).toBe(false);
+
+		// List endpoint projects the V5 file → wire phase "paused".
+		const listRes = await fetch(`${baseUrl}/api/missions`);
+		const summaries = (await listRes.json()) as Array<{ id: string; batchPhase?: string }>;
+		expect(summaries.find(m => m.id === batchId)?.batchPhase).toBe("paused");
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/resume on V5 PersistedBatchState (phase=paused) transitions phase back to executing", async () => {
+	const batchId = "v5-ctrl-resume";
+	writePersistedBatch({
+		batchId,
+		phase: "paused",
+		mode: "repo",
+		wavePlan: [["T-1"]],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "mission-v5ctrl-lane-1",
+				worktreePath: "/tmp/wt",
+				branch: "orch/l-1",
+				taskIds: ["T-1"],
+			},
+		],
+		tasks: [
+			{
+				taskId: "T-1",
+				laneNumber: 1,
+				sessionName: "mission-v5ctrl-lane-1",
+				status: "pending",
+				taskFolder: "/tmp/tf",
+				startedAt: null,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			},
+		],
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/resume`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; phase?: string };
+		expect(body.ok).toBe(true);
+		expect(body.phase).toBe("running");
+
+		const rawText = readFileSync(join(workDir, ".omp", "mission-batch.json"), "utf-8");
+		const raw = JSON.parse(rawText) as Record<string, unknown>;
+		expect(raw.phase).toBe("executing");
+		expect(raw.batchId).toBe(batchId);
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/abort on V5 PersistedBatchState deletes state file and archives aborted mission", async () => {
+	const batchId = "v5-ctrl-abort";
+	try {
+		rmSync(join(workDir, ".omp", "missions", `${batchId}.json`), { force: true });
+	} catch {}
+	writePersistedBatch({
+		batchId,
+		phase: "executing",
+		mode: "repo",
+		wavePlan: [["T-1"]],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "mission-v5ctrl-lane-1",
+				worktreePath: "/tmp/wt",
+				branch: "orch/l-1",
+				taskIds: ["T-1"],
+			},
+		],
+		tasks: [
+			{
+				taskId: "T-1",
+				laneNumber: 1,
+				sessionName: "mission-v5ctrl-lane-1",
+				status: "running",
+				taskFolder: "/tmp/tf",
+				startedAt: 1,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			},
+		],
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/abort`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ reason: "operator V5 test" }),
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; phase?: string; sessionsFound?: number };
+		expect(body.ok).toBe(true);
+		expect(body.phase).toBe("aborted");
+		expect(typeof body.sessionsFound).toBe("number");
+
+		// V5 state file is removed by executeAbort → deleteBatchState.
+		expect(existsSync(join(workDir, ".omp", "mission-batch.json"))).toBe(false);
+
+		// Archived MissionState projection lands under .omp/missions so the
+		// aborted mission surfaces in the list with "failed" status.
+		const listRes = await fetch(`${baseUrl}/api/missions`);
+		const summaries = (await listRes.json()) as Array<{ id: string; status: string; batchPhase?: string }>;
+		const archived = summaries.find(m => m.id === batchId);
+		expect(archived).toBeDefined();
+		expect(archived?.status).toBe("failed");
+		expect(archived?.batchPhase).toBe("aborted");
+	} finally {
+		cleanupActiveBatchFile();
+		rmSync(join(workDir, ".omp", "missions", `${batchId}.json`), { force: true });
+	}
+});
+
+test("POST /api/mission/:id/pause on V5 already-paused batch returns 409 with not_pausable:paused", async () => {
+	const batchId = "v5-ctrl-guard-pause";
+	writePersistedBatch({
+		batchId,
+		phase: "paused",
+		mode: "repo",
+		wavePlan: [["T-1"]],
+		lanes: [],
+		tasks: [],
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/pause`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(409);
+		const body = (await res.json()) as { ok: boolean; reason?: string };
+		expect(body.ok).toBe(false);
+		expect(body.reason).toBe("not_pausable:paused");
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/resume on V5 already-executing batch returns 409 with not_resumable:running", async () => {
+	// Guard maps engine phase "executing" → wire "running" before reporting
+	// the not_resumable reason so the operator sees a consistent phase name.
+	const batchId = "v5-ctrl-guard-resume";
+	writePersistedBatch({
+		batchId,
+		phase: "executing",
+		mode: "repo",
+		wavePlan: [["T-1"]],
+		lanes: [],
+		tasks: [],
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/resume`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(409);
+		const body = (await res.json()) as { ok: boolean; reason?: string };
+		expect(body.ok).toBe(false);
+		expect(body.reason).toBe("not_resumable:running");
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/abort on V5 already-stopped batch returns 409 mission_already_terminal", async () => {
+	const batchId = "v5-ctrl-guard-abort";
+	writePersistedBatch({
+		batchId,
+		phase: "stopped",
+		mode: "repo",
+		wavePlan: [["T-1"]],
+		lanes: [],
+		tasks: [],
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/abort`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(409);
+		const body = (await res.json()) as { ok: boolean; reason?: string };
+		expect(body.ok).toBe(false);
+		expect(body.reason).toBe("mission_already_terminal");
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/pause on V5 batch dispatches through controlBatch hook when extension is wired", async () => {
+	const batchId = "v5-ctrl-hook";
+	writePersistedBatch({
+		batchId,
+		phase: "executing",
+		mode: "repo",
+		wavePlan: [["T-1"]],
+		lanes: [],
+		tasks: [],
+	});
+	const calls: Array<{ action: string }> = [];
+	setMissionServerHooks({
+		controlBatch: async action => {
+			calls.push({ action });
+			return { ok: true, phase: "paused" };
+		},
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/pause`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; phase?: string };
+		expect(body.ok).toBe(true);
+		expect(body.phase).toBe("paused");
+		expect(calls).toEqual([{ action: "pause" }]);
+	} finally {
+		clearMissionServerHooks();
+		cleanupActiveBatchFile();
+	}
+});
+
 test("GET /api/preferences returns {} when the file is missing", async () => {
 	const res = await fetch(`${baseUrl}/api/preferences`);
 	expect(res.status).toBe(200);

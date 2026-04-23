@@ -19,10 +19,12 @@ import {
 	getMissionEvents,
 	getMissionTelemetrySummary,
 	getSupervisorDetail,
+	isPersistedBatchStateShape,
 	listMissions,
+	projectPersistedBatchToMissionState,
 } from "./dashboard-api";
 import { dispatchStartRequest, getDefaultToken, type MissionStartRequest } from "./gui-bridge";
-import type { BehavioralAssertion, MissionBatchRuntimeState } from "./missioncontrol";
+import type { BehavioralAssertion, MissionBatchRuntimeState, PersistedBatchState } from "./missioncontrol";
 import {
 	abortBatch,
 	archiveMission,
@@ -45,6 +47,7 @@ import {
 	loadBatchState,
 	MAILBOX_MAX_CONTENT_BYTES,
 	mailboxRoot,
+	missionBatchPath,
 	missionHistoryPath,
 	missionsDir,
 	pauseBatch,
@@ -53,6 +56,7 @@ import {
 	resumeBatch,
 	runtimeAgentEventsPath,
 	saveActiveBatch,
+	saveBatchState,
 	supervisorEventsPath,
 	writeBroadcastMessage,
 } from "./missioncontrol";
@@ -409,6 +413,19 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 		const [, id, action] = controlMatch;
 		const body = (await req.json().catch(() => ({}))) as { reason?: string };
 		const state = await loadActiveBatch(cwd);
+		// V5 PersistedBatchState has no `.batch` wrapper — top-level
+		// `batchId`/`phase`. `loadActiveBatch` returns a MissionState view
+		// parsed off the raw JSON (no V5 projection), so batch-wrapper
+		// equality alone misses real batch missions from the live engine.
+		const persistedV5 = await readPersistedBatchStateIfV5(cwd);
+		if (persistedV5 && (persistedV5.batchId === id || id === "active")) {
+			return handleV5BatchControl({
+				cwd,
+				action: action as "pause" | "resume" | "abort",
+				reason: body.reason,
+				persistedV5,
+			});
+		}
 		if (state?.batch && (state.batch.batchId === id || id === "active")) {
 			// Guard against double-abort on already-terminal missions. The
 			// state file is typically deleted on abort, but an archived
@@ -716,6 +733,132 @@ function buildAbortRuntimeState(batchId: string): MissionBatchRuntimeState {
 		...freshMissionBatchState(),
 		batchId,
 	};
+}
+
+/**
+ * Read `.omp/mission-batch.json` and return the parsed V5
+ * `PersistedBatchState` iff the on-disk shape matches. Returns null when
+ * the file is missing, the shape is the legacy `MissionState` wrapper, or
+ * parsing fails. Control endpoints use this to route real batch missions
+ * written by the live engine through the V5-aware control path.
+ */
+async function readPersistedBatchStateIfV5(cwd: string): Promise<PersistedBatchState | null> {
+	const file = Bun.file(missionBatchPath(cwd));
+	if (!(await file.exists())) return null;
+	let raw: Record<string, unknown>;
+	try {
+		raw = (await file.json()) as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+	if (!isPersistedBatchStateShape(raw)) return null;
+	try {
+		return await loadBatchState(cwd);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Map the engine-side `MissionBatchPhase` (`executing`/`stopped`/...) onto
+ * the pause/resume guard domain (`running`/`paused`/`aborted`/`complete`/
+ * `error`/`planning`/`merging`/`launching`/`idle`). Returned value drives
+ * the 409 `not_pausable:<phase>` / `not_resumable:<phase>` response text
+ * when the operator targets a non-actionable phase.
+ */
+function mapPersistedPhaseToGuard(phase: string): string {
+	switch (phase) {
+		case "executing":
+			return "running";
+		case "stopped":
+			return "aborted";
+		case "completed":
+			return "complete";
+		case "failed":
+			return "error";
+		default:
+			return phase;
+	}
+}
+
+/**
+ * Execute pause / resume / abort against a V5 `PersistedBatchState`.
+ *
+ * Mirrors the legacy MissionState control path so V5 batches respond
+ * identically: same guard messages, same hook dispatch when the
+ * extension is wired, same disk-only fallback when standalone, and
+ * the same archive + `executeAbort` pipeline on abort.
+ */
+async function handleV5BatchControl(args: {
+	cwd: string;
+	action: "pause" | "resume" | "abort";
+	reason?: string;
+	persistedV5: PersistedBatchState;
+}): Promise<Response> {
+	const { cwd, action, reason, persistedV5 } = args;
+	const guardPhase = mapPersistedPhaseToGuard(persistedV5.phase);
+
+	if (action === "abort" && (guardPhase === "aborted" || guardPhase === "complete")) {
+		return jsonResponse({ ok: false, reason: "mission_already_terminal" }, { status: 409 });
+	}
+	if (action === "abort") {
+		// Archive a MissionState projection so the History tab shows the
+		// aborted mission. The engine's V5 state file is deleted by
+		// `executeAbort` → `deleteBatchState`, so nothing else writes the
+		// historical record on operator abort of an in-flight V5 batch.
+		const archived = projectPersistedBatchToMissionState({
+			...persistedV5,
+			phase: "stopped",
+			endedAt: Date.now(),
+			errors: [...(persistedV5.errors ?? []), reason ?? "aborted via dashboard"],
+		});
+		try {
+			await archiveMission(cwd, persistedV5.batchId, archived);
+		} catch (err) {
+			logger.warn("[missioncontrol] archive on abort failed (V5)", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+		const runtimeState = buildAbortRuntimeState(persistedV5.batchId);
+		const abortResult = await executeAbort("graceful", "mission", cwd, runtimeState, persistedV5, 0, 100);
+		return jsonResponse({
+			ok: true,
+			phase: "aborted",
+			sessionsFound: abortResult.sessionsFound,
+			sessionsKilled: abortResult.sessionsKilled,
+		});
+	}
+
+	if (action === "pause" && guardPhase !== "running") {
+		return jsonResponse({ ok: false, reason: `not_pausable:${guardPhase}` }, { status: 409 });
+	}
+	if (action === "resume" && guardPhase !== "paused") {
+		return jsonResponse({ ok: false, reason: `not_resumable:${guardPhase}` }, { status: 409 });
+	}
+
+	// Prefer the in-process engine hook when the extension is wired so the
+	// lane-runner loop observes the transition. Disk-only mutation here
+	// would leave the live runner oblivious to the phase change.
+	const controlBatch = getMissionServerHooks().controlBatch;
+	if (controlBatch) {
+		const result = await controlBatch(action);
+		const status = result.ok ? 200 : 409;
+		return jsonResponse({ ok: result.ok, phase: result.phase, reason: result.reason }, { status });
+	}
+
+	// Standalone fallback: mutate phase in place and persist via
+	// `saveBatchState` so the V5 shape + _extraFields / schemaVersion are
+	// preserved on the round-trip (avoids collapsing the file back to the
+	// MissionState wrapper).
+	const nextPhase = action === "pause" ? "paused" : "executing";
+	const wirePhase = nextPhase === "executing" ? "running" : "paused";
+	const nextPersisted: PersistedBatchState = {
+		...persistedV5,
+		phase: nextPhase,
+		updatedAt: Date.now(),
+	};
+	await saveBatchState(JSON.stringify(nextPersisted, null, 2), cwd);
+	return jsonResponse({ ok: true, phase: wirePhase });
 }
 
 async function readMissionHistory(

@@ -143,8 +143,12 @@ async function readActiveBatch(cwd: string): Promise<MissionDetail | null> {
  * `description` field. They are read by {@link loadBatchState} for milestone,
  * rollup, and validation-status endpoints — and now also projected into the
  * mission list so active batch missions stay visible.
+ *
+ * Exported so the control-endpoint handler in `server.ts` can decide whether
+ * a pause/resume/abort request targets a V5 persisted batch even when the
+ * legacy `loadActiveBatch` reader would otherwise fail to match.
  */
-function isPersistedBatchStateShape(raw: Record<string, unknown>): boolean {
+export function isPersistedBatchStateShape(raw: Record<string, unknown>): boolean {
 	return (
 		typeof raw.schemaVersion === "number" &&
 		typeof raw.batchId === "string" &&
@@ -178,6 +182,99 @@ function mapPersistedPhaseToWire(phase: string): BatchState["phase"] {
 		default:
 			return "running";
 	}
+}
+
+/**
+ * Project a V5 `PersistedBatchState` into a MissionState. Exported so the
+ * control-endpoint handler can archive an aborted V5 batch through the
+ * existing MissionState-keyed `archiveMission` path (history reader still
+ * reads the legacy shape only).
+ */
+export function projectPersistedBatchToMissionState(persisted: PersistedBatchState): MissionState {
+	const tasks: TaskOutcome[] = (persisted.tasks ?? []).map(t => ({
+		taskId: t.taskId,
+		status: t.status,
+		startTime: t.startedAt,
+		endTime: t.endedAt,
+		exitReason: t.exitReason,
+		sessionName: t.sessionName,
+		doneFileFound: t.doneFileFound,
+		laneNumber: t.laneNumber,
+		repoId: t.repoId,
+		resolvedRepoId: t.resolvedRepoId,
+		segmentIds: t.segmentIds ? [...t.segmentIds] : undefined,
+		activeSegmentId: t.activeSegmentId ?? undefined,
+	}));
+
+	const runningByLane = new Map<number, TaskOutcome>();
+	for (const task of tasks) {
+		if (task.status === "running" && task.laneNumber != null && !runningByLane.has(task.laneNumber)) {
+			runningByLane.set(task.laneNumber, task);
+		}
+	}
+
+	const laneStatuses: LaneStatus[] = (persisted.lanes ?? []).map(l => {
+		const current = runningByLane.get(l.laneNumber);
+		const status: LaneStatus["status"] = current ? "running" : "idle";
+		const entry: LaneStatus = {
+			lane: l.laneNumber,
+			taskId: current?.taskId ?? null,
+			status,
+			stepProgress: "",
+			iteration: 0,
+			elapsed: 0,
+			sessionName: l.laneSessionId,
+		};
+		if (l.repoId) entry.repoId = l.repoId;
+		return entry;
+	});
+
+	const waves = (persisted.wavePlan ?? []).map((taskIds, i) => ({ wave: i, taskIds: [...taskIds] }));
+	const wirePhase = mapPersistedPhaseToWire(persisted.phase);
+
+	const batchState: BatchState = {
+		batchId: persisted.batchId,
+		phase: wirePhase,
+		waves,
+		currentWave: persisted.currentWaveIndex ?? 0,
+		laneCount: laneStatuses.length,
+		laneStatuses,
+		tasks,
+		tasksTotal: persisted.totalTasks ?? tasks.length,
+		tasksComplete: persisted.succeededTasks ?? 0,
+		tasksFailed: persisted.failedTasks ?? 0,
+		startTime: persisted.startedAt ?? Date.now(),
+		errors: persisted.errors ? [...persisted.errors] : [],
+	};
+	if (persisted.endedAt != null) batchState.endTime = persisted.endedAt;
+	if (persisted.mode === "workspace" || persisted.mode === "repo") batchState.mode = persisted.mode;
+
+	const startedAtIso = new Date(persisted.startedAt ?? Date.now()).toISOString();
+	// `completedAt` drives `resolveStatus` → "completed" badge. Only set it
+	// when the engine has actually finished the batch; `failed`/`stopped`
+	// surface through the wire-phase mapping as "error"/"aborted" instead so
+	// the mission list shows a "failed" badge.
+	const completedAtIso =
+		persisted.endedAt != null && persisted.phase === "completed"
+			? new Date(persisted.endedAt).toISOString()
+			: undefined;
+
+	const state: MissionState = {
+		description: persisted.batchId,
+		mode: "simple",
+		phases: [],
+		autonomy: "auto",
+		modelAssignment: {},
+		paused: persisted.phase === "paused",
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: startedAtIso,
+		kind: "batch",
+		batch: batchState,
+	};
+	if (completedAtIso) state.completedAt = completedAtIso;
+
+	return state;
 }
 
 /**
