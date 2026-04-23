@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed (Mission control — batch abort wiring)
+
+- **`POST /api/mission/:id/abort` now executes full abort orchestration for batch missions.** Previously the handler only called the pure-state reducer `abortBatch()` and persisted the mutated MissionState, which left tmux sessions, worker/reviewer agents, and merge processes untouched on disk. The handler now (a) mutates state via `abortBatch()`, (b) archives the aborted MissionState to `.omp/missions/<batchId>.json` so History surfaces it with `status: "failed"` / `batchPhase: "aborted"`, and (c) invokes `executeAbort()` from `missioncontrol/abort.ts`, which writes `.task-wrap-up` signal files, kills live V2 lane/reviewer/merge agents via the process registry, and deletes `.omp/mission-batch.json` so the mission drops off the active list. Simple missions continue to flow through the `controlSimple` hook. Aborting an already-aborted or completed batch mission returns `409 mission_already_terminal` instead of a silent `ok: true`.
+
+### Tests
+
+- **`src/server.e2e.test.ts` — batch abort wiring.** Four new tests: (1) batch abort returns `phase: "aborted"` and the mission reappears in `/api/missions` with `status: "failed"` via the archived MissionState snapshot; (2) double-abort on a terminal mission returns `409 mission_already_terminal`; (3) simple missions still dispatch through `controlSimple` hook; (4) batch pause is non-destructive — active state file is preserved and `batchPhase` flips to `"paused"` without firing `executeAbort`.
+
 ### Fixed (History tab — archived batch visibility)
 
 - **`resolveStatus()` in `dashboard-api.ts` now honors terminal `batch.phase` values even when the top-level `state.completedAt` is unset.** Archived batch missions written to `.omp/missions/<batchId>.json` frequently carry `batch.phase === "complete"`, `"error"`, or `"aborted"` without a sibling `completedAt`. The previous implementation only considered `completedAt`, so those archives were misclassified as `"active"` and never surfaced on the History tab. The summary returned by `/api/missions` now maps `batch.phase === "complete"` → `status: "completed"`, `"aborted"` / `"error"` → `"failed"`, before falling back to the existing `completedAt` / `paused` checks — keeping simple-mission semantics unchanged.

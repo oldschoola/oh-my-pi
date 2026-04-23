@@ -22,9 +22,12 @@ import {
 	listMissions,
 } from "./dashboard-api";
 import { dispatchStartRequest, getDefaultToken, type MissionStartRequest } from "./gui-bridge";
-import type { BehavioralAssertion } from "./missioncontrol";
+import type { BehavioralAssertion, MissionBatchRuntimeState } from "./missioncontrol";
 import {
 	abortBatch,
+	archiveMission,
+	executeAbort,
+	freshMissionBatchState,
 	handleApprovePlan,
 	handleCreateMilestone,
 	handleKnowledgeEntries,
@@ -39,6 +42,7 @@ import {
 	handleTelemetryRollup,
 	handleWriteValidationContract,
 	loadActiveBatch,
+	loadBatchState,
 	mailboxRoot,
 	missionHistoryPath,
 	missionsDir,
@@ -404,10 +408,37 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 		const body = (await req.json().catch(() => ({}))) as { reason?: string };
 		const state = await loadActiveBatch(cwd);
 		if (state?.batch && (state.batch.batchId === id || id === "active")) {
+			// Guard against double-abort on already-terminal missions. The
+			// state file is typically deleted on abort, but an archived
+			// MissionState may reappear via migration or manual seed.
+			if (action === "abort" && (state.batch.phase === "aborted" || state.batch.phase === "complete")) {
+				return jsonResponse({ ok: false, reason: "mission_already_terminal" }, { status: 409 });
+			}
+			if (action === "abort") {
+				// Real abort: mutate state → archive for history → run
+				// executeAbort which kills agents, writes wrap-up files, and
+				// removes the active batch state file.
+				const next = abortBatch(state, body.reason ?? "aborted via dashboard");
+				try {
+					await archiveMission(cwd, next.batch?.batchId ?? id, next);
+				} catch (err) {
+					logger.warn("[missioncontrol] archive on abort failed", {
+						error: err instanceof Error ? err.message : String(err),
+					});
+				}
+				const runtimeState = buildAbortRuntimeState(next.batch?.batchId ?? id);
+				const persisted = await loadBatchState(cwd).catch(() => null);
+				const abortResult = await executeAbort("graceful", "mission", cwd, runtimeState, persisted, 0, 100);
+				return jsonResponse({
+					ok: true,
+					phase: "aborted",
+					sessionsFound: abortResult.sessionsFound,
+					sessionsKilled: abortResult.sessionsKilled,
+				});
+			}
 			let next = state;
 			if (action === "pause") next = pauseBatch(state);
-			else if (action === "resume") next = resumeBatch(state);
-			else next = abortBatch(state, body.reason ?? "aborted via dashboard");
+			else next = resumeBatch(state);
 			await saveActiveBatch(cwd, next);
 			return jsonResponse({ ok: true, phase: next.batch?.phase });
 		}
@@ -596,6 +627,23 @@ async function handleApi(req: Request, cwd: string): Promise<Response> {
 async function activeBatchId(cwd: string): Promise<string | null> {
 	const state = await loadActiveBatch(cwd);
 	return state?.batch?.batchId ?? null;
+}
+
+/**
+ * Build a minimal `MissionBatchRuntimeState` for `executeAbort`.
+ *
+ * The dashboard stores `MissionState` (wire shape with a nested `batch`
+ * field) in `.omp/mission-batch.json`, not the engine's V5
+ * `PersistedBatchState`. `executeAbort` only needs `batchId`, `phase`,
+ * and `currentLanes` for kill-session discovery — the V5 persisted
+ * state (if any) is loaded separately and supplies lane/task records
+ * for wrap-up file paths. Everything else is filled from defaults.
+ */
+function buildAbortRuntimeState(batchId: string): MissionBatchRuntimeState {
+	return {
+		...freshMissionBatchState(),
+		batchId,
+	};
 }
 
 async function readMissionHistory(

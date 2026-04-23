@@ -1489,6 +1489,139 @@ test("PATCH /api/mission/:id returns 503 when no patchMission hook is set", asyn
 	expect(res.status).toBe(503);
 });
 
+// ---------------------------------------------------------------------------
+// Mission control: batch abort wiring
+// ---------------------------------------------------------------------------
+
+function cleanupActiveBatchFile(): void {
+	try {
+		rmSync(join(workDir, ".omp", "mission-batch.json"), { force: true });
+	} catch {}
+}
+
+function writeActiveBatch(batchId: string, phase = "running"): void {
+	const state = {
+		description: "active batch",
+		mode: "simple",
+		phases: [],
+		autonomy: "auto",
+		modelAssignment: {},
+		paused: false,
+		pauseHistory: [],
+		progressLog: [],
+		startedAt: "2025-01-01T10:00:00Z",
+		kind: "batch",
+		batch: {
+			batchId,
+			phase,
+			waves: [],
+			currentWave: 0,
+			laneCount: 1,
+			laneStatuses: [],
+			tasks: [],
+			tasksTotal: 0,
+			tasksComplete: 0,
+			tasksFailed: 0,
+			startTime: 0,
+			errors: [],
+		},
+	};
+	mkdirSync(join(workDir, ".omp"), { recursive: true });
+	writeFileSync(join(workDir, ".omp", "mission-batch.json"), JSON.stringify(state));
+}
+
+test("POST /api/mission/:id/abort on batch mission deletes active state and archives aborted mission", async () => {
+	const batchId = "batch-abort-wiring-1";
+	writeActiveBatch(batchId);
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/abort`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ reason: "operator test" }),
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; phase?: string; sessionsFound?: number };
+		expect(body.ok).toBe(true);
+		expect(body.phase).toBe("aborted");
+		expect(typeof body.sessionsFound).toBe("number");
+
+		// Active batch state file is removed → mission drops off the active list.
+		const listRes = await fetch(`${baseUrl}/api/missions`);
+		const summaries = (await listRes.json()) as Array<{ id: string; status: string; batchPhase?: string }>;
+		// Archived MissionState is projected by resolveStatus → "failed" badge.
+		const archived = summaries.find(m => m.id === batchId);
+		expect(archived).toBeDefined();
+		expect(archived?.status).toBe("failed");
+		expect(archived?.batchPhase).toBe("aborted");
+	} finally {
+		cleanupActiveBatchFile();
+		rmSync(join(workDir, ".omp", "missions", `${batchId}.json`), { force: true });
+	}
+});
+
+test("POST /api/mission/:id/abort on already-aborted batch mission returns 409", async () => {
+	const batchId = "batch-abort-wiring-2";
+	writeActiveBatch(batchId, "aborted");
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/abort`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ reason: "double-abort" }),
+		});
+		expect(res.status).toBe(409);
+		const body = (await res.json()) as { ok: boolean; reason?: string };
+		expect(body.ok).toBe(false);
+		expect(body.reason).toBe("mission_already_terminal");
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
+test("POST /api/mission/:id/abort on simple mission still dispatches through controlSimple hook", async () => {
+	cleanupActiveBatchFile();
+	const calls: Array<{ action: string; reason?: string }> = [];
+	setMissionServerHooks({
+		controlSimple: (action, payload) => {
+			calls.push({ action, reason: payload?.reason });
+			return { ok: true };
+		},
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/some-simple/abort`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ reason: "simple-path" }),
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean };
+		expect(body.ok).toBe(true);
+		expect(calls).toEqual([{ action: "abort", reason: "simple-path" }]);
+	} finally {
+		clearMissionServerHooks();
+	}
+});
+
+test("POST /api/mission/:id/pause on batch mission still transitions phase to paused (no executeAbort)", async () => {
+	const batchId = "batch-abort-wiring-pause";
+	writeActiveBatch(batchId);
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/${batchId}/pause`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; phase?: string };
+		expect(body.ok).toBe(true);
+		expect(body.phase).toBe("paused");
+		// Active batch file still exists (pause is non-destructive).
+		const listRes = await fetch(`${baseUrl}/api/missions`);
+		const summaries = (await listRes.json()) as Array<{ id: string; batchPhase?: string }>;
+		expect(summaries.find(m => m.id === batchId)?.batchPhase).toBe("paused");
+	} finally {
+		cleanupActiveBatchFile();
+	}
+});
+
 test("GET /api/preferences returns {} when the file is missing", async () => {
 	const res = await fetch(`${baseUrl}/api/preferences`);
 	expect(res.status).toBe(200);
