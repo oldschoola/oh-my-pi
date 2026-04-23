@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Tests (Terminal telemetry rendering contract)
+
+- **`test/xterm-runtime.test.ts` — xterm telemetry formatter contract.** Ten new unit tests pin the telemetry-event → ANSI-line mapping that `MissionTerminal` and `WorkerTerminal` depend on for `VAL-TERMINAL-003` (the terminal must render incoming telemetry events). Covers: (1) `formatEventAnsi` assistant/tool-call/tool-result/unknown event bodies; (2) single-line output invariant (no CR/LF in formatter output — row terminators are the caller's responsibility so incremental `terminal.write` → `terminal.write("\r\n")` stays correct); (3) `HH:MM:SS` timestamp prefix; (4) `escapeForTerminal` strips bare ESC so untrusted event bodies cannot inject ANSI sequences; (5) `buildTheme(true/false)` returns contrasting dark/light palettes that drive the live `data-theme` observer.
+- **`src/server.e2e.test.ts` — `GET /api/mission/:id/events` HTTP contract.** Four new tests pin the endpoint that feeds the terminal: (1) sidecar JSONL events round-trip in insertion order with `type`, `ts`, `toolName`, `text`, `isError` preserved; (2) missing sidecar returns `{ events: [] }` with `200`; (3) `?role=` query parameter selects the matching `{role}.jsonl` (worker vs orchestrator); (4) malformed JSON lines are skipped rather than crashing the handler, so a partially-written sidecar never takes the dashboard down.
+
 ### Tests (Simple mission control regression coverage)
 
 - **`src/server.e2e.test.ts` — simple-mission pause/resume/abort HTTP dispatch.** Four new tests pin the hook contract exercised by `VAL-CONTROL-004` / `VAL-CONTROL-005` against the batch-control changes landed earlier in this unreleased cycle: (1) `POST /api/mission/<id>/pause` without an active batch routes through `controlSimple` with `action: "pause"`; (2) `resume` routes through `controlSimple` with `action: "resume"`; (3) when no `controlSimple` hook is registered, all three endpoints return `404 "No active mission"` rather than leaking the batch handler's `409 mission_already_terminal`; (4) hook-level rejections surface as `400` with the hook's `reason` verbatim. These guard the simple-mission code path from future refactors to the batch pause/resume/abort wiring.

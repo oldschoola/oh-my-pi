@@ -351,6 +351,76 @@ test("GET /api/mission/:id/telemetry omits retries/compactions when zero", async
 });
 
 // ---------------------------------------------------------------------------
+// Mission events endpoint — sidecar JSONL → client TelemetryEvent[] mapping.
+// Verifies the HTTP surface that feeds MissionTerminal's xterm-backed render.
+// ---------------------------------------------------------------------------
+
+function writeEventsSidecar(id: string, role: string, events: Array<Record<string, unknown>>): void {
+	const dir = join(workDir, ".omp", "mission-telemetry", id);
+	mkdirSync(dir, { recursive: true });
+	const lines = events.map(e => JSON.stringify(e)).join("\n");
+	writeFileSync(join(dir, `${role}.jsonl`), `${lines}\n`);
+}
+
+test("GET /api/mission/:id/events returns telemetry events in sidecar order", async () => {
+	writeEventsSidecar("events-stream", "worker", [
+		{ ts: 1, type: "assistant_message", text: "hello" },
+		{ ts: 2, type: "tool_execution_start", toolName: "read", argsPreview: "src/a.ts" },
+		{ ts: 3, type: "tool_execution_end", toolName: "read", isError: false },
+	]);
+
+	const res = await fetch(`${baseUrl}/api/mission/events-stream/events`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as {
+		events: Array<{ type: string; ts?: number; toolName?: string; text?: string; isError?: boolean }>;
+	};
+	expect(body.events.length).toBe(3);
+	expect(body.events[0].type).toBe("assistant_message");
+	expect(body.events[0].text).toBe("hello");
+	expect(body.events[1].type).toBe("tool_execution_start");
+	expect(body.events[1].toolName).toBe("read");
+	expect(body.events[2].type).toBe("tool_execution_end");
+	expect(body.events[2].isError).toBe(false);
+});
+
+test("GET /api/mission/:id/events returns empty list when no sidecar exists", async () => {
+	const res = await fetch(`${baseUrl}/api/mission/events-missing/events`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as { events: unknown[] };
+	expect(body.events).toEqual([]);
+});
+
+test("GET /api/mission/:id/events honors role query parameter", async () => {
+	writeEventsSidecar("events-roles", "worker", [{ ts: 1, type: "assistant_message", text: "worker-msg" }]);
+	writeEventsSidecar("events-roles", "orchestrator", [{ ts: 2, type: "assistant_message", text: "orch-msg" }]);
+
+	const workerRes = await fetch(`${baseUrl}/api/mission/events-roles/events?role=worker`);
+	const workerBody = (await workerRes.json()) as { events: Array<{ text?: string }> };
+	expect(workerBody.events.map(e => e.text)).toEqual(["worker-msg"]);
+
+	const orchRes = await fetch(`${baseUrl}/api/mission/events-roles/events?role=orchestrator`);
+	const orchBody = (await orchRes.json()) as { events: Array<{ text?: string }> };
+	expect(orchBody.events.map(e => e.text)).toEqual(["orch-msg"]);
+});
+
+test("GET /api/mission/:id/events skips malformed jsonl lines", async () => {
+	const dir = join(workDir, ".omp", "mission-telemetry", "events-malformed");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(
+		join(dir, "worker.jsonl"),
+		[
+			'{"ts":1,"type":"assistant_message","text":"ok"}',
+			"not-json",
+			'{"ts":2,"type":"tool_call","toolName":"write"}',
+		].join("\n") + "\n",
+	);
+
+	const res = await fetch(`${baseUrl}/api/mission/events-malformed/events`);
+	const body = (await res.json()) as { events: Array<{ type: string }> };
+	expect(body.events.map(e => e.type)).toEqual(["assistant_message", "tool_call"]);
+});
+
+// ---------------------------------------------------------------------------
 // Batch STATUS.md enrichment — getMission attaches parsed progress to tasks.
 // ---------------------------------------------------------------------------
 
