@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Tests (Simple mission control regression coverage)
+
+- **`src/server.e2e.test.ts` — simple-mission pause/resume/abort HTTP dispatch.** Four new tests pin the hook contract exercised by `VAL-CONTROL-004` / `VAL-CONTROL-005` against the batch-control changes landed earlier in this unreleased cycle: (1) `POST /api/mission/<id>/pause` without an active batch routes through `controlSimple` with `action: "pause"`; (2) `resume` routes through `controlSimple` with `action: "resume"`; (3) when no `controlSimple` hook is registered, all three endpoints return `404 "No active mission"` rather than leaking the batch handler's `409 mission_already_terminal`; (4) hook-level rejections surface as `400` with the hook's `reason` verbatim. These guard the simple-mission code path from future refactors to the batch pause/resume/abort wiring.
+
 ### Fixed (Dashboard bridge — token persistence + actionable errors)
 
 - **`MissionStartForm` now persists the resolved GUI bridge token to `localStorage`.** Previously every page refresh had to round-trip `GET /api/mission-gui/token` before the Start form became submittable; if the endpoint was momentarily unreachable (extension cold-booting, offline, server restarting) the form sat disabled behind "Dashboard bridge not ready — wait a moment and try again" until the operator hit refresh again. The form now seeds `resolvedToken` synchronously from `localStorage` (key `missioncontrol-gui-token`, UUID-shape-guarded) and overwrites the cache whenever `/mission-gui/token` returns a fresh value. Explicit `?gui=` tokens are intentionally NOT cached because they are one-shot bridges owned by `/mission-gui`. On `POST /api/mission/start` returning `unknown_token`, the cache is cleared and a re-fetch is kicked off so the next submit picks up the new token without another manual reload.

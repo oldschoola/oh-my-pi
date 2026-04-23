@@ -1689,6 +1689,83 @@ test("POST /api/mission/:id/abort on simple mission still dispatches through con
 	}
 });
 
+test("POST /api/mission/:id/pause on simple mission dispatches through controlSimple hook (no batch state)", async () => {
+	cleanupActiveBatchFile();
+	const calls: Array<{ action: string; reason?: string }> = [];
+	setMissionServerHooks({
+		controlSimple: (action, payload) => {
+			calls.push({ action, reason: payload?.reason });
+			return { ok: true };
+		},
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/some-simple/pause`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean };
+		expect(body.ok).toBe(true);
+		expect(calls).toEqual([{ action: "pause", reason: undefined }]);
+	} finally {
+		clearMissionServerHooks();
+	}
+});
+
+test("POST /api/mission/:id/resume on simple mission dispatches through controlSimple hook (no batch state)", async () => {
+	cleanupActiveBatchFile();
+	const calls: Array<{ action: string }> = [];
+	setMissionServerHooks({
+		controlSimple: action => {
+			calls.push({ action });
+			return { ok: true };
+		},
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/some-simple/resume`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean };
+		expect(body.ok).toBe(true);
+		expect(calls).toEqual([{ action: "resume" }]);
+	} finally {
+		clearMissionServerHooks();
+	}
+});
+
+test("POST /api/mission/:id/pause|resume|abort on simple mission returns 404 when no controlSimple hook is registered", async () => {
+	cleanupActiveBatchFile();
+	clearMissionServerHooks();
+	for (const action of ["pause", "resume", "abort"] as const) {
+		const res = await fetch(`${baseUrl}/api/mission/some-simple/${action}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(404);
+	}
+});
+
+test("POST /api/mission/:id/pause on simple mission surfaces hook reason as 400 when the hook rejects", async () => {
+	cleanupActiveBatchFile();
+	setMissionServerHooks({
+		controlSimple: () => ({ ok: false, reason: "mission_completed" }),
+	});
+	try {
+		const res = await fetch(`${baseUrl}/api/mission/some-simple/pause`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as { ok: boolean; reason?: string };
+		expect(body.ok).toBe(false);
+		expect(body.reason).toBe("mission_completed");
+	} finally {
+		clearMissionServerHooks();
+	}
+});
+
 test("POST /api/mission/:id/pause on batch mission still transitions phase to paused (no executeAbort)", async () => {
 	const batchId = "batch-abort-wiring-pause";
 	writeActiveBatch(batchId);
