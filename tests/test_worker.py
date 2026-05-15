@@ -125,8 +125,9 @@ def _reset_fake() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _patch_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+def _patch_worker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr("robomp.worker.RpcClient", _FakeRpcClient)
+    monkeypatch.setattr("robomp.worker._AGENT_HOME_STAGE", tmp_path / "missing-agent-home-stage")
     monkeypatch.setattr("robomp.worker.host_tools.build", lambda _b: ())
     monkeypatch.setattr(
         "robomp.worker.persona.system_append",
@@ -185,6 +186,35 @@ async def test_run_rpc_omits_continue_when_session_empty(
     assert client_kwargs["user"] is None
     assert client_kwargs["group"] is None
     assert client_kwargs["extra_groups"] is None
+
+
+def test_build_extra_env_stages_agent_home(tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    stage_home = tmp_path / "agent-home-stage"
+    agent_home = tmp_path / "agent-home"
+    monkeypatch.setattr(worker, "_AGENT_HOME_STAGE", stage_home)
+    monkeypatch.setattr(worker, "_AGENT_HOME", agent_home)
+
+    agent_dir = stage_home / ".agent"
+    agent_rules_dir = agent_dir / "rules"
+    omp_agent_dir = stage_home / ".omp" / "agent"
+    agent_rules_dir.mkdir(parents=True)
+    omp_agent_dir.mkdir(parents=True)
+    (agent_dir / "AGENTS.md").write_text("agent instructions\n", encoding="utf-8")
+    (agent_rules_dir / "rule.md").write_text("rule\n", encoding="utf-8")
+    (omp_agent_dir / "models.yml").write_text("models: []\n", encoding="utf-8")
+
+    env = worker._build_extra_env(settings)
+
+    assert env["HOME"] == str(agent_home)
+    assert (agent_home / ".agent" / "AGENTS.md").is_file()
+    assert (agent_home / ".agent" / "rules" / "rule.md").is_file()
+    assert (agent_home / ".omp" / "agent" / "models.yml").is_file()
+    assert (agent_home / ".agent").stat().st_mode & 0o777 == 0o755
+    assert (agent_home / ".agent" / "AGENTS.md").stat().st_mode & 0o777 == 0o644
+    assert (agent_home / ".agent" / "rules").stat().st_mode & 0o777 == 0o755
+    assert (agent_home / ".agent" / "rules" / "rule.md").stat().st_mode & 0o777 == 0o644
+    assert (agent_home / ".omp" / "agent").stat().st_mode & 0o777 == 0o755
+    assert (agent_home / ".omp" / "agent" / "models.yml").stat().st_mode & 0o777 == 0o644
 
 
 @pytest.mark.asyncio

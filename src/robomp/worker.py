@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -109,6 +111,61 @@ _SCRUBBED_ENV_KEYS: tuple[str, ...] = (
 )
 
 _AGENT_HOME = Path("/srv/agent-home")
+_AGENT_HOME_STAGE = Path("/srv/agent-home-stage")
+
+
+def _stage_agent_home() -> None:
+    """Copy late-appearing staged agent config into the runtime HOME."""
+    if not _AGENT_HOME_STAGE.exists():
+        return
+
+    for rel in (Path(".agent"), Path(".omp/agent")):
+        src = _AGENT_HOME_STAGE / rel
+        if not src.exists():
+            continue
+
+        dst = _AGENT_HOME / rel
+        try:
+            if os.path.lexists(dst):
+                if dst.is_dir() and not dst.is_symlink():
+                    shutil.rmtree(dst)
+                else:
+                    dst.unlink()
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+        except OSError as exc:
+            log.warning("Failed to stage agent home path %s: %s", rel, exc)
+
+    if not _AGENT_HOME.exists():
+        return
+
+    chown_to_root = os.geteuid() == 0
+    for root, dirs, files in os.walk(_AGENT_HOME):
+        root_path = Path(root)
+        try:
+            root_path.chmod(0o755)
+            if chown_to_root:
+                os.chown(root_path, 0, 0)
+        except OSError as exc:
+            log.warning("Failed to normalize agent home directory %s: %s", root_path, exc)
+
+        for name in dirs:
+            path = root_path / name
+            try:
+                path.chmod(0o755)
+                if chown_to_root:
+                    os.chown(path, 0, 0)
+            except OSError as exc:
+                log.warning("Failed to normalize agent home directory %s: %s", path, exc)
+
+        for name in files:
+            path = root_path / name
+            try:
+                path.chmod(0o644)
+                if chown_to_root:
+                    os.chown(path, 0, 0)
+            except OSError as exc:
+                log.warning("Failed to normalize agent home file %s: %s", path, exc)
 
 
 def _build_extra_env(settings: Settings) -> dict[str, str]:
@@ -119,6 +176,7 @@ def _build_extra_env(settings: Settings) -> dict[str, str]:
     child — `del` on the parent's env would not help us here.
     """
     del settings  # kept for future hooks (model-specific env, etc.)
+    _stage_agent_home()
     env = dict.fromkeys(_SCRUBBED_ENV_KEYS, "")
     if _AGENT_HOME.is_dir():
         env["HOME"] = str(_AGENT_HOME)

@@ -44,10 +44,10 @@ _RST = "\033[0m"
 _DIM = "\033[2m"
 
 _LEVEL_COLOR: dict[str, str] = {
-    "DEBUG":    "\033[34m",    # blue
-    "INFO":     "\033[32m",    # green
-    "WARNING":  "\033[33m",    # yellow
-    "ERROR":    "\033[31m",    # red
+    "DEBUG": "\033[34m",  # blue
+    "INFO": "\033[32m",  # green
+    "WARNING": "\033[33m",  # yellow
+    "ERROR": "\033[31m",  # red
     "CRITICAL": "\033[1;31m",  # bold red
 }
 
