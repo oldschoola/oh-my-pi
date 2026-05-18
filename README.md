@@ -114,7 +114,7 @@ _[Watch the capture ↗](https://omp.sh/clips/irc.mp4)_
 
 ### 06 · Read a pdf on arxiv, why not?
 
-web_search chains fourteen ranked providers and hands whatever URLs it finds straight to read. Arxiv PDFs, GitHub pages, Stack Overflow threads come back as structured markdown with anchors intact — the same tool surface you use on local files. Cite, follow, quote, never lose where you came from.
+web_search chains fourteen ranked providers and hands whatever URLs it finds straight to read. Arxiv PDFs, GitHub pages, Stack Overflow threads come back as structured markdown with anchors intact — the same tool surface you use on local files. Cite, follow, quote, never lose where you came from. Seventy-five URL shapes carry their own lens underneath: package registries (npm, PyPI, crates.io, Hex, Maven, Go), research stacks (Arxiv, bioRxiv, PubMed, Semantic Scholar), the forum mesh (Reddit, Hacker News, Lobsters, Mastodon, Bluesky), YouTube and Vimeo transcripts, NVD/OSV/CISA-KEV advisories. Readability is the fallback, not the headline.
 
 ![omp TUI: web_search returns 10 ranked Perplexity sources for inference-time compute scaling, the agent picks an arxiv paper, calls read https://arxiv.org/pdf/2604.10739v1, and summarizes the paper's headline result with real numbers.](https://omp.sh/clips/web-poster.webp)
 
