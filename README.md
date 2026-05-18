@@ -213,6 +213,7 @@ Stealth's on by default, so pages see a normal user instead of a headless bot. T
 - `todo_write` — ordered mutations over the session todo list with phase tracking.
 - `job` — wait on or cancel background jobs.
 - `ask` — structured follow-up questions for interactive runs.
+- `goal` — pin a persistent objective with a token budget; surfaced when goal mode is on (`/goal`), tracked in the footer, and steered as the run approaches the limit.
 
 **Outside the box**
 
@@ -417,6 +418,26 @@ The [Agent Client Protocol](https://github.com/zed-industries/agent-client-proto
 | `edit, ast_edit, write, bash` | `session/request_permission`        |
 
 Full reference: [omp.sh/docs/sdk](https://omp.sh/docs/sdk).
+
+### Utility subcommands — _not just the TUI_
+
+Everything below shares the same engine; pick the one that matches what you actually want to do.
+
+| Command            | What it does                                                                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| `omp commit`       | Read the working tree, split into atomic commits, validate the messages, update changelogs.           |
+| `omp config`       | Inspect and mutate the settings tree (`~/.omp` + `.omp/`) from the shell.                             |
+| `omp setup`        | Install optional dependencies for features that need them — currently `python` and `stt`.             |
+| `omp plugin`       | Install, uninstall, enable, configure, and doctor plugins from npm or local paths.                    |
+| `omp agents`       | Export the bundled task agents (`explore`, `plan`, `reviewer`, …) onto disk so you can edit them.     |
+| `omp ssh`          | Manage SSH host configs the `ssh` tool will reach for.                                                |
+| `omp stats`        | Token, request, and cost usage rolled up across every session.                                        |
+| `omp update`       | Check for and install a new release.                                                                  |
+| `omp shell`        | Drop into the same persistent bash session the `bash` tool uses — handy for poking at it directly.    |
+| `omp search` (`q`) | Run `web_search` from the shell without spinning up the TUI; rank-merges every configured provider.   |
+| `omp read PATH`    | Run `read` from the shell against any path, internal scheme, or URL and print exactly what the model would see. |
+| `omp auth-broker`  | Start the credential-vault server that other omp processes (slot containers, swarm extensions) talk to. |
+| `omp auth-gateway` | Forward-proxy provider traffic through the broker so the agent never touches the real keys.           |
 
 ## A harness worth keeping is one you _don't_ outgrow.
 
