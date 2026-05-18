@@ -153,7 +153,18 @@ async function downloadFile(url: string, dest: string, signal?: AbortSignal): Pr
 	} else if (!response.body) {
 		throw new Error("No response body");
 	}
-	await Bun.write(dest, response);
+	// Buffer the response into memory before writing. The "obvious"
+	// `Bun.write(dest, response)` streams the body straight to disk, which
+	// hangs indefinitely on Windows when the destination is an executable —
+	// Windows Defender's real-time scan opens its own handle on the partially-
+	// written .exe and the stream's final close never completes. The hang has
+	// no timeout and silently sinks `omp`'s yt-dlp / sg / sd auto-install, so
+	// first-time YouTube fetches looked like a permanent "Fetching…" stall.
+	// Buffering up front bypasses the streaming-close path entirely; the cost
+	// is one extra memcpy of a ~20 MB binary, which is invisible next to the
+	// network fetch itself.
+	const bytes = await response.bytes();
+	await Bun.write(dest, bytes);
 }
 
 // Download and install a tool
