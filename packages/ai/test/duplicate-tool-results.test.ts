@@ -150,6 +150,118 @@ describe("Duplicate Tool Results Regression", () => {
 		expect((toolResults[0] as ToolResultMessage).content).toEqual([{ type: "text", text: "todo updated" }]);
 	});
 
+	it("pulls real tool result forward when two assistant messages have tool calls but results come batched after", () => {
+		// Repro for: 400 "messages.N: `tool_use` ids were found without `tool_result`
+		// blocks immediately after". Two consecutive assistant messages each emit
+		// tool_use blocks, then a single user turn returns all tool_results.
+		// Anthropic requires every tool_use to be immediately followed by its
+		// tool_result, so the transformer must reorder the deferred result for the
+		// first assistant message to sit between the two assistant messages.
+		const firstCallId = "toolu_first_assistant_call";
+		const secondCallIdA = "toolu_second_assistant_call_a";
+		const secondCallIdB = "toolu_second_assistant_call_b";
+
+		const baseAssistant = {
+			role: "assistant" as const,
+			api: "anthropic-messages" as const,
+			provider: "anthropic",
+			model: "claude-3-5-sonnet-20241022",
+			usage: {
+				input: 100,
+				output: 50,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 150,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse" as const,
+		};
+
+		const firstAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [{ type: "toolCall", id: firstCallId, name: "read", arguments: { path: "/a.ts" } }],
+			timestamp: 1000,
+		};
+		const secondAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [
+				{ type: "toolCall", id: secondCallIdA, name: "read", arguments: { path: "/b.ts" } },
+				{ type: "toolCall", id: secondCallIdB, name: "read", arguments: { path: "/c.ts" } },
+			],
+			timestamp: 2000,
+		};
+
+		const firstResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: firstCallId,
+			toolName: "read",
+			content: [{ type: "text", text: "a contents" }],
+			isError: false,
+			timestamp: 3000,
+		};
+		const secondResultA: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: secondCallIdA,
+			toolName: "read",
+			content: [{ type: "text", text: "b contents" }],
+			isError: false,
+			timestamp: 3001,
+		};
+		const secondResultB: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: secondCallIdB,
+			toolName: "read",
+			content: [{ type: "text", text: "c contents" }],
+			isError: false,
+			timestamp: 3002,
+		};
+
+		const messages = [
+			{ role: "user" as const, content: "Read three files", timestamp: 500 },
+			firstAssistant,
+			secondAssistant,
+			firstResult,
+			secondResultA,
+			secondResultB,
+		];
+
+		const transformed = transformMessages(messages, model);
+
+		// Every tool_use must have exactly one tool_result, none synthesized.
+		const allToolResults = transformed.filter(m => m.role === "toolResult") as ToolResultMessage[];
+		expect(allToolResults).toHaveLength(3);
+		expect(allToolResults.map(r => r.toolCallId).sort()).toEqual([firstCallId, secondCallIdA, secondCallIdB].sort());
+		for (const r of allToolResults) {
+			expect(r.isError).toBe(false);
+		}
+
+		// Critical contract: every assistant message that emits tool_use must be
+		// followed in `transformed` by tool_result(s) covering each of its calls
+		// before the next assistant message appears. This matches Anthropic's
+		// "tool_use immediately followed by tool_result" rule.
+		for (let i = 0; i < transformed.length; i++) {
+			const msg = transformed[i];
+			if (msg.role !== "assistant") continue;
+			const callIds = (msg as AssistantMessage).content
+				.filter(b => b.type === "toolCall")
+				.map(b => (b as ToolCall).id);
+			if (callIds.length === 0) continue;
+			const remaining = new Set(callIds);
+			for (let j = i + 1; j < transformed.length && remaining.size > 0; j++) {
+				const next = transformed[j];
+				if (next.role === "assistant") {
+					throw new Error(
+						`tool_use ids ${[...remaining].join(", ")} from assistant @${i} have no tool_result before assistant @${j}`,
+					);
+				}
+				if (next.role === "toolResult") {
+					remaining.delete((next as ToolResultMessage).toolCallId);
+				}
+			}
+			expect(remaining.size).toBe(0);
+		}
+	});
+
 	it("should not duplicate tool results for aborted messages when results already exist", () => {
 		const toolCallId = "toolu_aborted_test_123";
 

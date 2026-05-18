@@ -131,9 +131,21 @@ export function transformMessages<TApi extends Api>(
 		}
 		return msg;
 	});
-	const realToolResultIds = new Set(
-		transformed.filter((msg): msg is ToolResultMessage => msg.role === "toolResult").map(msg => msg.toolCallId),
-	);
+	// Map every real tool result by its tool-call id so we can pull it forward
+	// when a non-toolResult message would otherwise split a tool_use from its
+	// result (e.g. two consecutive assistant messages, or a developer message
+	// injected between the call and the result). Anthropic requires that each
+	// assistant `tool_use` be followed immediately by a user `tool_result`.
+	const realToolResultById = new Map<string, ToolResultMessage>();
+	for (const msg of transformed) {
+		if (msg.role === "toolResult" && !realToolResultById.has(msg.toolCallId)) {
+			realToolResultById.set(msg.toolCallId, msg);
+		}
+	}
+	const realToolResultIds = new Set(realToolResultById.keys());
+	// Tool results that have been emitted out-of-order and must be skipped when
+	// the iterator reaches their original position.
+	const consumedRealToolResultIds = new Set<string>();
 
 	// Anthropic rejects `tool_result` blocks whose `tool_use_id` does not appear in a prior
 	// `tool_use` block. After handoff/compaction folds an assistant turn into a summary
@@ -160,7 +172,18 @@ export function transformMessages<TApi extends Api>(
 	const flushPendingToolCalls = (timestamp: number): void => {
 		if (pendingToolCalls.length === 0) return;
 		for (const tc of pendingToolCalls) {
-			if (!toolCallStatus.has(tc.id) && !realToolResultIds.has(tc.id)) {
+			if (toolCallStatus.has(tc.id)) continue;
+			const realResult = realToolResultById.get(tc.id);
+			if (realResult && !consumedRealToolResultIds.has(tc.id)) {
+				// A real result exists later in history; pull it forward so the
+				// tool_use is immediately followed by its tool_result.
+				result.push(realResult);
+				consumedRealToolResultIds.add(tc.id);
+				toolCallStatus.set(tc.id, ToolCallStatus.Resolved);
+				continue;
+			}
+			if (!realToolResultIds.has(tc.id)) {
+				// Orphan tool call — no result will ever arrive. Synthesize one.
 				result.push({
 					role: "toolResult",
 					toolCallId: tc.id,
@@ -225,6 +248,10 @@ export function transformMessages<TApi extends Api>(
 
 			result.push(msg);
 		} else if (msg.role === "toolResult") {
+			if (consumedRealToolResultIds.has(msg.toolCallId)) {
+				// Already emitted via pull-forward; drop the duplicate.
+				continue;
+			}
 			if (pendingAbortedToolCalls.has(msg.toolCallId)) {
 				pendingAbortedToolCalls.delete(msg.toolCallId);
 				toolCallStatus.set(msg.toolCallId, ToolCallStatus.Resolved);
