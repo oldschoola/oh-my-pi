@@ -262,6 +262,131 @@ describe("Duplicate Tool Results Regression", () => {
 		}
 	});
 
+	it("pairs the Nth tool_use with the Nth tool_result when normalized ids collide", () => {
+		// Defense for review feedback on the pull-forward patch: keying the
+		// consumed-result tracker on toolCallId alone breaks when two distinct
+		// source ids normalize to the same value (Mistral truncates to 9
+		// alphanumeric chars, Google sanitizes-and-slices to 64). After the first
+		// pull-forward marks the id as consumed, the second legitimate
+		// tool_result with that id would be silently dropped, re-creating the
+		// "tool_use without tool_result" 400 the patch is meant to prevent.
+		//
+		// We assert the queue-per-id + identity-based consumed-set behavior:
+		// every tool_result with the colliding id is preserved, each emitted
+		// exactly once, and every assistant tool_use is followed by its own
+		// tool_result before the next assistant message.
+		const collidedId = "toolXY123";
+		const otherCallId = "toolu_unrelated_call";
+
+		const baseAssistant = {
+			role: "assistant" as const,
+			api: "anthropic-messages" as const,
+			provider: "anthropic",
+			model: "claude-3-5-sonnet-20241022",
+			usage: {
+				input: 100,
+				output: 50,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 150,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse" as const,
+		};
+
+		const firstAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [{ type: "toolCall", id: collidedId, name: "read", arguments: { path: "/a.ts" } }],
+			timestamp: 1000,
+		};
+		const secondAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [
+				{ type: "toolCall", id: collidedId, name: "read", arguments: { path: "/b.ts" } },
+				{ type: "toolCall", id: otherCallId, name: "read", arguments: { path: "/c.ts" } },
+			],
+			timestamp: 2000,
+		};
+
+		const firstResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: collidedId,
+			toolName: "read",
+			content: [{ type: "text", text: "a contents" }],
+			isError: false,
+			timestamp: 3000,
+		};
+		const collidedSecondResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: collidedId,
+			toolName: "read",
+			content: [{ type: "text", text: "b contents" }],
+			isError: false,
+			timestamp: 3001,
+		};
+		const otherResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: otherCallId,
+			toolName: "read",
+			content: [{ type: "text", text: "c contents" }],
+			isError: false,
+			timestamp: 3002,
+		};
+
+		const messages = [
+			{ role: "user" as const, content: "Read three files", timestamp: 500 },
+			firstAssistant,
+			secondAssistant,
+			firstResult,
+			collidedSecondResult,
+			otherResult,
+		];
+
+		const transformed = transformMessages(messages, model);
+
+		// All three tool_result instances survive — none silently dropped, none
+		// duplicated. We pin by content because toolCallId alone can't
+		// disambiguate the collided pair.
+		const collidedResults = transformed.filter(
+			m => m.role === "toolResult" && (m as ToolResultMessage).toolCallId === collidedId,
+		) as ToolResultMessage[];
+		expect(collidedResults).toHaveLength(2);
+		const collidedTexts = collidedResults.map(r => (r.content[0] as { type: "text"; text: string }).text);
+		expect(collidedTexts.sort()).toEqual(["a contents", "b contents"]);
+
+		const otherResults = transformed.filter(
+			m => m.role === "toolResult" && (m as ToolResultMessage).toolCallId === otherCallId,
+		) as ToolResultMessage[];
+		expect(otherResults).toHaveLength(1);
+		expect((otherResults[0].content[0] as { type: "text"; text: string }).text).toBe("c contents");
+
+		// And the structural Anthropic contract holds: every assistant tool_use
+		// is followed by tool_result(s) covering every one of its calls before
+		// the next assistant message.
+		for (let i = 0; i < transformed.length; i++) {
+			const msg = transformed[i];
+			if (msg.role !== "assistant") continue;
+			const callIds = (msg as AssistantMessage).content
+				.filter(b => b.type === "toolCall")
+				.map(b => (b as ToolCall).id);
+			if (callIds.length === 0) continue;
+			const remaining = [...callIds];
+			for (let j = i + 1; j < transformed.length && remaining.length > 0; j++) {
+				const next = transformed[j];
+				if (next.role === "assistant") {
+					throw new Error(
+						`assistant @${i} has tool_use ids ${remaining.join(", ")} with no tool_result before assistant @${j}`,
+					);
+				}
+				if (next.role === "toolResult") {
+					const idx = remaining.indexOf((next as ToolResultMessage).toolCallId);
+					if (idx >= 0) remaining.splice(idx, 1);
+				}
+			}
+			expect(remaining).toHaveLength(0);
+		}
+	});
+
 	it("should not duplicate tool results for aborted messages when results already exist", () => {
 		const toolCallId = "toolu_aborted_test_123";
 

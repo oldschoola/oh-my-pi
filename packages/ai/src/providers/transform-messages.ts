@@ -131,21 +131,31 @@ export function transformMessages<TApi extends Api>(
 		}
 		return msg;
 	});
-	// Map every real tool result by its tool-call id so we can pull it forward
-	// when a non-toolResult message would otherwise split a tool_use from its
-	// result (e.g. two consecutive assistant messages, or a developer message
-	// injected between the call and the result). Anthropic requires that each
-	// assistant `tool_use` be followed immediately by a user `tool_result`.
-	const realToolResultById = new Map<string, ToolResultMessage>();
+	// Queue every real tool result by its tool-call id so we can pull deferred
+	// results forward when a non-toolResult message would otherwise split a
+	// tool_use from its result (two consecutive assistant messages, a developer
+	// message injected between the call and the result, etc.). Anthropic
+	// requires that each assistant `tool_use` be followed immediately by a
+	// user `tool_result`.
+	//
+	// We queue per id (instead of "first wins") because cross-provider tool-call
+	// ID normalization is not necessarily injective: Mistral truncates to 9
+	// alphanumeric chars, Google sanitizes-then-slices to 64, and any such
+	// transform can collide distinct source IDs. With a queue plus
+	// identity-based consumed tracking, the Nth tool_use with id X consumes
+	// the Nth tool_result with id X — the only association we can make once
+	// the IDs have already collided.
+	const realToolResultQueue = new Map<string, ToolResultMessage[]>();
 	for (const msg of transformed) {
-		if (msg.role === "toolResult" && !realToolResultById.has(msg.toolCallId)) {
-			realToolResultById.set(msg.toolCallId, msg);
-		}
+		if (msg.role !== "toolResult") continue;
+		const existing = realToolResultQueue.get(msg.toolCallId);
+		if (existing) existing.push(msg);
+		else realToolResultQueue.set(msg.toolCallId, [msg]);
 	}
-	const realToolResultIds = new Set(realToolResultById.keys());
-	// Tool results that have been emitted out-of-order and must be skipped when
-	// the iterator reaches their original position.
-	const consumedRealToolResultIds = new Set<string>();
+	// Tool result instances already emitted via pull-forward. Identity-based so
+	// a collision between distinct ids never causes us to drop a legitimate
+	// second result that just happens to share the normalized id.
+	const consumedRealToolResults = new Set<ToolResultMessage>();
 
 	// Anthropic rejects `tool_result` blocks whose `tool_use_id` does not appear in a prior
 	// `tool_use` block. After handoff/compaction folds an assistant turn into a summary
@@ -173,27 +183,31 @@ export function transformMessages<TApi extends Api>(
 		if (pendingToolCalls.length === 0) return;
 		for (const tc of pendingToolCalls) {
 			if (toolCallStatus.has(tc.id)) continue;
-			const realResult = realToolResultById.get(tc.id);
-			if (realResult && !consumedRealToolResultIds.has(tc.id)) {
+			const queue = realToolResultQueue.get(tc.id);
+			const realResult = queue?.shift();
+			if (realResult) {
 				// A real result exists later in history; pull it forward so the
-				// tool_use is immediately followed by its tool_result.
+				// tool_use is immediately followed by its tool_result. Use the
+				// front of the queue so collided ids retain their natural
+				// pairing (Nth tool_use ↔ Nth tool_result).
 				result.push(realResult);
-				consumedRealToolResultIds.add(tc.id);
+				consumedRealToolResults.add(realResult);
 				toolCallStatus.set(tc.id, ToolCallStatus.Resolved);
 				continue;
 			}
-			if (!realToolResultIds.has(tc.id)) {
-				// Orphan tool call — no result will ever arrive. Synthesize one.
-				result.push({
-					role: "toolResult",
-					toolCallId: tc.id,
-					toolName: tc.name,
-					content: [{ type: "text", text: "No result provided" }],
-					isError: true,
-					timestamp,
-				} as ToolResultMessage);
-				toolCallStatus.set(tc.id, ToolCallStatus.Resolved);
-			}
+			// No real result available (either none ever existed, or every
+			// real result for this id was already consumed by an earlier
+			// pull-forward). Synthesize a placeholder so the wire format stays
+			// valid for the model and we don't silently drop the tool call.
+			result.push({
+				role: "toolResult",
+				toolCallId: tc.id,
+				toolName: tc.name,
+				content: [{ type: "text", text: "No result provided" }],
+				isError: true,
+				timestamp,
+			} as ToolResultMessage);
+			toolCallStatus.set(tc.id, ToolCallStatus.Resolved);
 		}
 		pendingToolCalls = [];
 	};
@@ -248,8 +262,11 @@ export function transformMessages<TApi extends Api>(
 
 			result.push(msg);
 		} else if (msg.role === "toolResult") {
-			if (consumedRealToolResultIds.has(msg.toolCallId)) {
-				// Already emitted via pull-forward; drop the duplicate.
+			if (consumedRealToolResults.has(msg)) {
+				// This specific tool_result instance was already pulled forward
+				// during a flush; skip its original position. Other
+				// tool_results sharing the same (potentially collided) id are
+				// untouched.
 				continue;
 			}
 			if (pendingAbortedToolCalls.has(msg.toolCallId)) {
