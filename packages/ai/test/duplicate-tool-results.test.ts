@@ -553,6 +553,149 @@ describe("Duplicate Tool Results Regression", () => {
 		expect(result2.length).toBe(1);
 		expect(result3.length).toBe(1);
 	});
+
+	it("does not pull tool_result forward for non-Anthropic providers (preserves instruction chronology)", () => {
+		// Codex P1 review on PR #1163: the pull-forward path runs for every
+		// provider that calls `transformMessages`, but only Anthropic requires
+		// `tool_use` to be immediately followed by `tool_result`. For non-
+		// Anthropic models (OpenAI/Google/Bedrock-with-non-Claude/etc.), the
+		// shape `assistant(toolCall) -> developer -> toolResult` is legitimate
+		// chronology — moving the tool_result ahead of the developer turn would
+		// silently change the instruction order the model sees on replay.
+		const toolCallId = "toolu_non_anthropic_deferred";
+
+		const openaiModel: Model<"openai-responses"> = {
+			api: "openai-responses",
+			provider: "openai",
+			id: "gpt-5",
+			name: "GPT-5",
+			baseUrl: "https://api.openai.com",
+			input: ["text"],
+			cost: { input: 1, output: 4, cacheRead: 0.25, cacheWrite: 1 },
+			maxTokens: 8192,
+			contextWindow: 128000,
+			reasoning: true,
+		};
+
+		const assistantMessage: AssistantMessage = {
+			role: "assistant",
+			content: [
+				{
+					type: "toolCall",
+					id: toolCallId,
+					name: "todo_write",
+					arguments: { ops: [{ op: "update", id: "task-1", status: "completed" }] },
+				},
+			],
+			api: "openai-responses",
+			provider: "openai",
+			model: "gpt-5",
+			usage: {
+				input: 100,
+				output: 50,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 150,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: 1000,
+		};
+
+		const developerNote: DeveloperMessage = {
+			role: "developer",
+			content: "Follow-up guidance the model must see BEFORE the tool result",
+			timestamp: 2000,
+		};
+
+		const toolResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId,
+			toolName: "todo_write",
+			content: [{ type: "text", text: "todo updated" }],
+			isError: false,
+			timestamp: 3000,
+		};
+
+		const messages = [assistantMessage, developerNote, toolResult];
+
+		const transformed = transformMessages(messages, openaiModel);
+
+		// Original chronology must be preserved: assistant -> developer -> toolResult.
+		// (For an Anthropic model this would become assistant -> toolResult -> developer
+		// via pull-forward; the gate must suppress that here.)
+		const roles = transformed.map(m => m.role);
+		expect(roles).toEqual(["assistant", "developer", "toolResult"]);
+
+		// And the developer message kept its original position relative to the
+		// tool result (the actual concern: instruction order seen by the model).
+		const devIdx = transformed.findIndex(m => m.role === "developer");
+		const trIdx = transformed.findIndex(m => m.role === "toolResult");
+		expect(devIdx).toBeLessThan(trIdx);
+
+		// No synthetic placeholder added, no duplication.
+		const toolResults = transformed.filter(
+			(m): m is ToolResultMessage => m.role === "toolResult" && m.toolCallId === toolCallId,
+		);
+		expect(toolResults).toHaveLength(1);
+		expect(toolResults[0].content).toEqual([{ type: "text", text: "todo updated" }]);
+	});
+
+	it("still pulls tool_result forward for Anthropic (regression guard for the original PR #1163 fix)", () => {
+		// Same shape as the OpenAI test above, but on `anthropic-messages`.
+		// Confirms the gate didn't accidentally disable pull-forward for the
+		// provider that actually needs it.
+		const toolCallId = "toolu_anthropic_deferred_guard";
+
+		const assistantMessage: AssistantMessage = {
+			role: "assistant",
+			content: [
+				{
+					type: "toolCall",
+					id: toolCallId,
+					name: "todo_write",
+					arguments: { ops: [{ op: "update", id: "task-1", status: "completed" }] },
+				},
+			],
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "claude-3-5-sonnet-20241022",
+			usage: {
+				input: 100,
+				output: 50,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 150,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: 1000,
+		};
+
+		const developerNote: DeveloperMessage = {
+			role: "developer",
+			content: "Follow-up guidance between call and result",
+			timestamp: 2000,
+		};
+
+		const toolResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId,
+			toolName: "todo_write",
+			content: [{ type: "text", text: "todo updated" }],
+			isError: false,
+			timestamp: 3000,
+		};
+
+		const messages = [assistantMessage, developerNote, toolResult];
+
+		const transformed = transformMessages(messages, model);
+
+		// Anthropic invariant: tool_result must immediately follow the assistant
+		// tool_use; the developer message gets pushed AFTER the tool_result.
+		const roles = transformed.map(m => m.role);
+		expect(roles).toEqual(["assistant", "toolResult", "developer"]);
+	});
 });
 
 /**

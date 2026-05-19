@@ -131,12 +131,32 @@ export function transformMessages<TApi extends Api>(
 		}
 		return msg;
 	});
+	// Always index real `tool_result`s by id so the orphan-synthesis branch
+	// can ask "does a real result land later in history?" cheaply. This is the
+	// only piece of bookkeeping every provider needs; pull-forward is layered
+	// on top below for Anthropic.
+	const realToolResultIds = new Set<string>();
+	for (const msg of transformed) {
+		if (msg.role === "toolResult") realToolResultIds.add(msg.toolCallId);
+	}
+
+	// Pull-forward exists to satisfy Anthropic's "every assistant `tool_use`
+	// must be immediately followed by its `tool_result`" invariant. Other
+	// provider wire formats (OpenAI chat/responses/codex, Google generative-ai
+	// / vertex / gemini-cli, ollama-chat, cursor-agent, and Bedrock with
+	// non-Anthropic models) tolerate intervening `user`/`developer` turns
+	// between an assistant tool call and its tool result, and silently
+	// reordering history there would change instruction chronology without
+	// any wire-format payoff. Gate the queue + identity tracking on Anthropic
+	// so the iterator-side skip is a guaranteed no-op for other providers and
+	// `flushPendingToolCalls` falls back to the original "let the real result
+	// land naturally" behavior.
+	const pullForwardEnabled = model.api === "anthropic-messages";
+
 	// Queue every real tool result by its tool-call id so we can pull deferred
 	// results forward when a non-toolResult message would otherwise split a
 	// tool_use from its result (two consecutive assistant messages, a developer
-	// message injected between the call and the result, etc.). Anthropic
-	// requires that each assistant `tool_use` be followed immediately by a
-	// user `tool_result`.
+	// message injected between the call and the result, etc.).
 	//
 	// We queue per id (instead of "first wins") because cross-provider tool-call
 	// ID normalization is not necessarily injective: Mistral truncates to 9
@@ -146,15 +166,18 @@ export function transformMessages<TApi extends Api>(
 	// the Nth tool_result with id X — the only association we can make once
 	// the IDs have already collided.
 	const realToolResultQueue = new Map<string, ToolResultMessage[]>();
-	for (const msg of transformed) {
-		if (msg.role !== "toolResult") continue;
-		const existing = realToolResultQueue.get(msg.toolCallId);
-		if (existing) existing.push(msg);
-		else realToolResultQueue.set(msg.toolCallId, [msg]);
+	if (pullForwardEnabled) {
+		for (const msg of transformed) {
+			if (msg.role !== "toolResult") continue;
+			const existing = realToolResultQueue.get(msg.toolCallId);
+			if (existing) existing.push(msg);
+			else realToolResultQueue.set(msg.toolCallId, [msg]);
+		}
 	}
 	// Tool result instances already emitted via pull-forward. Identity-based so
 	// a collision between distinct ids never causes us to drop a legitimate
-	// second result that just happens to share the normalized id.
+	// second result that just happens to share the normalized id. Stays empty
+	// when `pullForwardEnabled` is false, making the iterator-side skip a no-op.
 	const consumedRealToolResults = new Set<ToolResultMessage>();
 
 	// Anthropic rejects `tool_result` blocks whose `tool_use_id` does not appear in a prior
@@ -186,19 +209,29 @@ export function transformMessages<TApi extends Api>(
 			const queue = realToolResultQueue.get(tc.id);
 			const realResult = queue?.shift();
 			if (realResult) {
-				// A real result exists later in history; pull it forward so the
-				// tool_use is immediately followed by its tool_result. Use the
-				// front of the queue so collided ids retain their natural
-				// pairing (Nth tool_use ↔ Nth tool_result).
+				// A real result exists later in history and pull-forward is
+				// enabled (Anthropic): pull it forward so the `tool_use` is
+				// immediately followed by its `tool_result`. Use the front of
+				// the queue so collided ids retain their natural pairing (Nth
+				// tool_use ↔ Nth tool_result).
 				result.push(realResult);
 				consumedRealToolResults.add(realResult);
 				toolCallStatus.set(tc.id, ToolCallStatus.Resolved);
 				continue;
 			}
-			// No real result available (either none ever existed, or every
-			// real result for this id was already consumed by an earlier
-			// pull-forward). Synthesize a placeholder so the wire format stays
-			// valid for the model and we don't silently drop the tool call.
+			if (realToolResultIds.has(tc.id)) {
+				// A real result exists later in history but pull-forward is
+				// disabled (non-Anthropic provider) or every queued result for
+				// this id was already consumed by an earlier pull-forward.
+				// Either way: let the real result land at its original
+				// position — do NOT synthesize a placeholder, that would
+				// duplicate the tool result and (worse, for non-Anthropic)
+				// silently reorder history.
+				continue;
+			}
+			// No real result anywhere in history. Synthesize a placeholder so
+			// the wire format stays valid for the model and we don't silently
+			// drop the tool call.
 			result.push({
 				role: "toolResult",
 				toolCallId: tc.id,
