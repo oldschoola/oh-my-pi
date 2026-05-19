@@ -131,53 +131,52 @@ export function transformMessages<TApi extends Api>(
 		}
 		return msg;
 	});
-	// Always index real `tool_result`s by id so the orphan-synthesis branch
-	// can ask "does a real result land later in history?" cheaply. This is the
-	// only piece of bookkeeping every provider needs; pull-forward is layered
-	// on top below for Anthropic.
-	const realToolResultIds = new Set<string>();
-	for (const msg of transformed) {
-		if (msg.role === "toolResult") realToolResultIds.add(msg.toolCallId);
-	}
-
 	// Pull-forward exists to satisfy Anthropic's "every assistant `tool_use`
 	// must be immediately followed by its `tool_result`" invariant. Other
 	// provider wire formats (OpenAI chat/responses/codex, Google generative-ai
 	// / vertex / gemini-cli, ollama-chat, cursor-agent, and Bedrock with
 	// non-Anthropic models) tolerate intervening `user`/`developer` turns
-	// between an assistant tool call and its tool result, and silently
+	// between an assistant tool call and its tool result, so silently
 	// reordering history there would change instruction chronology without
-	// any wire-format payoff. Gate the queue + identity tracking on Anthropic
-	// so the iterator-side skip is a guaranteed no-op for other providers and
-	// `flushPendingToolCalls` falls back to the original "let the real result
-	// land naturally" behavior.
+	// any wire-format payoff. Gate the actual push reorder on Anthropic; the
+	// per-id queue itself is built for every provider so flush can use queue
+	// exhaustion as the authoritative "no more real results available for
+	// this id" signal.
 	const pullForwardEnabled = model.api === "anthropic-messages";
 
-	// Queue every real tool result by its tool-call id so we can pull deferred
-	// results forward when a non-toolResult message would otherwise split a
-	// tool_use from its result (two consecutive assistant messages, a developer
-	// message injected between the call and the result, etc.).
+	// Queue every real tool result by its tool-call id. Used for two things:
 	//
-	// We queue per id (instead of "first wins") because cross-provider tool-call
-	// ID normalization is not necessarily injective: Mistral truncates to 9
-	// alphanumeric chars, Google sanitizes-then-slices to 64, and any such
-	// transform can collide distinct source IDs. With a queue plus
-	// identity-based consumed tracking, the Nth tool_use with id X consumes
-	// the Nth tool_result with id X — the only association we can make once
-	// the IDs have already collided.
+	// * Pull-forward (Anthropic only): when a non-toolResult message would
+	//   otherwise split a `tool_use` from its result (two consecutive
+	//   assistant messages, an injected developer turn, etc.), shift the
+	//   front of the queue and push it into the gap.
+	// * Slot reservation (every provider): when flush picks up a real result
+	//   from the queue but cannot or should not pull it forward (non-
+	//   Anthropic), shift the queue anyway and let the iterator-side path
+	//   push the message at its original position. The shift records that
+	//   the slot is reserved so a *later* flush with the same colliding id
+	//   doesn't double-spend the same real result or fall into the synth
+	//   branch because the queue still looked non-empty.
+	//
+	// We queue per id (instead of "first wins") because cross-provider tool-
+	// call ID normalization is not necessarily injective: Mistral truncates
+	// to 9 alphanumeric chars, Google sanitizes-then-slices to 64, and any
+	// such transform can collide distinct source IDs. With a queue plus
+	// identity-based consumed tracking, the Nth `tool_use` with id X consumes
+	// the Nth `tool_result` with id X — the only association we can make
+	// once the IDs have already collided.
 	const realToolResultQueue = new Map<string, ToolResultMessage[]>();
-	if (pullForwardEnabled) {
-		for (const msg of transformed) {
-			if (msg.role !== "toolResult") continue;
-			const existing = realToolResultQueue.get(msg.toolCallId);
-			if (existing) existing.push(msg);
-			else realToolResultQueue.set(msg.toolCallId, [msg]);
-		}
+	for (const msg of transformed) {
+		if (msg.role !== "toolResult") continue;
+		const existing = realToolResultQueue.get(msg.toolCallId);
+		if (existing) existing.push(msg);
+		else realToolResultQueue.set(msg.toolCallId, [msg]);
 	}
 	// Tool result instances already emitted via pull-forward. Identity-based so
 	// a collision between distinct ids never causes us to drop a legitimate
 	// second result that just happens to share the normalized id. Stays empty
-	// when `pullForwardEnabled` is false, making the iterator-side skip a no-op.
+	// when `pullForwardEnabled` is false because the non-Anthropic path leaves
+	// natural-land emission to the iterator.
 	const consumedRealToolResults = new Set<ToolResultMessage>();
 
 	// Anthropic rejects `tool_result` blocks whose `tool_use_id` does not appear in a prior
@@ -221,14 +220,30 @@ export function transformMessages<TApi extends Api>(
 
 	// When a real `tool_result` lands at its original iteration position (i.e.
 	// it was NOT pulled forward into an earlier slot by `flushPendingToolCalls`),
-	// remove it from the FIFO queue so a subsequent flush doesn't pull it
-	// forward again as a duplicate. The queue is encounter-ordered and we
-	// process messages in the same order, so the natural-land message is always
-	// at the front of its per-id queue. No-op for non-Anthropic flows because
-	// the queue is empty (pull-forward disabled).
+	// remove it from the FIFO queue so a subsequent flush doesn't re-consume the
+	// same slot. The queue is encounter-ordered and we iterate in the same
+	// order, so the natural-land message is at the front of its per-id queue
+	// unless an earlier flush already shifted it (slot-reservation path).
 	const shiftQueueAt = (msg: ToolResultMessage): void => {
 		const queue = realToolResultQueue.get(msg.toolCallId);
 		if (queue && queue[0] === msg) queue.shift();
+	};
+
+	// When a real `tool_result` lands at its original iteration position with
+	// `pendingToolCalls` still set (Anthropic happy path: assistant directly
+	// followed by its toolResult, no flush has fired yet), the iterator-side
+	// push satisfies one of the pending tool calls. Find the FIRST unresolved
+	// pending tc with a matching id and mark it resolved by identity so the
+	// next flush doesn't redundantly synthesize a placeholder. Pair FIFO so
+	// id collisions retain the Nth-call ↔ Nth-result association.
+	const pairFirstPendingToolCall = (msg: ToolResultMessage): void => {
+		for (const tc of pendingToolCalls) {
+			if (tc.id === msg.toolCallId && !resolvedToolCalls.has(tc)) {
+				resolvedToolCalls.add(tc);
+				toolCallStatus.set(tc.id, ToolCallStatus.Resolved);
+				return;
+			}
+		}
 	};
 
 	const flushPendingToolCalls = (timestamp: number): void => {
@@ -238,31 +253,33 @@ export function transformMessages<TApi extends Api>(
 			const queue = realToolResultQueue.get(tc.id);
 			const realResult = queue?.shift();
 			if (realResult) {
-				// A real result exists later in history and pull-forward is
-				// enabled (Anthropic): pull it forward so the `tool_use` is
-				// immediately followed by its `tool_result`. Use the front of
-				// the queue so collided ids retain their natural pairing (Nth
-				// tool_use ↔ Nth tool_result).
-				result.push(realResult);
-				consumedRealToolResults.add(realResult);
+				// Queue still had a real result for this id: claim the slot.
+				// For Anthropic, push it now (pull-forward) so the `tool_use`
+				// is immediately followed by its `tool_result`. For other
+				// providers, leave emission to the iterator-side natural-land
+				// path so the original chronology (e.g. `assistant ->
+				// developer -> toolResult`) is preserved — the queue shift is
+				// the only reservation we need to prevent a later colliding
+				// flush from claiming the same slot or wrongly synthesizing.
+				if (pullForwardEnabled) {
+					result.push(realResult);
+					consumedRealToolResults.add(realResult);
+				}
 				resolvedToolCalls.add(tc);
 				toolCallStatus.set(tc.id, ToolCallStatus.Resolved);
 				continue;
 			}
-			if (realToolResultIds.has(tc.id)) {
-				// A real result exists later in history but pull-forward is
-				// disabled (non-Anthropic provider) or every queued result for
-				// this id was already consumed by an earlier pull-forward.
-				// Either way: let the real result land at its original
-				// position — do NOT synthesize a placeholder, that would
-				// duplicate the tool result and (worse, for non-Anthropic)
-				// silently reorder history.
-				resolvedToolCalls.add(tc);
-				continue;
-			}
-			// No real result anywhere in history. Synthesize a placeholder so
-			// the wire format stays valid for the model and we don't silently
-			// drop the tool call.
+			// Queue exhausted for this id: no real result is still available
+			// (either none ever existed, or every queued instance was already
+			// claimed by an earlier flush via pull-forward or slot
+			// reservation, or by a natural-land emission). Synthesize a
+			// placeholder so the wire format stays valid for the model and
+			// we don't silently drop the tool call. This branch is what
+			// covers the Anthropic id-collision-with-missing-result shape
+			// (`assistant(origA→X) -> assistant(origB→X) -> toolResult(X for
+			// A only)`): after the first flush drains the queue for X, the
+			// second pending call lands here and gets a synth so assistant#2
+			// is still immediately followed by a `tool_result`.
 			result.push({
 				role: "toolResult",
 				toolCallId: tc.id,
@@ -342,6 +359,7 @@ export function transformMessages<TApi extends Api>(
 				pendingAbortedToolCalls.delete(msg.toolCallId);
 				toolCallStatus.set(msg.toolCallId, ToolCallStatus.Resolved);
 				shiftQueueAt(msg);
+				pairFirstPendingToolCall(msg);
 				result.push(msg);
 				continue;
 			}
@@ -405,6 +423,7 @@ export function transformMessages<TApi extends Api>(
 
 			toolCallStatus.set(msg.toolCallId, ToolCallStatus.Resolved);
 			shiftQueueAt(msg);
+			pairFirstPendingToolCall(msg);
 			result.push(msg);
 		} else if (msg.role === "user" || msg.role === "developer") {
 			flushPendingToolCalls(messageTimestamp);

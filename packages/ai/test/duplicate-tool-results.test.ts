@@ -807,6 +807,102 @@ describe("Duplicate Tool Results Regression", () => {
 		const developerSurvivors = transformed.filter(m => m.role === "developer");
 		expect(developerSurvivors).toHaveLength(1);
 	});
+
+	it("synthesizes 'No result provided' for the second colliding tool_use when only one real result exists", () => {
+		// Codex P2 review on PR #1163 (comment 3263089411):
+		//   assistant#1(toolCall origA → normalized X) ->
+		//   assistant#2(toolCall origB → normalized X) ->
+		//   toolResult(X, only for A)
+		// The previous version of `flushPendingToolCalls` fell through to an
+		// id-keyed `realToolResultIds.has(tc.id)` "let real result land
+		// naturally" branch once the per-id queue was drained. For Anthropic
+		// + collision + missing-second-result, the first flush pulled the
+		// only real result forward to satisfy tc1, then the end-of-messages
+		// flush for tc2 hit `realToolResultIds.has("X")` (still true — the
+		// id appeared in history) and skipped synthesis, leaving assistant#2
+		// with no immediately following `tool_result` and re-triggering the
+		// 400. Switching the fallback to queue-exhaustion (`queue?.shift()`
+		// returning undefined → synth) closes the gap: the second flush
+		// finds the queue drained for X and emits `"No result provided"` so
+		// assistant#2 is still immediately followed by a tool_result.
+		const collidedId = "tcid_X";
+
+		const baseAssistant = {
+			role: "assistant" as const,
+			api: "anthropic-messages" as const,
+			provider: "anthropic",
+			model: "claude-3-5-sonnet-20241022",
+			usage: {
+				input: 100,
+				output: 50,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 150,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse" as const,
+		};
+
+		const firstAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [{ type: "toolCall", id: collidedId, name: "read", arguments: { path: "/a.ts" } }],
+			timestamp: 1000,
+		};
+		const secondAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [{ type: "toolCall", id: collidedId, name: "read", arguments: { path: "/b.ts" } }],
+			timestamp: 2000,
+		};
+		const onlyResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: collidedId,
+			toolName: "read",
+			content: [{ type: "text", text: "a contents (only persisted result)" }],
+			isError: false,
+			timestamp: 3000,
+		};
+
+		const messages = [
+			{ role: "user" as const, content: "Read two files", timestamp: 500 },
+			firstAssistant,
+			secondAssistant,
+			onlyResult,
+		];
+
+		const transformed = transformMessages(messages, model);
+
+		// 1. Structural Anthropic invariant: every assistant `tool_use` is
+		//    immediately followed by a `tool_result` before any other
+		//    message type. This is the actual 400-avoiding contract.
+		for (let i = 0; i < transformed.length; i++) {
+			const m = transformed[i];
+			if (m.role !== "assistant") continue;
+			const callIds = (m as AssistantMessage).content
+				.filter(b => b.type === "toolCall")
+				.map(b => (b as ToolCall).id);
+			if (callIds.length === 0) continue;
+			const next = transformed[i + 1];
+			expect(next, `assistant @${i} must be followed by a message`).toBeDefined();
+			expect(next?.role, `assistant @${i} must be followed by toolResult (Anthropic invariant)`).toBe("toolResult");
+			expect((next as ToolResultMessage).toolCallId).toBe(callIds[0]);
+		}
+
+		// 2. The real result lands for the first tool_use; the second gets a
+		//    synthetic "No result provided" placeholder (no silent drop, no
+		//    duplication of the real result).
+		const resultsForId = transformed.filter(
+			(m): m is ToolResultMessage => m.role === "toolResult" && m.toolCallId === collidedId,
+		);
+		expect(resultsForId).toHaveLength(2);
+
+		const realResult = resultsForId.find(r =>
+			(r.content[0] as { type: "text"; text: string }).text.includes("a contents"),
+		);
+		const synthResult = resultsForId.find(r => r.isError === true);
+		expect(realResult, "the real persisted result must survive verbatim").toBeDefined();
+		expect(synthResult, "the second colliding tool_use must get a synthetic placeholder").toBeDefined();
+		expect((synthResult?.content[0] as { type: "text"; text: string }).text).toBe("No result provided");
+	});
 });
 
 /**
