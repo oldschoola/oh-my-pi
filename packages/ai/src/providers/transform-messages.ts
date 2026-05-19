@@ -199,13 +199,42 @@ export function transformMessages<TApi extends Api>(
 	let pendingToolCalls: ToolCall[] = [];
 	let pendingAbortedToolCalls = new Map<string, ToolCall>();
 	let pendingAbortedTimestamp: number | undefined;
-	// Track tool call status: whether resolved (has result) or aborted (synthetic result injected, skip later real results)
+	// Track tool call status: whether resolved (has result) or aborted
+	// (synthetic result injected, skip later real results). Keyed by id so
+	// the toolResult iterator can still answer "was this id aborted?" when
+	// it has no back-reference to the originating ToolCall.
 	const toolCallStatus = new Map<string, ToolCallStatus>();
+	// Identity-based "this specific ToolCall has been satisfied" tracking.
+	// We can't use the id-keyed `toolCallStatus` map as the per-flush guard
+	// because cross-provider id normalization (Mistral 9-char truncation,
+	// Google sanitize-then-slice, etc.) is not injective. With id-keyed
+	// dedup, the replay shape
+	//   assistant(toolCall=X) -> assistant(toolCall=X) -> developer
+	//     -> toolResult(X) -> toolResult(X)
+	// resolves the first X and marks the id `Resolved`, then the second
+	// flush sees the same id-keyed status and skips the second pending
+	// call, leaving its `tool_use` unmatched and the developer wedged
+	// between assistant#2 and its `tool_result` — re-triggering the
+	// Anthropic 400 this PR exists to fix. Tracking by ToolCall identity
+	// instead lets the second pending call run independently.
+	const resolvedToolCalls = new WeakSet<ToolCall>();
+
+	// When a real `tool_result` lands at its original iteration position (i.e.
+	// it was NOT pulled forward into an earlier slot by `flushPendingToolCalls`),
+	// remove it from the FIFO queue so a subsequent flush doesn't pull it
+	// forward again as a duplicate. The queue is encounter-ordered and we
+	// process messages in the same order, so the natural-land message is always
+	// at the front of its per-id queue. No-op for non-Anthropic flows because
+	// the queue is empty (pull-forward disabled).
+	const shiftQueueAt = (msg: ToolResultMessage): void => {
+		const queue = realToolResultQueue.get(msg.toolCallId);
+		if (queue && queue[0] === msg) queue.shift();
+	};
 
 	const flushPendingToolCalls = (timestamp: number): void => {
 		if (pendingToolCalls.length === 0) return;
 		for (const tc of pendingToolCalls) {
-			if (toolCallStatus.has(tc.id)) continue;
+			if (resolvedToolCalls.has(tc)) continue;
 			const queue = realToolResultQueue.get(tc.id);
 			const realResult = queue?.shift();
 			if (realResult) {
@@ -216,6 +245,7 @@ export function transformMessages<TApi extends Api>(
 				// tool_use ↔ Nth tool_result).
 				result.push(realResult);
 				consumedRealToolResults.add(realResult);
+				resolvedToolCalls.add(tc);
 				toolCallStatus.set(tc.id, ToolCallStatus.Resolved);
 				continue;
 			}
@@ -227,6 +257,7 @@ export function transformMessages<TApi extends Api>(
 				// position — do NOT synthesize a placeholder, that would
 				// duplicate the tool result and (worse, for non-Anthropic)
 				// silently reorder history.
+				resolvedToolCalls.add(tc);
 				continue;
 			}
 			// No real result anywhere in history. Synthesize a placeholder so
@@ -240,6 +271,7 @@ export function transformMessages<TApi extends Api>(
 				isError: true,
 				timestamp,
 			} as ToolResultMessage);
+			resolvedToolCalls.add(tc);
 			toolCallStatus.set(tc.id, ToolCallStatus.Resolved);
 		}
 		pendingToolCalls = [];
@@ -248,17 +280,21 @@ export function transformMessages<TApi extends Api>(
 	const flushPendingAbortedToolCalls = (): void => {
 		if (pendingAbortedTimestamp === undefined) return;
 		for (const tc of pendingAbortedToolCalls.values()) {
-			if (!toolCallStatus.has(tc.id)) {
-				result.push({
-					role: "toolResult",
-					toolCallId: tc.id,
-					toolName: tc.name,
-					content: [{ type: "text", text: "aborted" }],
-					isError: true,
-					timestamp: pendingAbortedTimestamp,
-				} as ToolResultMessage);
-				toolCallStatus.set(tc.id, ToolCallStatus.Aborted);
-			}
+			// Identity-based skip for the same reason as `flushPendingToolCalls`:
+			// a normalized-id collision with a previously resolved/aborted call
+			// would otherwise drop this distinct pending call's synthetic
+			// `aborted` result.
+			if (resolvedToolCalls.has(tc)) continue;
+			result.push({
+				role: "toolResult",
+				toolCallId: tc.id,
+				toolName: tc.name,
+				content: [{ type: "text", text: "aborted" }],
+				isError: true,
+				timestamp: pendingAbortedTimestamp,
+			} as ToolResultMessage);
+			resolvedToolCalls.add(tc);
+			toolCallStatus.set(tc.id, ToolCallStatus.Aborted);
 		}
 		result.push({
 			role: "developer",
@@ -305,6 +341,7 @@ export function transformMessages<TApi extends Api>(
 			if (pendingAbortedToolCalls.has(msg.toolCallId)) {
 				pendingAbortedToolCalls.delete(msg.toolCallId);
 				toolCallStatus.set(msg.toolCallId, ToolCallStatus.Resolved);
+				shiftQueueAt(msg);
 				result.push(msg);
 				continue;
 			}
@@ -367,6 +404,7 @@ export function transformMessages<TApi extends Api>(
 			}
 
 			toolCallStatus.set(msg.toolCallId, ToolCallStatus.Resolved);
+			shiftQueueAt(msg);
 			result.push(msg);
 		} else if (msg.role === "user" || msg.role === "developer") {
 			flushPendingToolCalls(messageTimestamp);

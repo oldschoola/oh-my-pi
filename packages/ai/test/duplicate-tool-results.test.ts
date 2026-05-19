@@ -696,6 +696,117 @@ describe("Duplicate Tool Results Regression", () => {
 		const roles = transformed.map(m => m.role);
 		expect(roles).toEqual(["assistant", "toolResult", "developer"]);
 	});
+
+	it("pulls forward both colliding tool_results when an intervening developer turn separates them", () => {
+		// Codex P2 review on PR #1163 (comment 3263065707):
+		//   assistant(id=X) -> assistant(id=X) -> developer -> toolResult(X) -> toolResult(X)
+		// The previous version of `flushPendingToolCalls` keyed its
+		// "already resolved" guard on `toolCallStatus.has(tc.id)`. The first
+		// flush satisfied the first X-pending call and marked the id
+		// `Resolved`; the second flush (triggered by the intervening
+		// developer turn) then saw the same id-keyed status and skipped the
+		// second pending call entirely. That left assistant#2 followed by the
+		// developer turn instead of its `tool_result`, re-triggering the
+		// Anthropic 400 this PR exists to fix. Switching the flush guard to
+		// identity-based tracking (`resolvedToolCalls: WeakSet<ToolCall>`)
+		// lets the second pending call run independently and pull its own
+		// real result forward via the FIFO queue.
+		const collidedId = "tcid_X"; // both tool_uses normalize to the same id
+
+		const baseAssistant = {
+			role: "assistant" as const,
+			api: "anthropic-messages" as const,
+			provider: "anthropic",
+			model: "claude-3-5-sonnet-20241022",
+			usage: {
+				input: 100,
+				output: 50,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 150,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse" as const,
+		};
+
+		const firstAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [{ type: "toolCall", id: collidedId, name: "read", arguments: { path: "/a.ts" } }],
+			timestamp: 1000,
+		};
+		const secondAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [{ type: "toolCall", id: collidedId, name: "read", arguments: { path: "/b.ts" } }],
+			timestamp: 2000,
+		};
+		const developerNote: DeveloperMessage = {
+			role: "developer",
+			content: "Mid-turn guidance — the gap between assistant#2 and its tool_result",
+			timestamp: 2500,
+		};
+		const firstResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: collidedId,
+			toolName: "read",
+			content: [{ type: "text", text: "a contents" }],
+			isError: false,
+			timestamp: 3000,
+		};
+		const secondResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: collidedId,
+			toolName: "read",
+			content: [{ type: "text", text: "b contents" }],
+			isError: false,
+			timestamp: 3001,
+		};
+
+		const messages = [
+			{ role: "user" as const, content: "Do two things", timestamp: 500 },
+			firstAssistant,
+			secondAssistant,
+			developerNote,
+			firstResult,
+			secondResult,
+		];
+
+		const transformed = transformMessages(messages, model);
+
+		// 1. Both real results survive — neither was dropped, neither was
+		//    synthesized as "No result provided" (pin by content because
+		//    toolCallId alone can't disambiguate the collision).
+		const survivingResults = transformed.filter(
+			(m): m is ToolResultMessage => m.role === "toolResult" && m.toolCallId === collidedId,
+		);
+		expect(survivingResults).toHaveLength(2);
+		const texts = survivingResults.map(r => (r.content[0] as { type: "text"; text: string }).text);
+		expect(texts.sort()).toEqual(["a contents", "b contents"]);
+		for (const r of survivingResults) {
+			expect(r.isError).toBe(false);
+		}
+
+		// 2. Structural Anthropic invariant: every assistant `tool_use` is
+		//    immediately followed by its matching `tool_result` before any
+		//    other message type. No developer turn wedged between an
+		//    assistant `tool_use` and its result.
+		for (let i = 0; i < transformed.length; i++) {
+			const m = transformed[i];
+			if (m.role !== "assistant") continue;
+			const callIds = (m as AssistantMessage).content
+				.filter(b => b.type === "toolCall")
+				.map(b => (b as ToolCall).id);
+			if (callIds.length === 0) continue;
+			const next = transformed[i + 1];
+			expect(next, `assistant @${i} must be followed by a message`).toBeDefined();
+			expect(next?.role, `assistant @${i} must be followed by toolResult (Anthropic invariant)`).toBe("toolResult");
+			expect((next as ToolResultMessage).toolCallId).toBe(callIds[0]);
+		}
+
+		// 3. The developer message is preserved (just not wedged between
+		//    assistant#2 and its tool_result).
+		const developerSurvivors = transformed.filter(m => m.role === "developer");
+		expect(developerSurvivors).toHaveLength(1);
+	});
 });
 
 /**
