@@ -697,6 +697,90 @@ describe("Duplicate Tool Results Regression", () => {
 		expect(roles).toEqual(["assistant", "toolResult", "developer"]);
 	});
 
+	it("pulls tool_result forward for Bedrock Converse (Converse API enforces the same contiguity)", () => {
+		// Codex P1 review on PR #1163 (comment 3263143326): Bedrock Converse
+		// is also a contiguity-enforcing wire format — the Converse API
+		// validates `toolResult` content blocks against the previous
+		// assistant turn regardless of the underlying model, so the same
+		// `assistant(toolUse) -> developer -> toolResult` shape that 400s
+		// on Anthropic Messages also 400s on Bedrock Converse with missing
+		// or expected `toolResult` blocks for the first assistant turn.
+		// The pull-forward gate must therefore include
+		// `bedrock-converse-stream` alongside `anthropic-messages`, not
+		// just Anthropic.
+		const toolCallId = "tooluse_bedrock_deferred";
+
+		const bedrockModel: Model<"bedrock-converse-stream"> = {
+			api: "bedrock-converse-stream",
+			provider: "bedrock",
+			id: "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+			name: "Claude 3.5 Sonnet (Bedrock)",
+			baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+			input: ["text"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			maxTokens: 8192,
+			contextWindow: 200000,
+			reasoning: true,
+		};
+
+		const assistantMessage: AssistantMessage = {
+			role: "assistant",
+			content: [
+				{
+					type: "toolCall",
+					id: toolCallId,
+					name: "todo_write",
+					arguments: { ops: [{ op: "update", id: "task-1", status: "completed" }] },
+				},
+			],
+			api: "bedrock-converse-stream",
+			provider: "bedrock",
+			model: "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+			usage: {
+				input: 100,
+				output: 50,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 150,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: 1000,
+		};
+
+		const developerNote: DeveloperMessage = {
+			role: "developer",
+			content: "Follow-up guidance between call and result",
+			timestamp: 2000,
+		};
+
+		const toolResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId,
+			toolName: "todo_write",
+			content: [{ type: "text", text: "todo updated" }],
+			isError: false,
+			timestamp: 3000,
+		};
+
+		const messages = [assistantMessage, developerNote, toolResult];
+
+		const transformed = transformMessages(messages, bedrockModel);
+
+		// Converse contiguity invariant: toolResult must immediately follow
+		// the assistant turn that emitted toolUse; developer turn moves
+		// after the toolResult.
+		const roles = transformed.map(m => m.role);
+		expect(roles).toEqual(["assistant", "toolResult", "developer"]);
+
+		// No duplicate, no synthetic placeholder.
+		const toolResults = transformed.filter(
+			(m): m is ToolResultMessage => m.role === "toolResult" && m.toolCallId === toolCallId,
+		);
+		expect(toolResults).toHaveLength(1);
+		expect(toolResults[0].content).toEqual([{ type: "text", text: "todo updated" }]);
+	});
+
 	it("pulls forward both colliding tool_results when an intervening developer turn separates them", () => {
 		// Codex P2 review on PR #1163 (comment 3263065707):
 		//   assistant(id=X) -> assistant(id=X) -> developer -> toolResult(X) -> toolResult(X)

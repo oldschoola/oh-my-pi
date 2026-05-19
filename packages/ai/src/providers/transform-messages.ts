@@ -131,18 +131,28 @@ export function transformMessages<TApi extends Api>(
 		}
 		return msg;
 	});
-	// Pull-forward exists to satisfy Anthropic's "every assistant `tool_use`
-	// must be immediately followed by its `tool_result`" invariant. Other
-	// provider wire formats (OpenAI chat/responses/codex, Google generative-ai
-	// / vertex / gemini-cli, ollama-chat, cursor-agent, and Bedrock with
-	// non-Anthropic models) tolerate intervening `user`/`developer` turns
-	// between an assistant tool call and its tool result, so silently
-	// reordering history there would change instruction chronology without
-	// any wire-format payoff. Gate the actual push reorder on Anthropic; the
-	// per-id queue itself is built for every provider so flush can use queue
-	// exhaustion as the authoritative "no more real results available for
-	// this id" signal.
-	const pullForwardEnabled = model.api === "anthropic-messages";
+	// Pull-forward exists to satisfy wire formats that require every
+	// assistant `tool_use` to be immediately followed by its `tool_result`
+	// (no intervening `user`/`developer`/etc. turn):
+	//
+	// * Anthropic Messages: enforces this directly and returns a 400 with
+	//   `tool_use` ids were found without `tool_result` blocks immediately
+	//   after: …` when violated.
+	// * Bedrock Converse: the Converse API validates `toolResult` content
+	//   blocks against the previous assistant turn regardless of the
+	//   underlying model, so the same `assistant(toolUse) -> developer ->
+	//   toolResult` shape 400s with missing/expected toolResult blocks.
+	//
+	// Other provider wire formats (OpenAI chat/responses/codex, Google
+	// generative-ai / vertex / gemini-cli, ollama-chat, cursor-agent)
+	// tolerate intervening `user`/`developer` turns between an assistant
+	// tool call and its tool result, so silently reordering history there
+	// would change instruction chronology without any wire-format payoff.
+	// Gate the actual push reorder on the contiguity-requiring providers;
+	// the per-id queue itself is built for every provider so flush can use
+	// queue exhaustion as the authoritative "no more real results
+	// available for this id" signal.
+	const pullForwardEnabled = model.api === "anthropic-messages" || model.api === "bedrock-converse-stream";
 
 	// Queue every real tool result by its tool-call id. Used for two things:
 	//
