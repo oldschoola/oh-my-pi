@@ -129,8 +129,9 @@ export async function applyWorkspaceEdit(edit: WorkspaceEdit, cwd: string): Prom
 
 	if (edit.documentChanges) {
 		// Walk documentChanges in original order. Accumulate text edits per-URI and
-		// flush them before any resource op that touches the same URI so that renames,
-		// creates, and deletes always see the correct prior file state.
+		// flush them before any resource op that touches the same URI (or, for folder
+		// rename/delete, any descendant URI) so that renames, creates, and deletes
+		// always see the correct prior file state.
 		const pending = new Map<string, TextEdit[]>();
 
 		const flushUri = async (uri: string) => {
@@ -140,6 +141,19 @@ export async function applyWorkspaceEdit(edit: WorkspaceEdit, cwd: string): Prom
 			const filePath = uriToFile(uri);
 			await applyTextEdits(filePath, edits);
 			applied.push(`Applied ${edits.length} edit(s) to ${formatPathRelativeToCwd(filePath, cwd)}`);
+		};
+
+		// Flush the exact URI plus every pending descendant (for folder-level
+		// resource ops where the queued edits target child files of the target).
+		const flushSubtree = async (uri: string) => {
+			const prefix = uri.endsWith("/") ? uri : `${uri}/`;
+			const matches: string[] = [];
+			for (const candidate of pending.keys()) {
+				if (candidate === uri || candidate.startsWith(prefix)) matches.push(candidate);
+			}
+			for (const target of matches) {
+				await flushUri(target);
+			}
 		};
 
 		for (const change of edit.documentChanges) {
@@ -161,7 +175,7 @@ export async function applyWorkspaceEdit(edit: WorkspaceEdit, cwd: string): Prom
 					applied.push(`Created ${formatPathRelativeToCwd(filePath, cwd)}`);
 				} else if (change.kind === "rename") {
 					const renameOp = change as RenameFile;
-					await flushUri(renameOp.oldUri);
+					await flushSubtree(renameOp.oldUri);
 					const oldPath = uriToFile(renameOp.oldUri);
 					const newPath = uriToFile(renameOp.newUri);
 					await fs.mkdir(path.dirname(newPath), { recursive: true });
@@ -171,7 +185,7 @@ export async function applyWorkspaceEdit(edit: WorkspaceEdit, cwd: string): Prom
 					);
 				} else if (change.kind === "delete") {
 					const deleteOp = change as DeleteFile;
-					await flushUri(deleteOp.uri);
+					await flushSubtree(deleteOp.uri);
 					const filePath = uriToFile(deleteOp.uri);
 					await fs.rm(filePath, { recursive: true });
 					applied.push(`Deleted ${formatPathRelativeToCwd(filePath, cwd)}`);

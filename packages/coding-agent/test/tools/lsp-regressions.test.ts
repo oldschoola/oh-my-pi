@@ -7,13 +7,17 @@ import { LspTool } from "@oh-my-pi/pi-coding-agent/lsp";
 import * as lspClient from "@oh-my-pi/pi-coding-agent/lsp/client";
 import * as lspConfig from "@oh-my-pi/pi-coding-agent/lsp/config";
 import { getServersForFile, loadConfig } from "@oh-my-pi/pi-coding-agent/lsp/config";
+import { applyWorkspaceEdit } from "@oh-my-pi/pi-coding-agent/lsp/edits";
 import { renderCall, renderResult } from "@oh-my-pi/pi-coding-agent/lsp/render";
 import type {
 	CodeAction,
 	Diagnostic,
 	LspClient,
+	RenameFile,
 	ServerConfig,
 	SymbolInformation,
+	TextDocumentEdit,
+	WorkspaceEdit,
 } from "@oh-my-pi/pi-coding-agent/lsp/types";
 import {
 	applyCodeAction,
@@ -927,6 +931,59 @@ describe("lsp regressions", () => {
 			expect(output).toContain("rust-analyzer/expandMacro");
 		} finally {
 			vi.restoreAllMocks();
+			tempDir.removeSync();
+		}
+	});
+
+	it("flushes pending descendant text edits before a folder rename", async () => {
+		const tempDir = TempDir.createSync("@omp-lsp-folder-rename-");
+		try {
+			const srcDir = path.join(tempDir.path(), "src");
+			fs.mkdirSync(srcDir, { recursive: true });
+			const childPath = path.join(srcDir, "a.ts");
+			await Bun.write(childPath, "export const a = 1;\n");
+
+			const childUri = fileToUri(childPath);
+			const oldFolderUri = fileToUri(srcDir);
+			const newFolderUri = fileToUri(path.join(tempDir.path(), "src2"));
+
+			const childEdit: TextDocumentEdit = {
+				textDocument: { uri: childUri, version: null },
+				edits: [
+					{
+						range: {
+							start: { line: 0, character: 13 },
+							end: { line: 0, character: 14 },
+						},
+						newText: "renamed",
+					},
+				],
+			};
+			const folderRename: RenameFile = {
+				kind: "rename",
+				oldUri: oldFolderUri,
+				newUri: newFolderUri,
+			};
+			const workspaceEdit: WorkspaceEdit = {
+				documentChanges: [childEdit, folderRename],
+			};
+
+			const applied = await applyWorkspaceEdit(workspaceEdit, tempDir.path());
+
+			// Old folder is gone, new folder holds the edited child.
+			expect(fs.existsSync(srcDir)).toBe(false);
+			const renamedChildPath = path.join(tempDir.path(), "src2", "a.ts");
+			expect(fs.existsSync(renamedChildPath)).toBe(true);
+			expect(fs.readFileSync(renamedChildPath, "utf8")).toBe("export const renamed = 1;\n");
+
+			// Both ops are reported in original order: edit first, then rename.
+			expect(applied).toHaveLength(2);
+			expect(applied[0]).toContain("Applied 1 edit(s)");
+			expect(applied[0]).toContain("src/a.ts");
+			expect(applied[1]).toContain("Renamed");
+			expect(applied[1]).toContain("src");
+			expect(applied[1]).toContain("src2");
+		} finally {
 			tempDir.removeSync();
 		}
 	});
