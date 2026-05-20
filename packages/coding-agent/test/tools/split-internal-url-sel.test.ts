@@ -53,12 +53,24 @@ describe("splitInternalUrlSel", () => {
 		expect(splitInternalUrlSel("agent://1-50")).toEqual({ path: "agent://1-50" });
 	});
 
-	it("leaves mcp:// URLs alone (mcp resource URIs may legitimately contain colons)", () => {
+	it("keeps bare-integer suffixes on mcp:// URLs (could be a port)", () => {
 		expect(splitInternalUrlSel("mcp://some/resource:1234")).toEqual({
 			path: "mcp://some/resource:1234",
 		});
-		expect(splitInternalUrlSel("mcp://server://uri:1-50")).toEqual({
-			path: "mcp://server://uri:1-50",
+	});
+
+	it("peels unambiguous line-range selectors from mcp:// URLs", () => {
+		expect(splitInternalUrlSel("mcp://server/resource:1-50")).toEqual({
+			path: "mcp://server/resource",
+			sel: "1-50",
+		});
+		expect(splitInternalUrlSel("mcp://server/resource:raw")).toEqual({
+			path: "mcp://server/resource",
+			sel: "raw",
+		});
+		expect(splitInternalUrlSel("mcp://server/resource:L10")).toEqual({
+			path: "mcp://server/resource",
+			sel: "L10",
 		});
 	});
 

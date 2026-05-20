@@ -173,10 +173,36 @@ export function splitPathAndSel(rawPath: string): { path: string; sel?: string }
  *
  * Falls back to the input unchanged when nothing matches.
  */
+/** Peel a single trailing selector from a URL whose scheme allows colons in
+ * the resource (e.g. `mcp://`). Requires an *unambiguous* selector form —
+ * bare integers (which look like port numbers) are NEVER peeled to avoid
+ * mis-splitting `mcp://server:1234/path`. Accepts: `raw`, `conflicts`,
+ * `L\d+...`, `\d+-\d+`, `\d+,\d+...`, `\d+\+\d+`. */
+function peelStrictTrailingSelector(rawPath: string, schemeEnd: number): { path: string; sel?: string } {
+	const colon = rawPath.lastIndexOf(":");
+	if (colon < schemeEnd) return { path: rawPath };
+	const tail = rawPath.slice(colon + 1);
+	if (!FILE_LINE_RANGE_ONLY_RE.test(tail) && !FILE_RAW_ONLY_RE.test(tail) && !/^conflicts$/i.test(tail)) {
+		return { path: rawPath };
+	}
+	// Reject bare integer — indistinguishable from a port. Require an L-prefix,
+	// dash, plus, or comma to commit to peeling.
+	if (/^\d+$/.test(tail)) return { path: rawPath };
+	return { path: rawPath.slice(0, colon), sel: tail };
+}
+
 export function splitInternalUrlSel(rawPath: string): { path: string; sel?: string } {
 	const schemeMatch = rawPath.match(INTERNAL_URL_SCHEME_RE);
 	if (!schemeMatch) return { path: rawPath };
-	if (!INTERNAL_SCHEMES_WITH_SELECTORS[schemeMatch[1].toLowerCase()]) return { path: rawPath };
+	const scheme = schemeMatch[1].toLowerCase();
+	// `mcp://` resource URIs may legitimately contain colons (e.g. ports in
+	// server addresses), but a trailing *unambiguous* selector — `1-50`, `raw`,
+	// `conflicts`, `L10`, `1,5` — should still be peeled so the read tool can
+	// apply line ranges. Bare integers stay folded into the URI.
+	if (!INTERNAL_SCHEMES_WITH_SELECTORS[scheme]) {
+		if (scheme === "mcp") return peelStrictTrailingSelector(rawPath, schemeMatch[0].length);
+		return { path: rawPath };
+	}
 
 	const schemeEnd = schemeMatch[0].length;
 	let path = rawPath;
