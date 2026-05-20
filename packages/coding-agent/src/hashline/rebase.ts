@@ -168,12 +168,23 @@ function findCandidateDeltas(
 	return candidates;
 }
 
-function groupBoundaryHasMismatch(
-	anchors: Anchor[],
-	fileLines: string[],
-	expectedContent: ReadonlyMap<number, string> | undefined,
-): boolean {
-	return anchors.some(a => !anchorMatchesAt(a, fileLines, 0, expectedContent).ok);
+function anchorHashMatchesAtZero(anchor: Anchor, fileLines: string[]): boolean {
+	const targetLine = anchor.line;
+	if (targetLine < 1 || targetLine > fileLines.length) return false;
+	if (anchor.hash === RANGE_INTERIOR_HASH) return true;
+	const actualText = fileLines[targetLine - 1] ?? "";
+	return computeLineHash(targetLine, actualText) === anchor.hash;
+}
+
+// At delta 0 the rebase must defer to hash, not content. The strict validator
+// upstream already uses hash equality; if content happens to match the
+// snapshot while the hash does not, we'd silently accept a mistyped-hash
+// edit when another group in the batch rebases (the apply path does not
+// re-validate hashes after a successful rebase). Hash gating here keeps
+// `tryRebaseHashlineEdits` from regressing the strict-validator's hash
+// guarantee for in-place groups.
+function groupBoundaryHasMismatch(anchors: Anchor[], fileLines: string[]): boolean {
+	return anchors.some(a => !anchorHashMatchesAtZero(a, fileLines));
 }
 
 /**
@@ -193,7 +204,7 @@ export function tryRebaseHashlineEdits(
 	let totalShifted = 0;
 
 	for (const group of groups) {
-		if (!groupBoundaryHasMismatch(group.boundaryAnchors, fileLines, expectedContent)) {
+		if (!groupBoundaryHasMismatch(group.boundaryAnchors, fileLines)) {
 			deltaByGroup.set(group.sourceLineNum, 0);
 			continue;
 		}

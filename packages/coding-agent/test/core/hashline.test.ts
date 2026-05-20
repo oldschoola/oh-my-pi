@@ -1080,4 +1080,41 @@ describe("hashline — in-file delta rebase", () => {
 			applyHashlineEdits(file, parseHashline(diff), { expectedContent: new Map([[2, "lineA0"]]) }),
 		).toThrow(HashlineMismatchError);
 	});
+
+	it("rejects a mistyped-hash group even when a sibling group rebases (PR #1214 review fix)", () => {
+		// Mixed-batch scenario flagged in
+		// https://github.com/can1357/oh-my-pi/pull/1214#discussion_r3271522442
+		// Group A: stale anchor at line 1; current file shifted it to line 2.
+		// Group B: mistyped anchor hash at line 3, but the content at line 3
+		// happens to equal the snapshot's expected content for that line.
+		// The buggy behavior used content equality at delta 0 to decide
+		// "no mismatch", so Group B was silently applied with the bad hash
+		// once Group A rebased and short-circuited strict re-validation.
+		// The fix gates the delta-0 mismatch check on hash equality (matching
+		// the strict validator's semantics), so Group B fails to short-circuit
+		// and the candidate search rejects its only candidate at delta 0.
+		const file = ["// new comment", "alpha source", "gamma source"].join("\n");
+		const goodAnchor = tag(1, "alpha source");
+		const badAnchor = mistag(3, "gamma source");
+		const diff = [
+			`= ${sameLineRange(goodAnchor)}`,
+			pl("alpha replaced"),
+			`= ${sameLineRange(badAnchor)}`,
+			pl("gamma replaced"),
+		].join("\n");
+
+		// Sanity-check the precondition: at line 3 the content matches what
+		// the model expected for line 3, so a content-only delta-0 check
+		// would mis-classify the mistyped-hash group as already valid.
+		expect(file.split("\n")[2]).toBe("gamma source");
+
+		expect(() =>
+			applyHashlineEdits(file, parseHashline(diff), {
+				expectedContent: new Map([
+					[1, "alpha source"],
+					[3, "gamma source"],
+				]),
+			}),
+		).toThrow(HashlineMismatchError);
+	});
 });
