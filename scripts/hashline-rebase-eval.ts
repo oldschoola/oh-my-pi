@@ -275,8 +275,17 @@ interface Outcome {
 	error?: string;
 }
 
+const argv = process.argv.slice(2);
+/**
+ * When `--baseline` is passed, the harness suppresses the per-case snapshot so
+ * the rebase pass has no expected content to verify against — that mirrors
+ * upstream behaviour (no `expectedContent` plumbed into `HashlineApplyOptions`)
+ * and gives the contrast column referenced in the PR description.
+ */
+const suppressSnapshot = argv.includes("--baseline");
+
 function runCase(c: Case): Outcome {
-	const expectedContent = c.snapshot ? new Map(c.snapshot) : undefined;
+	const expectedContent = !suppressSnapshot && c.snapshot ? new Map(c.snapshot) : undefined;
 	try {
 		const result = applyHashlineEdits(c.file, parseHashline(c.diff), { expectedContent });
 		if (c.expected === undefined) {
@@ -331,10 +340,10 @@ const report = {
 	})),
 };
 
-const outPath = process.argv[2];
+const outPath = argv.find(a => !a.startsWith("--"));
 if (outPath) {
 	await Bun.write(outPath, JSON.stringify(report, null, 2));
-	console.error(`wrote ${outPath}`);
+	console.error(`wrote ${outPath}${suppressSnapshot ? " (baseline: no snapshot)" : ""}`);
 } else {
 	console.log(JSON.stringify(report, null, 2));
 }
