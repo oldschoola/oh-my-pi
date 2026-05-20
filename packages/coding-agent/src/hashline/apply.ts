@@ -2,6 +2,7 @@ import { HashlineMismatchError } from "./anchors";
 import { RANGE_INTERIOR_HASH } from "./constants";
 import { computeLineHash } from "./hash";
 import { cloneCursor } from "./parser";
+import { tryRebaseHashlineEdits } from "./rebase";
 import type { Anchor, HashlineApplyOptions, HashlineCursor, HashlineEdit, HashMismatch } from "./types";
 
 export interface HashlineApplyResult {
@@ -43,18 +44,25 @@ function getHashlineEditAnchors(edit: HashlineEdit): Anchor[] {
 }
 
 /**
- * Verify every anchor's hash. Any mismatch is reported as a `HashMismatch`;
- * there is no auto-rebase. Callers are expected to surface mismatches as
- * `HashlineMismatchError` so the model re-reads and re-anchors.
+ * Verify every anchor's hash. Any mismatch — including an anchor that points
+ * past either end of the file — is reported as a `HashMismatch` so the
+ * rebase pass can attempt recovery before we surface a fatal error.
+ * Interior range anchors (filler hash) are skipped: their line number is
+ * still validated structurally below when the range boundaries succeed.
  */
 function validateHashlineAnchors(edits: HashlineEdit[], fileLines: string[]): HashMismatch[] {
 	const mismatches: HashMismatch[] = [];
 	for (const edit of edits) {
 		for (const anchor of getHashlineEditAnchors(edit)) {
-			if (anchor.line < 1 || anchor.line > fileLines.length) {
-				throw new Error(`Line ${anchor.line} does not exist (file has ${fileLines.length} lines)`);
-			}
 			if (anchor.hash === RANGE_INTERIOR_HASH) continue;
+			if (anchor.line < 1 || anchor.line > fileLines.length) {
+				// Out-of-range anchors are surfaced as a mismatch with an empty
+				// "actual" hash so the rebase pass can search for the right line
+				// by content. If no rebase candidate exists the caller throws
+				// the usual `HashlineMismatchError`.
+				mismatches.push({ line: anchor.line, expected: anchor.hash, actual: "" });
+				continue;
+			}
 
 			const actualHash = computeLineHash(anchor.line, fileLines[anchor.line - 1] ?? "");
 			if (actualHash === anchor.hash) continue;
@@ -653,10 +661,16 @@ export function applyHashlineEdits(
 		if (firstChangedLine === undefined || line < firstChangedLine) firstChangedLine = line;
 	};
 
-	const mismatches = validateHashlineAnchors(edits, fileLines);
-	if (mismatches.length > 0) throw new HashlineMismatchError(mismatches, fileLines);
+	let workingEdits = edits;
+	const initialMismatches = validateHashlineAnchors(workingEdits, fileLines);
+	if (initialMismatches.length > 0) {
+		const rebased = tryRebaseHashlineEdits(workingEdits, fileLines);
+		if (!rebased) throw new HashlineMismatchError(initialMismatches, fileLines);
+		workingEdits = rebased.edits;
+		warnings.push(rebased.warning);
+	}
 
-	const normalizedEdits = absorbReplacementBoundaryDuplicates(edits, fileLines, warnings, options);
+	const normalizedEdits = absorbReplacementBoundaryDuplicates(workingEdits, fileLines, warnings, options);
 
 	// Normalize after_anchor inserts to before_anchor of the next line, or EOF
 	// when the anchor is the final line. This keeps the bucketing logic below

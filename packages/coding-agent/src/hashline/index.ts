@@ -8,6 +8,7 @@ export * from "./hash";
 export * from "./input";
 export * from "./parser";
 export * from "./prefixes";
+export * from "./rebase";
 export * from "./recovery";
 export * from "./stream";
 export * from "./types";
