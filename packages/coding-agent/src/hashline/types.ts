@@ -50,6 +50,15 @@ export interface CompactHashlineDiffOptions {
 }
 export interface HashlineApplyOptions {
 	autoDropPureInsertDuplicates?: boolean;
+	/**
+	 * Per-line content the model expected to find at each anchor's stored
+	 * line number — typically the `FileReadSnapshot` the model last observed.
+	 * Consulted by the anchor-rebase pass to verify that a candidate line
+	 * is actually the model's intended target, not just a 2-char hash
+	 * collision. Map keys are 1-indexed line numbers; values are line text
+	 * without trailing newline.
+	 */
+	expectedContent?: ReadonlyMap<number, string>;
 }
 
 export interface SplitHashlineOptions {

@@ -65,10 +65,16 @@ function getEditDetails(result: AgentToolResult<EditToolDetails>): EditToolDetai
 }
 
 /**
- * Apply hashline edits with anchor-stale recovery: on `HashlineMismatchError`,
- * consult the read-snapshot cache for the file and 3-way-merge the edits onto
- * the current text. If recovery succeeds, return the merged result with a
- * synthetic warning. Otherwise re-throw the original mismatch error.
+ * Apply hashline edits with anchor-stale recovery. Two layers of recovery
+ * are attempted before propagating a `HashlineMismatchError`:
+ *
+ *  1. `applyHashlineEdits` consults `options.expectedContent` — populated
+ *     here from the per-session read snapshot — to attempt an in-file
+ *     delta rebase. Content equality (not just hash equality) is required
+ *     for safety.
+ *  2. If rebase rejects (no candidate or insufficient evidence), the
+ *     snapshot-based 3-way merge in `tryRecoverHashlineWithCache` is
+ *     attempted as a last resort.
  */
 function applyHashlineEditsWithRecovery(
 	session: ToolSession,
@@ -77,16 +83,20 @@ function applyHashlineEditsWithRecovery(
 	edits: HashlineEdit[],
 	options: HashlineApplyOptions,
 ): HashlineApplyResult {
+	const cache = getFileReadCache(session);
+	const snapshot = cache.get(absolutePath);
+	const expectedContent = snapshot?.lines;
+	const optionsWithSnapshot: HashlineApplyOptions = expectedContent ? { ...options, expectedContent } : options;
 	try {
-		return applyHashlineEdits(text, edits, options);
+		return applyHashlineEdits(text, edits, optionsWithSnapshot);
 	} catch (err) {
 		if (!(err instanceof HashlineMismatchError)) throw err;
 		const recovered = tryRecoverHashlineWithCache({
-			cache: getFileReadCache(session),
+			cache,
 			absolutePath,
 			currentText: text,
 			edits,
-			options,
+			options: optionsWithSnapshot,
 		});
 		if (!recovered) throw err;
 		return {

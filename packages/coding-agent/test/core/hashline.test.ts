@@ -50,6 +50,21 @@ function applyDiff(content: string, diff: string): string {
 	return applyHashlineEdits(content, parseHashline(diff)).lines;
 }
 
+/**
+ * Apply a hashline diff with a synthetic read snapshot that tells the
+ * rebase pass what the model expected at each listed line number. Mirrors
+ * the production path where `FileReadCache` always supplies this map.
+ */
+function applyDiffWithSnapshot(
+	content: string,
+	diff: string,
+	snapshot: ReadonlyArray<readonly [number, string]>,
+): { lines: string; warnings?: string[] } {
+	const expectedContent = new Map(snapshot);
+	const result = applyHashlineEdits(content, parseHashline(diff), { expectedContent });
+	return { lines: result.lines, warnings: result.warnings };
+}
+
 function applyDiffWithPureInsertAutoDrop(content: string, diff: string): string {
 	return applyHashlineEdits(content, parseHashline(diff), { autoDropPureInsertDuplicates: true }).lines;
 }
@@ -432,11 +447,11 @@ describe("hashline — stale anchors", () => {
 	it("auto-rebases when an anchor's stored line shifted by a unique delta", () => {
 		// Model authored anchor `2{hash bbb}` against a previous read; the file
 		// has since gained an INSERTED line above, pushing `bbb` to line 3. The
-		// hash uniquely identifies one line in the current file, so the rebase
-		// is unambiguous and the edit lands.
+		// rebase pass verifies the candidate by content (from the read
+		// snapshot) and lands the edit.
 		const stale = tag(2, "bbb");
 		const diff = [`≔${sameLineRange(stale)}`, pl("BBB")].join("\n");
-		const result = applyHashlineEdits("aaa\nINSERTED\nbbb\nccc", parseHashline(diff));
+		const result = applyDiffWithSnapshot("aaa\nINSERTED\nbbb\nccc", diff, [[2, "bbb"]]);
 		expect(result.lines).toBe("aaa\nINSERTED\nBBB\nccc");
 		expect(result.warnings ?? []).toEqual(
 			expect.arrayContaining([expect.stringMatching(/Recovered from stale anchors by shifting/)]),
@@ -444,11 +459,23 @@ describe("hashline — stale anchors", () => {
 	});
 
 	it("still rejects when the rebase target is ambiguous", () => {
-		// Same scenario as above but with two candidate lines for `bbb`. The
-		// rebase must abort because we cannot prove which one the model meant.
+		// Two candidate lines for `bbb`. Even with content evidence, multiple
+		// candidates mean we cannot prove which one the model meant.
 		const stale = tag(2, "bbb");
 		const diff = [`≔${sameLineRange(stale)}`, pl("BBB")].join("\n");
-		expect(() => applyDiff("aaa\nINSERTED\nbbb\nccc\nbbb\n", diff)).toThrow(HashlineMismatchError);
+		const expectedContent = new Map([[2, "bbb"]]);
+		expect(() =>
+			applyHashlineEdits("aaa\nINSERTED\nbbb\nccc\nbbb\n", parseHashline(diff), { expectedContent }),
+		).toThrow(HashlineMismatchError);
+	});
+
+	it("rejects single-anchor hash-only rebase without snapshot evidence", () => {
+		// Same drift scenario but no `expectedContent` map. The rebase has only
+		// a 2-char hash to go on, which is too weak to safely relocate a single
+		// anchor — the call must reject instead of risking a collision.
+		const stale = tag(2, "bbb");
+		const diff = [`≔${sameLineRange(stale)}`, pl("BBB")].join("\n");
+		expect(() => applyDiff("aaa\nINSERTED\nbbb\nccc", diff)).toThrow(HashlineMismatchError);
 	});
 
 	it("rejects when the line hash matches a different nearby line", () => {
@@ -892,10 +919,10 @@ describe("hashline *** Abort recovery sentinel (harmony-leak mitigation)", () =>
 describe("hashline — in-file delta rebase", () => {
 	it("rebases a single-anchor delete when content shifted up", () => {
 		// `bbb` was at line 4 in the model's read; an out-of-band delete above
-		// pulled it to line 2. Hash uniquely matches → rebase to delta -2.
+		// pulled it to line 2. With snapshot evidence the rebase is safe.
 		const stale = tag(4, "bbb");
 		const diff = [`- ${sameLineRange(stale)}`].join("\n");
-		const result = applyHashlineEdits("aaa\nbbb\nccc\nddd", parseHashline(diff));
+		const result = applyDiffWithSnapshot("aaa\nbbb\nccc\nddd", diff, [[4, "bbb"]]);
 		expect(result.lines).toBe("aaa\nccc\nddd");
 		expect(result.warnings ?? []).toEqual(
 			expect.arrayContaining([expect.stringMatching(/Recovered from stale anchors by shifting/)]),
@@ -904,13 +931,16 @@ describe("hashline — in-file delta rebase", () => {
 
 	it("rebases a multi-line range by the same delta on both boundaries", () => {
 		// Range `2bbb..4ddd` was meant for the contiguous block bbb..ddd. An
-		// INSERTED line shifted the block down by 1. Both boundary anchors
-		// agree on delta +1, so the entire range (including the interior `ccc`
-		// at the shifted line number) shifts together.
+		// INSERTED line shifted the block down by 1. Snapshot supplies the
+		// model's expected content at the boundary lines so the rebase is
+		// content-verified.
 		const startAnchor = tag(2, "bbb");
 		const endAnchor = tag(4, "ddd");
 		const diff = [`= ${startAnchor}..${endAnchor}`, pl("REPLACED")].join("\n");
-		const result = applyHashlineEdits("aaa\nINSERTED\nbbb\nccc\nddd\neee", parseHashline(diff));
+		const result = applyDiffWithSnapshot("aaa\nINSERTED\nbbb\nccc\nddd\neee", diff, [
+			[2, "bbb"],
+			[4, "ddd"],
+		]);
 		expect(result.lines).toBe("aaa\nINSERTED\nREPLACED\neee");
 		expect(result.warnings ?? []).toEqual(
 			expect.arrayContaining([expect.stringMatching(/Recovered from stale anchors by shifting/)]),
@@ -918,27 +948,31 @@ describe("hashline — in-file delta rebase", () => {
 	});
 
 	it("refuses to rebase a range when the two boundary anchors disagree on delta", () => {
-		// Start hash now matches at delta +1, end hash matches at delta +3.
-		// There is no single delta that satisfies both → reject.
+		// Start matches at delta +1, end matches at delta +3. No single delta
+		// satisfies both boundaries, even with snapshot evidence → reject.
 		const file = ["aaa", "INSERTED", "bbb", "xxx", "yyy", "ddd", "eee"].join("\n");
 		const startAnchor = tag(2, "bbb");
 		const endAnchor = tag(4, "ddd");
 		const diff = [`= ${startAnchor}..${endAnchor}`, pl("REPLACED")].join("\n");
-		expect(() => applyDiff(file, diff)).toThrow(HashlineMismatchError);
+		const expectedContent = new Map([
+			[2, "bbb"],
+			[4, "ddd"],
+		]);
+		expect(() => applyHashlineEdits(file, parseHashline(diff), { expectedContent })).toThrow(HashlineMismatchError);
 	});
 
 	it("rebases an insert-after when the anchor line drifted", () => {
 		const stale = tag(2, "bbb");
 		const diff = [`+ ${stale}`, pl("NEW")].join("\n");
 		// `bbb` is at line 3 in the current file, not 2.
-		const result = applyHashlineEdits("aaa\nINSERTED\nbbb\nccc", parseHashline(diff));
+		const result = applyDiffWithSnapshot("aaa\nINSERTED\nbbb\nccc", diff, [[2, "bbb"]]);
 		expect(result.lines).toBe("aaa\nINSERTED\nbbb\nNEW\nccc");
 	});
 
 	it("rebases an insert-before when the anchor line drifted", () => {
 		const stale = tag(2, "bbb");
 		const diff = [`< ${stale}`, pl("NEW")].join("\n");
-		const result = applyHashlineEdits("aaa\nINSERTED\nbbb\nccc", parseHashline(diff));
+		const result = applyDiffWithSnapshot("aaa\nINSERTED\nbbb\nccc", diff, [[2, "bbb"]]);
 		expect(result.lines).toBe("aaa\nINSERTED\nNEW\nbbb\nccc");
 	});
 
@@ -952,33 +986,34 @@ describe("hashline — in-file delta rebase", () => {
 
 	it("rebases multiple independent edit groups with different deltas", () => {
 		// Two separate single-anchor edits in one diff. Group `bbb` shifted by
-		// +1, group `eee` shifted by +2. Each group must resolve its own delta.
+		// +1, group `eee` shifted by +2. Snapshot supplies both expected lines.
 		const a = tag(2, "bbb");
 		const b = tag(4, "eee");
 		const diff = [`= ${sameLineRange(a)}`, pl("BBB"), `= ${sameLineRange(b)}`, pl("EEE")].join("\n");
 		const file = ["aaa", "INSERT-1", "bbb", "ccc", "INSERT-2", "ddd", "eee", "fff"].join("\n");
-		const result = applyHashlineEdits(file, parseHashline(diff));
+		const result = applyDiffWithSnapshot(file, diff, [
+			[2, "bbb"],
+			[4, "eee"],
+		]);
 		expect(result.lines).toBe("aaa\nINSERT-1\nBBB\nccc\nINSERT-2\nddd\nEEE\nfff");
 	});
 
 	it("falls back to mismatch when an anchor's hash does not appear anywhere in the file", () => {
-		// `mistag` deliberately produces a hash that no line in the file can
-		// currently produce, so the rebase search finds zero candidates and
-		// the original mismatch error is surfaced unchanged.
+		// Fabricated hash that no current line can produce. Even with a
+		// snapshot, the rebase search finds zero candidates.
 		const stale = mistag(2, "bbb");
 		const diff = [`= ${sameLineRange(stale)}`, pl("BBB")].join("\n");
-		expect(() => applyDiff("aaa\nbbb\nccc", diff)).toThrow(HashlineMismatchError);
+		expect(() => applyDiffWithSnapshot("aaa\nbbb\nccc", diff, [[2, "bbb"]])).toThrow(HashlineMismatchError);
 	});
 
 	it("rebases when the stale anchor points past the end of the current file", () => {
 		// The file shrank between read and edit — lines removed above the
 		// target line pulled the target up so the model's stored line number
-		// is now out of range. Without rebase this used to throw a hard
-		// `Line N does not exist` error; with rebase it's a soft mismatch
-		// that the content search resolves.
+		// is now out of range. Snapshot supplies the expected content for the
+		// rebase to verify against.
 		const stale = tag(4, "target");
 		const diff = [`= ${sameLineRange(stale)}`, pl("REPLACED")].join("\n");
-		const result = applyHashlineEdits("target\ntail", parseHashline(diff));
+		const result = applyDiffWithSnapshot("target\ntail", diff, [[4, "target"]]);
 		expect(result.lines).toBe("REPLACED\ntail");
 	});
 
@@ -989,5 +1024,60 @@ describe("hashline — in-file delta rebase", () => {
 		const fakeHash = mistag(2, "ghost").slice(String(2).length);
 		const diff = [`= ${sameLineRange(`10${fakeHash}`)}`, pl("BB")].join("\n");
 		expect(() => applyDiff("A\nB\nC", diff)).toThrow(HashlineMismatchError);
+	});
+
+	it("refuses a hash-only single-anchor rebase even when one candidate exists (collision safety)", () => {
+		// No snapshot supplied. There is exactly one current-file line whose
+		// hash matches the anchor's hash, but with only a 2-char hash (1/647
+		// collision rate) we cannot prove it is the line the model meant.
+		// Must reject rather than silently relocate.
+		const stale = tag(2, "bbb");
+		const diff = [`= ${sameLineRange(stale)}`, pl("BBB")].join("\n");
+		expect(() => applyDiff("aaa\nINSERTED\nbbb\nccc", diff)).toThrow(HashlineMismatchError);
+	});
+
+	it("refuses to rebase a range even when both boundaries hash-match, if the snapshot is unavailable", () => {
+		// Range edit `1..3` with both boundary anchors hash-matching at delta
+		// +1 in the current file. Without an `expectedContent` map for at
+		// least one boundary, the rebase has only 2-char hash evidence per
+		// anchor — too weak to be safe.
+		const original = ["alpha", "beta", "gamma"];
+		const file = ["// header", ...original, "tail"].join("\n");
+		const start = tag(1, original[0]);
+		const end = tag(3, original[2]);
+		const rangeDiff = [`= ${start}..${end}`, pl("REPLACED")].join("\n");
+		expect(() => applyDiff(file, rangeDiff)).toThrow(HashlineMismatchError);
+		// With even partial snapshot evidence (one boundary verified), the
+		// rebase lands.
+		const verified = applyDiffWithSnapshot(file, rangeDiff, [[1, original[0]]]);
+		expect(verified.lines).toBe("// header\nREPLACED\ntail");
+	});
+
+	it("refuses to silently rebase across a real 2-char hash collision (PR #1214 review fix)", () => {
+		// `lineA0` and `lineB962` are an empirically-confirmed collision pair
+		// under `computeLineHash` (both hash to `wm`). Scenario: the model
+		// authored an edit against `lineA0` at line 2, but in the current file
+		// line 2 has been replaced with an unrelated line — `lineA0` no longer
+		// exists, while `lineB962` happens to live at line 5 with the same
+		// hash. The unsafe hash-only rebase would relocate the edit onto
+		// `lineB962` and silently corrupt it. The content-verified rebase must
+		// either reject (no snapshot) or refuse to land on a content-mismatch.
+		const file = ["alpha", "// changed line", "gamma", "delta", "lineB962", "epsilon"].join("\n");
+		const colliding = computeLineHash(1, "lineA0");
+		expect(computeLineHash(1, "lineB962")).toBe(colliding);
+
+		const staleAnchor = `2${colliding}`;
+		const diff = [`= ${sameLineRange(staleAnchor)}`, pl("REPLACED")].join("\n");
+
+		// No snapshot → no content evidence → reject.
+		expect(() => applyDiff(file, diff)).toThrow(HashlineMismatchError);
+
+		// Snapshot says the model expected `lineA0` at line 2. The only
+		// hash-matching candidate (line 5) carries `lineB962` instead, so
+		// content verification fails and the rebase still rejects rather than
+		// corrupting line 5.
+		expect(() =>
+			applyHashlineEdits(file, parseHashline(diff), { expectedContent: new Map([[2, "lineA0"]]) }),
+		).toThrow(HashlineMismatchError);
 	});
 });

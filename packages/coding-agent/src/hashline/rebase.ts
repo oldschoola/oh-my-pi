@@ -4,27 +4,33 @@
  * When a model authors edits whose anchors point at the right *content* but
  * the wrong *line number* (because some other party inserted or deleted lines
  * above the edit region between read and edit), the strict per-anchor hash
- * check rejects the edit. This module attempts a safe, content-driven rebase
- * before surfacing the mismatch:
+ * check rejects the edit. This module attempts a content-verified rebase
+ * before surfacing the mismatch.
  *
+ * SAFETY: hashline hashes are 2 characters over 647 buckets, so collisions
+ * across unrelated lines are common. Hash equality alone is NOT sufficient
+ * evidence to relocate an edit — a colliding line elsewhere in the file
+ * would silently corrupt unrelated code. The rebase therefore requires
+ * each rebased group to carry at least one **content-verified** anchor:
+ * the caller supplies an `expectedContent` map (typically the per-session
+ * `FileReadSnapshot` the model last observed) and the candidate target's
+ * line text MUST exactly equal what the model expected at the stored
+ * line number. Groups whose anchors are entirely outside the snapshot
+ * fall through to the original mismatch error rather than risk a
+ * hash-collision-driven misplacement.
+ *
+ * Algorithm:
  *  1. Group edits by source diff line (`HashlineEdit.lineNum`). Every group
  *     produced by the parser shares a source line — multi-line ranges expand
  *     to many edits all carrying the same `lineNum`. Anchors in one group
  *     MUST shift by the same delta or the range corrupts.
- *
  *  2. For each group with at least one mismatched boundary anchor, find a
  *     single uniform delta `D` such that every boundary anchor in the group
- *     hash-matches when shifted by `D`. Interior anchors (filler hash) shift
- *     by the same `D` for consistency.
- *
- *  3. The delta MUST be unique within the candidate set — if two different
- *     `D` values both produce a valid rebase, the target is ambiguous and we
- *     fall back to the mismatch error. This preserves the safety invariant
- *     that duplicated content cannot be silently relocated.
- *
- * Groups whose boundary anchors all currently validate are left alone (delta
- * `0`). A mixed group with both matched and mismatched boundary anchors has
- * no valid uniform delta and forces fallback.
+ *     matches (by content if known, else by hash) when shifted by `D`. At
+ *     least one anchor in the group must be content-verified at that delta.
+ *  3. Accept only when exactly one such `D` exists. Multiple candidates,
+ *     no candidates, or candidates with zero verified anchors all fall
+ *     through to the original mismatch error.
  */
 
 import { RANGE_INTERIOR_HASH } from "./constants";
@@ -44,6 +50,13 @@ interface RebaseGroup {
 	boundaryAnchors: Anchor[];
 }
 
+interface AnchorMatch {
+	/** Whether the candidate line satisfies the anchor (content or hash check). */
+	ok: boolean;
+	/** Whether the match was verified against caller-supplied expected content. */
+	verified: boolean;
+}
+
 function getEditAnchor(edit: HashlineEdit): Anchor | undefined {
 	if (edit.kind === "delete") return edit.anchor;
 	if (edit.cursor.kind === "before_anchor") return edit.cursor.anchor;
@@ -51,11 +64,22 @@ function getEditAnchor(edit: HashlineEdit): Anchor | undefined {
 	return undefined;
 }
 
-function anchorMatchesAt(anchor: Anchor, fileLines: string[], delta: number): boolean {
+function anchorMatchesAt(
+	anchor: Anchor,
+	fileLines: string[],
+	delta: number,
+	expectedContent: ReadonlyMap<number, string> | undefined,
+): AnchorMatch {
 	const targetLine = anchor.line + delta;
-	if (targetLine < 1 || targetLine > fileLines.length) return false;
-	if (anchor.hash === RANGE_INTERIOR_HASH) return true;
-	return computeLineHash(targetLine, fileLines[targetLine - 1] ?? "") === anchor.hash;
+	if (targetLine < 1 || targetLine > fileLines.length) return { ok: false, verified: false };
+	if (anchor.hash === RANGE_INTERIOR_HASH) return { ok: true, verified: false };
+
+	const actualText = fileLines[targetLine - 1] ?? "";
+	const expectedText = expectedContent?.get(anchor.line);
+	if (expectedText !== undefined) {
+		return { ok: expectedText === actualText, verified: true };
+	}
+	return { ok: computeLineHash(targetLine, actualText) === anchor.hash, verified: false };
 }
 
 function shiftAnchor(anchor: Anchor, delta: number): Anchor {
@@ -93,58 +117,99 @@ function groupEditsBySourceLine(edits: HashlineEdit[]): RebaseGroup[] {
 	return [...groups.values()];
 }
 
+interface DeltaCandidate {
+	delta: number;
+	verifiedAnchorCount: number;
+}
+
 /**
  * Find every delta `D` such that every boundary anchor in `anchors`
- * hash-matches when its line is shifted by `D`. Returns the candidate set
- * sorted by absolute distance; an empty array means no delta works.
+ * satisfies the match check when its line is shifted by `D`. For each
+ * candidate we also tally how many anchors were content-verified by the
+ * caller's snapshot, so the safety gate can require at least one.
  *
- * The search seeds candidates from the first anchor: any line in the file
- * whose hash matches anchor[0].hash defines a candidate `D = L - anchor[0].line`.
- * Each candidate is then verified against the remaining anchors. This is
- * O(N) in file length per group (vs. O(N*M) brute force).
+ * The search seeds candidates from the first anchor and verifies each
+ * candidate against the rest. The seed iteration recomputes hashes per
+ * line, which is O(N) in file length per group.
  */
-function findCandidateDeltas(anchors: Anchor[], fileLines: string[]): number[] {
+function findCandidateDeltas(
+	anchors: Anchor[],
+	fileLines: string[],
+	expectedContent: ReadonlyMap<number, string> | undefined,
+): DeltaCandidate[] {
 	if (anchors.length === 0) return [];
 	const [seedAnchor, ...rest] = anchors;
-	const candidates: number[] = [];
+	const seedExpected = expectedContent?.get(seedAnchor.line);
+	const candidates: DeltaCandidate[] = [];
 	for (let lineIdx = 0; lineIdx < fileLines.length; lineIdx++) {
 		const targetLine = lineIdx + 1;
-		const actualHash = computeLineHash(targetLine, fileLines[lineIdx] ?? "");
-		if (actualHash !== seedAnchor.hash) continue;
+		const text = fileLines[lineIdx] ?? "";
+		// Seed acceptance: content if we know it, else hash.
+		if (seedExpected !== undefined) {
+			if (text !== seedExpected) continue;
+		} else if (computeLineHash(targetLine, text) !== seedAnchor.hash) {
+			continue;
+		}
 		const delta = targetLine - seedAnchor.line;
-		if (rest.every(a => anchorMatchesAt(a, fileLines, delta))) {
-			candidates.push(delta);
+		let verifiedCount = seedExpected !== undefined ? 1 : 0;
+		let allMatch = true;
+		for (const other of rest) {
+			const m = anchorMatchesAt(other, fileLines, delta, expectedContent);
+			if (!m.ok) {
+				allMatch = false;
+				break;
+			}
+			if (m.verified) verifiedCount++;
+		}
+		if (allMatch) {
+			candidates.push({ delta, verifiedAnchorCount: verifiedCount });
 		}
 	}
 	return candidates;
 }
 
-function groupBoundaryHasMismatch(anchors: Anchor[], fileLines: string[]): boolean {
-	return anchors.some(a => !anchorMatchesAt(a, fileLines, 0));
+function groupBoundaryHasMismatch(
+	anchors: Anchor[],
+	fileLines: string[],
+	expectedContent: ReadonlyMap<number, string> | undefined,
+): boolean {
+	return anchors.some(a => !anchorMatchesAt(a, fileLines, 0, expectedContent).ok);
 }
 
 /**
  * Try to rebase every mismatched edit-group by a uniform delta. Returns the
  * rebased edit list and a warning when every group resolves to a single
- * unambiguous delta; returns `null` when any group is unresolvable or
- * ambiguous, signalling the caller to surface the original mismatch error.
+ * unambiguous delta backed by sufficient evidence (see file header).
+ * Returns `null` when any group is unresolvable, ambiguous, or rests on
+ * hash-only evidence too weak to be safe.
  */
-export function tryRebaseHashlineEdits(edits: HashlineEdit[], fileLines: string[]): HashlineRebaseResult | null {
+export function tryRebaseHashlineEdits(
+	edits: HashlineEdit[],
+	fileLines: string[],
+	expectedContent?: ReadonlyMap<number, string>,
+): HashlineRebaseResult | null {
 	const groups = groupEditsBySourceLine(edits);
 	const deltaByGroup = new Map<number, number>();
 	let totalShifted = 0;
 
 	for (const group of groups) {
-		if (!groupBoundaryHasMismatch(group.boundaryAnchors, fileLines)) {
+		if (!groupBoundaryHasMismatch(group.boundaryAnchors, fileLines, expectedContent)) {
 			deltaByGroup.set(group.sourceLineNum, 0);
 			continue;
 		}
 		if (group.boundaryAnchors.length === 0) return null;
-		const candidates = findCandidateDeltas(group.boundaryAnchors, fileLines);
+
+		const candidates = findCandidateDeltas(group.boundaryAnchors, fileLines, expectedContent);
 		if (candidates.length !== 1) return null;
-		const delta = candidates[0];
-		if (delta === 0) return null; // mismatch but only zero-shift "works": impossible by construction
-		deltaByGroup.set(group.sourceLineNum, delta);
+		const candidate = candidates[0];
+		if (candidate.delta === 0) return null;
+
+		// Safety gate: require at least one content-verified anchor in the
+		// group. Pure hash matches are too weak (2-char hash, 647 buckets)
+		// to relocate an edit safely on their own — see file header.
+		if (candidate.verifiedAnchorCount === 0) return null;
+
+		deltaByGroup.set(group.sourceLineNum, candidate.delta);
 		totalShifted++;
 	}
 

@@ -664,7 +664,7 @@ export function applyHashlineEdits(
 	let workingEdits = edits;
 	const initialMismatches = validateHashlineAnchors(workingEdits, fileLines);
 	if (initialMismatches.length > 0) {
-		const rebased = tryRebaseHashlineEdits(workingEdits, fileLines);
+		const rebased = tryRebaseHashlineEdits(workingEdits, fileLines, options.expectedContent);
 		if (!rebased) throw new HashlineMismatchError(initialMismatches, fileLines);
 		workingEdits = rebased.edits;
 		warnings.push(rebased.warning);

@@ -23,6 +23,12 @@ interface Case {
 	expected: string | undefined;
 	/** `true` if the anchor is stale and a rebase is required for it to land. */
 	requiresRebase: boolean;
+	/**
+	 * Per-anchor expected content from a synthetic read snapshot. Mirrors the
+	 * production `FileReadCache` map. Required for content-verified rebase;
+	 * cases with `undefined` exercise the no-snapshot rejection path.
+	 */
+	snapshot?: ReadonlyArray<readonly [number, string]>;
 }
 
 const sep = HL_EDIT_SEP;
@@ -50,6 +56,7 @@ const cases: Case[] = [];
 			"}",
 		].join("\n"),
 		requiresRebase: true,
+		snapshot: [[2, before[1]]],
 	});
 }
 
@@ -63,6 +70,7 @@ const cases: Case[] = [];
 		diff: [`= ${range(anchor)}`, pl("// REPLACED")].join("\n"),
 		expected: ["// REPLACED", "E", "F"].join("\n"),
 		requiresRebase: true,
+		snapshot: [[4, "// target line"]],
 	});
 }
 
@@ -87,6 +95,10 @@ const cases: Case[] = [];
 			"end",
 		].join("\n"),
 		requiresRebase: true,
+		snapshot: [
+			[2, before[1]],
+			[4, before[3]],
+		],
 	});
 }
 
@@ -99,6 +111,10 @@ const cases: Case[] = [];
 		diff: [`= ${range(tag(2, "bbb"))}`, pl("BBB"), `= ${range(tag(4, "eee"))}`, pl("EEE")].join("\n"),
 		expected: ["aaa", "INSERT-1", "BBB", "ccc", "INSERT-2", "ddd", "EEE", "fff"].join("\n"),
 		requiresRebase: true,
+		snapshot: [
+			[2, "bbb"],
+			[4, "eee"],
+		],
 	});
 }
 
@@ -111,6 +127,7 @@ const cases: Case[] = [];
 		diff: [`+ ${tag(2, "bbb")}`, pl("NEW")].join("\n"),
 		expected: ["aaa", "INSERTED", "bbb", "NEW", "ccc"].join("\n"),
 		requiresRebase: true,
+		snapshot: [[2, "bbb"]],
 	});
 }
 
@@ -123,6 +140,7 @@ const cases: Case[] = [];
 		diff: [`< ${tag(2, "bbb")}`, pl("NEW")].join("\n"),
 		expected: ["aaa", "INSERTED", "NEW", "bbb", "ccc"].join("\n"),
 		requiresRebase: true,
+		snapshot: [[2, "bbb"]],
 	});
 }
 
@@ -139,6 +157,7 @@ const cases: Case[] = [];
 		diff: [`= ${range(anchor)}`, pl("  configValue: 99,")].join("\n"),
 		expected: after.map(l => (l === target ? "  configValue: 99," : l)).join("\n"),
 		requiresRebase: true,
+		snapshot: [[100, target]],
 	});
 }
 
@@ -190,6 +209,7 @@ const cases: Case[] = [];
 		diff: [`= ${range(anchor)}`, pl("TARGET-REPLACED")].join("\n"),
 		expected: ["TARGET-REPLACED", "tail"].join("\n"),
 		requiresRebase: true,
+		snapshot: [[4, "target"]],
 	});
 }
 
@@ -229,6 +249,7 @@ const cases: Case[] = [];
 		diff: [`= ${range(anchor)}`, pl("D-REPLACED")].join("\n"),
 		expected: ["A", "INSERTED-MID", "B", "C", "D-REPLACED", "E"].join("\n"),
 		requiresRebase: true,
+		snapshot: [[4, "D"]],
 	});
 	void before;
 }
@@ -243,6 +264,7 @@ const cases: Case[] = [];
 		diff: [`- ${range(anchor)}`].join("\n"),
 		expected: ["// header", "alpha", "gamma"].join("\n"),
 		requiresRebase: true,
+		snapshot: [[2, "beta"]],
 	});
 }
 
@@ -254,8 +276,9 @@ interface Outcome {
 }
 
 function runCase(c: Case): Outcome {
+	const expectedContent = c.snapshot ? new Map(c.snapshot) : undefined;
 	try {
-		const result = applyHashlineEdits(c.file, parseHashline(c.diff));
+		const result = applyHashlineEdits(c.file, parseHashline(c.diff), { expectedContent });
 		if (c.expected === undefined) {
 			return { applied: true, correct: false, warnings: result.warnings ?? [] };
 		}
