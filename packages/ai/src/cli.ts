@@ -105,6 +105,7 @@ Providers:
   google-antigravity Antigravity (Gemini 3, Claude, GPT-OSS)
   openai-codex      OpenAI Codex (ChatGPT Plus/Pro)
   kimi-code         Kimi Code
+  firepass          Fire Pass
   kilo              Kilo Gateway
   kagi              Kagi
   tavily            Tavily
