@@ -1117,4 +1117,37 @@ describe("hashline — in-file delta rebase", () => {
 			}),
 		).toThrow(HashlineMismatchError);
 	});
+
+	it("rejects a stale-anchor rebase when the snapshot agrees on content but the anchor hash is mistyped (PR #1214 review fix)", () => {
+		// https://github.com/can1357/oh-my-pi/pull/1214#discussion_r3273422253
+		// Scenario: the model authored an edit against `target` at line 2 but
+		// mistyped its hash. An out-of-band INSERTED line above shifted
+		// `target` to line 3. The snapshot says line 2 was `target`, so
+		// content equality at the rebased line is satisfied — but the
+		// mistyped hash must still prevent the rebase from landing, because
+		// the rebase path bypasses the strict validator and owns hash
+		// verification for any edit it accepts.
+		const file = ["aaa", "INSERTED", "target", "ccc"].join("\n");
+		const badAnchor = mistag(2, "target");
+		const diff = [`= ${sameLineRange(badAnchor)}`, pl("REPLACED")].join("\n");
+
+		// Precondition: at the rebased line (3) the actual text equals what
+		// the snapshot says was at line 2, so a content-only acceptance gate
+		// would silently relocate the edit.
+		expect(file.split("\n")[2]).toBe("target");
+
+		expect(() =>
+			applyHashlineEdits(file, parseHashline(diff), {
+				expectedContent: new Map([[2, "target"]]),
+			}),
+		).toThrow(HashlineMismatchError);
+
+		// Sanity-check: with a correct hash, the same scenario rebases cleanly.
+		const goodAnchor = tag(2, "target");
+		const goodDiff = [`= ${sameLineRange(goodAnchor)}`, pl("REPLACED")].join("\n");
+		const ok = applyHashlineEdits(file, parseHashline(goodDiff), {
+			expectedContent: new Map([[2, "target"]]),
+		});
+		expect(ok.lines).toBe("aaa\nINSERTED\nREPLACED\nccc");
+	});
 });

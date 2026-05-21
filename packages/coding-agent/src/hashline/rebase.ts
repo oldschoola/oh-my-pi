@@ -15,9 +15,14 @@
  * the caller supplies an `expectedContent` map (typically the per-session
  * `FileReadSnapshot` the model last observed) and the candidate target's
  * line text MUST exactly equal what the model expected at the stored
- * line number. Groups whose anchors are entirely outside the snapshot
- * fall through to the original mismatch error rather than risk a
- * hash-collision-driven misplacement.
+ * line number AND the anchor's stored hash MUST agree with that expected
+ * content. Content evidence is additive to hash validation, never a
+ * replacement: a mistyped hash whose snapshot content happens to match
+ * the rebased line is still rejected, because this pass bypasses the
+ * strict validator and owns hash verification for the edits it accepts.
+ * Groups whose anchors are entirely outside the snapshot fall through to
+ * the original mismatch error rather than risk a hash-collision-driven
+ * misplacement.
  *
  * Algorithm:
  *  1. Group edits by source diff line (`HashlineEdit.lineNum`). Every group
@@ -77,7 +82,16 @@ function anchorMatchesAt(
 	const actualText = fileLines[targetLine - 1] ?? "";
 	const expectedText = expectedContent?.get(anchor.line);
 	if (expectedText !== undefined) {
-		return { ok: expectedText === actualText, verified: true };
+		// Content evidence is *additive* to hash validation, never a replacement.
+		// Both checks must pass: (1) the candidate line's text equals what the
+		// model expected at the anchor's original line, and (2) the anchor's
+		// stored hash agrees with that expected content. (2) catches mistyped
+		// hashes that would otherwise relocate edits silently — the rebase
+		// path bypasses the strict validator, so it owns hash verification
+		// for any edit it accepts.
+		if (expectedText !== actualText) return { ok: false, verified: false };
+		if (computeLineHash(anchor.line, expectedText) !== anchor.hash) return { ok: false, verified: false };
+		return { ok: true, verified: true };
 	}
 	return { ok: computeLineHash(targetLine, actualText) === anchor.hash, verified: false };
 }
@@ -140,6 +154,15 @@ function findCandidateDeltas(
 	if (anchors.length === 0) return [];
 	const [seedAnchor, ...rest] = anchors;
 	const seedExpected = expectedContent?.get(seedAnchor.line);
+	// If the seed has snapshot evidence, its stored hash must agree with the
+	// snapshot text at the seed's original line. A disagreement means the
+	// model's anchor is internally inconsistent (mistyped hash), and we
+	// refuse to drive a rebase from it — the rebase pass owns hash validation
+	// for any edit it accepts, so a bad seed must abort the search entirely
+	// rather than seed candidates by content alone.
+	if (seedExpected !== undefined && computeLineHash(seedAnchor.line, seedExpected) !== seedAnchor.hash) {
+		return [];
+	}
 	const candidates: DeltaCandidate[] = [];
 	for (let lineIdx = 0; lineIdx < fileLines.length; lineIdx++) {
 		const targetLine = lineIdx + 1;
