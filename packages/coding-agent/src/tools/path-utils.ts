@@ -174,13 +174,26 @@ export function splitPathAndSel(rawPath: string): { path: string; sel?: string }
  * Falls back to the input unchanged when nothing matches.
  */
 /** Peel a single trailing selector from a URL whose scheme allows colons in
- * the resource (e.g. `mcp://`). Requires an *unambiguous* selector form —
- * bare integers (which look like port numbers) are NEVER peeled to avoid
- * mis-splitting `mcp://server:1234/path`. Accepts: `raw`, `conflicts`,
- * `L\d+...`, `\d+-\d+`, `\d+,\d+...`, `\d+\+\d+`. */
+ * the resource (e.g. `mcp://`). MCP resource URIs are server-defined and may
+ * legitimately end with `:raw`, `:1-50`, etc., so we refuse to peel by default
+ * — the URI stays opaque and is forwarded to the protocol handler verbatim.
+ *
+ * Mirrors the http(s):// convention documented on the `read` tool: add a
+ * trailing slash before the selector to disambiguate. Concretely, peeling only
+ * happens when the colon is immediately preceded by `/`, giving the user an
+ * explicit, escapable signal: `mcp://server/resource/:1-50` peels, while
+ * `mcp://server/resource:1-50` is treated as a literal resource URI.
+ *
+ * Bare integers (which look like ports) are NEVER peeled even with the slash
+ * escape — require an L-prefix, dash, plus, or comma to commit. Accepts:
+ * `raw`, `conflicts`, `L\d+...`, `\d+-\d+`, `\d+,\d+...`, `\d+\+\d+`. */
 function peelStrictTrailingSelector(rawPath: string, schemeEnd: number): { path: string; sel?: string } {
 	const colon = rawPath.lastIndexOf(":");
 	if (colon < schemeEnd) return { path: rawPath };
+	// Require the documented trailing-slash escape — colon must follow `/`.
+	// Without it the URI is opaque and the caller likely means the literal
+	// `:tail` suffix as part of a server-defined resource id.
+	if (rawPath[colon - 1] !== "/") return { path: rawPath };
 	const tail = rawPath.slice(colon + 1);
 	if (!FILE_LINE_RANGE_ONLY_RE.test(tail) && !FILE_RAW_ONLY_RE.test(tail) && !/^conflicts$/i.test(tail)) {
 		return { path: rawPath };

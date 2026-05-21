@@ -175,7 +175,13 @@ export async function applyWorkspaceEdit(edit: WorkspaceEdit, cwd: string): Prom
 					applied.push(`Created ${formatPathRelativeToCwd(filePath, cwd)}`);
 				} else if (change.kind === "rename") {
 					const renameOp = change as RenameFile;
+					// Per LSP §3.16.2 documentChanges are applied in declared order.
+					// Flush both the source subtree (so prior edits land before the move)
+					// AND the destination subtree (so prior edits land on whatever exists
+					// at newUri before the rename overwrites/replaces it — relevant under
+					// `options.overwrite` and `options.ignoreIfExists`).
 					await flushSubtree(renameOp.oldUri);
+					await flushSubtree(renameOp.newUri);
 					const oldPath = uriToFile(renameOp.oldUri);
 					const newPath = uriToFile(renameOp.newUri);
 					await fs.mkdir(path.dirname(newPath), { recursive: true });

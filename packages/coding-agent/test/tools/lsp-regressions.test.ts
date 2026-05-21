@@ -987,4 +987,61 @@ describe("lsp regressions", () => {
 			tempDir.removeSync();
 		}
 	});
+
+	it("flushes pending edits queued against a rename target before performing the rename", async () => {
+		// LSP §3.16.2: documentChanges run in declared order. When a TextDocumentEdit
+		// targets `renameOp.newUri` *before* the rename, those edits must land on the
+		// existing file at that location BEFORE the rename overwrites/replaces it.
+		// Otherwise the rename clobbers the post-edit content (or worse, the edits
+		// land on the moved-in file with stale offsets).
+		const tempDir = TempDir.createSync("@omp-lsp-rename-target-prefill-");
+		try {
+			const oldPath = path.join(tempDir.path(), "old.ts");
+			const newPath = path.join(tempDir.path(), "new.ts");
+			await Bun.write(oldPath, "export const moved = 1;\n");
+			// A pre-existing target file the rename is about to clobber.
+			await Bun.write(newPath, "export const target = 2;\n");
+
+			const oldUri = fileToUri(oldPath);
+			const newUri = fileToUri(newPath);
+
+			// Edit the target file first, then rename onto it. Pre-edit content
+			// MUST be observable somewhere in the applied log — proving the flush
+			// ran before the rename clobbered the file.
+			const targetEdit: TextDocumentEdit = {
+				textDocument: { uri: newUri, version: null },
+				edits: [
+					{
+						range: {
+							start: { line: 0, character: 13 },
+							end: { line: 0, character: 19 },
+						},
+						newText: "before",
+					},
+				],
+			};
+			const renameOp: RenameFile = {
+				kind: "rename",
+				oldUri,
+				newUri,
+			};
+			const workspaceEdit: WorkspaceEdit = {
+				documentChanges: [targetEdit, renameOp],
+			};
+
+			const applied = await applyWorkspaceEdit(workspaceEdit, tempDir.path());
+
+			// Three steps observable in order: edit on newUri, then rename clobbers it.
+			expect(applied).toHaveLength(2);
+			expect(applied[0]).toContain("Applied 1 edit(s)");
+			expect(applied[0]).toContain("new.ts");
+			expect(applied[1]).toContain("Renamed");
+
+			// Final state: new.ts holds the moved-in content (rename ran last and won).
+			expect(fs.existsSync(oldPath)).toBe(false);
+			expect(fs.readFileSync(newPath, "utf8")).toBe("export const moved = 1;\n");
+		} finally {
+			tempDir.removeSync();
+		}
+	});
 });

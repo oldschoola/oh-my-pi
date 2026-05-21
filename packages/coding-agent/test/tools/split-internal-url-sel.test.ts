@@ -59,18 +59,46 @@ describe("splitInternalUrlSel", () => {
 		});
 	});
 
-	it("peels unambiguous line-range selectors from mcp:// URLs", () => {
+	it("treats mcp:// URIs as opaque by default — selector-shaped suffixes are NOT peeled", () => {
+		// MCP resource URIs are server-defined and may legitimately end with `:raw`,
+		// `:1-50`, etc. Without an explicit escape the URI must be forwarded verbatim
+		// to the protocol handler so server-defined resources remain reachable.
 		expect(splitInternalUrlSel("mcp://server/resource:1-50")).toEqual({
-			path: "mcp://server/resource",
-			sel: "1-50",
+			path: "mcp://server/resource:1-50",
 		});
 		expect(splitInternalUrlSel("mcp://server/resource:raw")).toEqual({
-			path: "mcp://server/resource",
-			sel: "raw",
+			path: "mcp://server/resource:raw",
 		});
 		expect(splitInternalUrlSel("mcp://server/resource:L10")).toEqual({
-			path: "mcp://server/resource",
+			path: "mcp://server/resource:L10",
+		});
+		expect(splitInternalUrlSel("mcp://server/resource:conflicts")).toEqual({
+			path: "mcp://server/resource:conflicts",
+		});
+	});
+
+	it("peels unambiguous selectors from mcp:// URLs via the trailing-slash escape", () => {
+		// Mirrors the documented http(s):// convention: add `/` before the selector
+		// to disambiguate. The path retains the trailing slash so the handler still
+		// sees the original resource form.
+		expect(splitInternalUrlSel("mcp://server/resource/:1-50")).toEqual({
+			path: "mcp://server/resource/",
+			sel: "1-50",
+		});
+		expect(splitInternalUrlSel("mcp://server/resource/:raw")).toEqual({
+			path: "mcp://server/resource/",
+			sel: "raw",
+		});
+		expect(splitInternalUrlSel("mcp://server/resource/:L10")).toEqual({
+			path: "mcp://server/resource/",
 			sel: "L10",
+		});
+	});
+
+	it("rejects bare-integer suffixes even with the trailing-slash escape", () => {
+		// Could still be a port number after a path; require a richer selector form.
+		expect(splitInternalUrlSel("mcp://server/resource/:1234")).toEqual({
+			path: "mcp://server/resource/:1234",
 		});
 	});
 
