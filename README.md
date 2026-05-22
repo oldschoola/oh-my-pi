@@ -419,26 +419,6 @@ The [Agent Client Protocol](https://github.com/zed-industries/agent-client-proto
 
 Full reference: [omp.sh/docs/sdk](https://omp.sh/docs/sdk).
 
-### Utility subcommands — _not just the TUI_
-
-Everything below shares the same engine; pick the one that matches what you actually want to do.
-
-| Command            | What it does                                                                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------- |
-| `omp commit`       | Read the working tree, split into atomic commits, validate the messages, update changelogs.           |
-| `omp config`       | Inspect and mutate the settings tree (`~/.omp` + `.omp/`) from the shell.                             |
-| `omp setup`        | Install optional dependencies for features that need them — currently `python` and `stt`.             |
-| `omp plugin`       | Install, uninstall, enable, configure, and doctor plugins from npm or local paths.                    |
-| `omp agents`       | Export the bundled task agents (`explore`, `plan`, `reviewer`, …) onto disk so you can edit them.     |
-| `omp ssh`          | Manage SSH host configs the `ssh` tool will reach for.                                                |
-| `omp stats`        | Token, request, and cost usage rolled up across every session.                                        |
-| `omp update`       | Check for and install a new release.                                                                  |
-| `omp shell`        | Drop into the same persistent bash session the `bash` tool uses — handy for poking at it directly.    |
-| `omp search` (`q`) | Run `web_search` from the shell without spinning up the TUI; walks the configured provider chain and returns the first one that responds.                |
-| `omp read PATH`    | Run `read` from the shell against any path, internal scheme, or URL and print exactly what the model would see. |
-| `omp auth-broker`  | Start the credential-vault server that other omp processes (slot containers, swarm extensions) talk to. |
-| `omp auth-gateway` | Forward-proxy provider traffic through the broker so the agent never touches the real keys.           |
-
 ## A harness worth keeping is one you _don't_ outgrow.
 
 Pick it up at **[omp.sh](https://omp.sh)**.
