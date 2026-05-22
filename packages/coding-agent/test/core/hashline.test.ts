@@ -921,7 +921,7 @@ describe("hashline — in-file delta rebase", () => {
 		// `bbb` was at line 4 in the model's read; an out-of-band delete above
 		// pulled it to line 2. With snapshot evidence the rebase is safe.
 		const stale = tag(4, "bbb");
-		const diff = [`- ${sameLineRange(stale)}`].join("\n");
+		const diff = [`≔${sameLineRange(stale)}`].join("\n");
 		const result = applyDiffWithSnapshot("aaa\nbbb\nccc\nddd", diff, [[4, "bbb"]]);
 		expect(result.lines).toBe("aaa\nccc\nddd");
 		expect(result.warnings ?? []).toEqual(
@@ -936,7 +936,7 @@ describe("hashline — in-file delta rebase", () => {
 		// content-verified.
 		const startAnchor = tag(2, "bbb");
 		const endAnchor = tag(4, "ddd");
-		const diff = [`= ${startAnchor}..${endAnchor}`, pl("REPLACED")].join("\n");
+		const diff = [`≔${startAnchor}..${endAnchor}`, pl("REPLACED")].join("\n");
 		const result = applyDiffWithSnapshot("aaa\nINSERTED\nbbb\nccc\nddd\neee", diff, [
 			[2, "bbb"],
 			[4, "ddd"],
@@ -953,7 +953,7 @@ describe("hashline — in-file delta rebase", () => {
 		const file = ["aaa", "INSERTED", "bbb", "xxx", "yyy", "ddd", "eee"].join("\n");
 		const startAnchor = tag(2, "bbb");
 		const endAnchor = tag(4, "ddd");
-		const diff = [`= ${startAnchor}..${endAnchor}`, pl("REPLACED")].join("\n");
+		const diff = [`≔${startAnchor}..${endAnchor}`, pl("REPLACED")].join("\n");
 		const expectedContent = new Map([
 			[2, "bbb"],
 			[4, "ddd"],
@@ -963,7 +963,7 @@ describe("hashline — in-file delta rebase", () => {
 
 	it("rebases an insert-after when the anchor line drifted", () => {
 		const stale = tag(2, "bbb");
-		const diff = [`+ ${stale}`, pl("NEW")].join("\n");
+		const diff = [`»${stale}`, pl("NEW")].join("\n");
 		// `bbb` is at line 3 in the current file, not 2.
 		const result = applyDiffWithSnapshot("aaa\nINSERTED\nbbb\nccc", diff, [[2, "bbb"]]);
 		expect(result.lines).toBe("aaa\nINSERTED\nbbb\nNEW\nccc");
@@ -971,13 +971,13 @@ describe("hashline — in-file delta rebase", () => {
 
 	it("rebases an insert-before when the anchor line drifted", () => {
 		const stale = tag(2, "bbb");
-		const diff = [`< ${stale}`, pl("NEW")].join("\n");
+		const diff = [`«${stale}`, pl("NEW")].join("\n");
 		const result = applyDiffWithSnapshot("aaa\nINSERTED\nbbb\nccc", diff, [[2, "bbb"]]);
 		expect(result.lines).toBe("aaa\nINSERTED\nNEW\nbbb\nccc");
 	});
 
 	it("does not touch BOF/EOF inserts that have no anchor to rebase", () => {
-		const diff = [`+ BOF`, pl("TOP"), `+ EOF`, pl("BOTTOM")].join("\n");
+		const diff = [`»BOF`, pl("TOP"), `»EOF`, pl("BOTTOM")].join("\n");
 		const result = applyHashlineEdits("aaa\nbbb", parseHashline(diff));
 		expect(result.lines).toBe("TOP\naaa\nbbb\nBOTTOM");
 		// No rebase happened, so no rebase warning.
@@ -989,7 +989,7 @@ describe("hashline — in-file delta rebase", () => {
 		// +1, group `eee` shifted by +2. Snapshot supplies both expected lines.
 		const a = tag(2, "bbb");
 		const b = tag(4, "eee");
-		const diff = [`= ${sameLineRange(a)}`, pl("BBB"), `= ${sameLineRange(b)}`, pl("EEE")].join("\n");
+		const diff = [`≔${sameLineRange(a)}`, pl("BBB"), `≔${sameLineRange(b)}`, pl("EEE")].join("\n");
 		const file = ["aaa", "INSERT-1", "bbb", "ccc", "INSERT-2", "ddd", "eee", "fff"].join("\n");
 		const result = applyDiffWithSnapshot(file, diff, [
 			[2, "bbb"],
@@ -1002,7 +1002,7 @@ describe("hashline — in-file delta rebase", () => {
 		// Fabricated hash that no current line can produce. Even with a
 		// snapshot, the rebase search finds zero candidates.
 		const stale = mistag(2, "bbb");
-		const diff = [`= ${sameLineRange(stale)}`, pl("BBB")].join("\n");
+		const diff = [`≔${sameLineRange(stale)}`, pl("BBB")].join("\n");
 		expect(() => applyDiffWithSnapshot("aaa\nbbb\nccc", diff, [[2, "bbb"]])).toThrow(HashlineMismatchError);
 	});
 
@@ -1012,7 +1012,7 @@ describe("hashline — in-file delta rebase", () => {
 		// is now out of range. Snapshot supplies the expected content for the
 		// rebase to verify against.
 		const stale = tag(4, "target");
-		const diff = [`= ${sameLineRange(stale)}`, pl("REPLACED")].join("\n");
+		const diff = [`≔${sameLineRange(stale)}`, pl("REPLACED")].join("\n");
 		const result = applyDiffWithSnapshot("target\ntail", diff, [[4, "target"]]);
 		expect(result.lines).toBe("REPLACED\ntail");
 	});
@@ -1022,7 +1022,7 @@ describe("hashline — in-file delta rebase", () => {
 		// can produce. Should reject as a clean `HashlineMismatchError`,
 		// NOT as a hard exception.
 		const fakeHash = mistag(2, "ghost").slice(String(2).length);
-		const diff = [`= ${sameLineRange(`10${fakeHash}`)}`, pl("BB")].join("\n");
+		const diff = [`≔${sameLineRange(`10${fakeHash}`)}`, pl("BB")].join("\n");
 		expect(() => applyDiff("A\nB\nC", diff)).toThrow(HashlineMismatchError);
 	});
 
@@ -1032,7 +1032,7 @@ describe("hashline — in-file delta rebase", () => {
 		// collision rate) we cannot prove it is the line the model meant.
 		// Must reject rather than silently relocate.
 		const stale = tag(2, "bbb");
-		const diff = [`= ${sameLineRange(stale)}`, pl("BBB")].join("\n");
+		const diff = [`≔${sameLineRange(stale)}`, pl("BBB")].join("\n");
 		expect(() => applyDiff("aaa\nINSERTED\nbbb\nccc", diff)).toThrow(HashlineMismatchError);
 	});
 
@@ -1045,7 +1045,7 @@ describe("hashline — in-file delta rebase", () => {
 		const file = ["// header", ...original, "tail"].join("\n");
 		const start = tag(1, original[0]);
 		const end = tag(3, original[2]);
-		const rangeDiff = [`= ${start}..${end}`, pl("REPLACED")].join("\n");
+		const rangeDiff = [`≔${start}..${end}`, pl("REPLACED")].join("\n");
 		expect(() => applyDiff(file, rangeDiff)).toThrow(HashlineMismatchError);
 		// With even partial snapshot evidence (one boundary verified), the
 		// rebase lands.
@@ -1067,7 +1067,7 @@ describe("hashline — in-file delta rebase", () => {
 		expect(computeLineHash(1, "lineB962")).toBe(colliding);
 
 		const staleAnchor = `2${colliding}`;
-		const diff = [`= ${sameLineRange(staleAnchor)}`, pl("REPLACED")].join("\n");
+		const diff = [`≔${sameLineRange(staleAnchor)}`, pl("REPLACED")].join("\n");
 
 		// No snapshot → no content evidence → reject.
 		expect(() => applyDiff(file, diff)).toThrow(HashlineMismatchError);
@@ -1097,9 +1097,9 @@ describe("hashline — in-file delta rebase", () => {
 		const goodAnchor = tag(1, "alpha source");
 		const badAnchor = mistag(3, "gamma source");
 		const diff = [
-			`= ${sameLineRange(goodAnchor)}`,
+			`≔${sameLineRange(goodAnchor)}`,
 			pl("alpha replaced"),
-			`= ${sameLineRange(badAnchor)}`,
+			`≔${sameLineRange(badAnchor)}`,
 			pl("gamma replaced"),
 		].join("\n");
 
@@ -1129,7 +1129,7 @@ describe("hashline — in-file delta rebase", () => {
 		// verification for any edit it accepts.
 		const file = ["aaa", "INSERTED", "target", "ccc"].join("\n");
 		const badAnchor = mistag(2, "target");
-		const diff = [`= ${sameLineRange(badAnchor)}`, pl("REPLACED")].join("\n");
+		const diff = [`≔${sameLineRange(badAnchor)}`, pl("REPLACED")].join("\n");
 
 		// Precondition: at the rebased line (3) the actual text equals what
 		// the snapshot says was at line 2, so a content-only acceptance gate
@@ -1144,7 +1144,7 @@ describe("hashline — in-file delta rebase", () => {
 
 		// Sanity-check: with a correct hash, the same scenario rebases cleanly.
 		const goodAnchor = tag(2, "target");
-		const goodDiff = [`= ${sameLineRange(goodAnchor)}`, pl("REPLACED")].join("\n");
+		const goodDiff = [`≔${sameLineRange(goodAnchor)}`, pl("REPLACED")].join("\n");
 		const ok = applyHashlineEdits(file, parseHashline(goodDiff), {
 			expectedContent: new Map([[2, "target"]]),
 		});
