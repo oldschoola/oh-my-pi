@@ -79,20 +79,31 @@ describe("splitInternalUrlSel", () => {
 
 	it("peels unambiguous selectors from mcp:// URLs via the trailing-slash escape", () => {
 		// Mirrors the documented http(s):// convention: add `/` before the selector
-		// to disambiguate. The path retains the trailing slash so the handler still
-		// sees the original resource form.
+		// to disambiguate. The disambiguation slash is consumed along with the
+		// selector so the returned path matches the registered MCP resource URI
+		// (McpProtocolHandler resolves via verbatim `r.uri === uri` match — leaving
+		// a stray `/` would make `mcp://server/resource/:1-50` miss the resource
+		// registered at `mcp://server/resource`).
 		expect(splitInternalUrlSel("mcp://server/resource/:1-50")).toEqual({
-			path: "mcp://server/resource/",
+			path: "mcp://server/resource",
 			sel: "1-50",
 		});
 		expect(splitInternalUrlSel("mcp://server/resource/:raw")).toEqual({
-			path: "mcp://server/resource/",
+			path: "mcp://server/resource",
 			sel: "raw",
 		});
 		expect(splitInternalUrlSel("mcp://server/resource/:L10")).toEqual({
-			path: "mcp://server/resource/",
+			path: "mcp://server/resource",
 			sel: "L10",
 		});
+	});
+
+	it("does not peel when the only slash before the colon is part of the `://` separator", () => {
+		// Guards against degenerate inputs like `mcp://:1-50` — stripping the
+		// scheme's own slash would emit `mcp:/` as the path. The peeler refuses
+		// when the resulting path no longer carries a scheme separator.
+		expect(splitInternalUrlSel("mcp://:1-50")).toEqual({ path: "mcp://:1-50" });
+		expect(splitInternalUrlSel("mcp://:raw")).toEqual({ path: "mcp://:raw" });
 	});
 
 	it("rejects bare-integer suffixes even with the trailing-slash escape", () => {

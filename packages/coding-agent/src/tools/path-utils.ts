@@ -184,6 +184,12 @@ export function splitPathAndSel(rawPath: string): { path: string; sel?: string }
  * explicit, escapable signal: `mcp://server/resource/:1-50` peels, while
  * `mcp://server/resource:1-50` is treated as a literal resource URI.
  *
+ * The disambiguation slash is consumed along with the colon — `McpProtocolHandler`
+ * resolves resources by verbatim URI match (`r.uri === uri`), so leaving the
+ * trailing `/` on the returned path would make `mcp://server/resource/:1-50`
+ * resolve as `mcp://server/resource/` and miss the registered resource at
+ * `mcp://server/resource`.
+ *
  * Bare integers (which look like ports) are NEVER peeled even with the slash
  * escape — require an L-prefix, dash, plus, or comma to commit. Accepts:
  * `raw`, `conflicts`, `L\d+...`, `\d+-\d+`, `\d+,\d+...`, `\d+\+\d+`. */
@@ -201,7 +207,12 @@ function peelStrictTrailingSelector(rawPath: string, schemeEnd: number): { path:
 	// Reject bare integer — indistinguishable from a port. Require an L-prefix,
 	// dash, plus, or comma to commit to peeling.
 	if (/^\d+$/.test(tail)) return { path: rawPath };
-	return { path: rawPath.slice(0, colon), sel: tail };
+	// Strip the escape slash along with the selector. Guard against degenerate
+	// inputs like `mcp://:1-50` (where the only slash is part of `://`) by
+	// confirming the peeled path still carries a scheme separator.
+	const peeled = rawPath.slice(0, colon - 1);
+	if (!peeled.includes("://")) return { path: rawPath };
+	return { path: peeled, sel: tail };
 }
 
 export function splitInternalUrlSel(rawPath: string): { path: string; sel?: string } {
