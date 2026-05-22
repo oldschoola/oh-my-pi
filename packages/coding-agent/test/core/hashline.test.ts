@@ -1036,21 +1036,75 @@ describe("hashline — in-file delta rebase", () => {
 		expect(() => applyDiff("aaa\nINSERTED\nbbb\nccc", diff)).toThrow(HashlineMismatchError);
 	});
 
-	it("refuses to rebase a range even when both boundaries hash-match, if the snapshot is unavailable", () => {
+	it("refuses to rebase a range when the snapshot does not cover every boundary anchor", () => {
 		// Range edit `1..3` with both boundary anchors hash-matching at delta
-		// +1 in the current file. Without an `expectedContent` map for at
-		// least one boundary, the rebase has only 2-char hash evidence per
-		// anchor — too weak to be safe.
+		// +1 in the current file. Hash equality alone is not sufficient evidence
+		// to relocate a multi-anchor edit — a 2-char (647-bucket) hash space
+		// makes cross-line collisions common, so every boundary must be
+		// content-verified against the caller's snapshot before the rebase lands.
+		// Otherwise a verified start anchor and a collision-matched end anchor
+		// can yield a unique-but-wrong delta and silently relocate the edit.
+		// See https://github.com/can1357/oh-my-pi/pull/1214#discussion_r3291582800.
 		const original = ["alpha", "beta", "gamma"];
 		const file = ["// header", ...original, "tail"].join("\n");
 		const start = tag(1, original[0]);
 		const end = tag(3, original[2]);
 		const rangeDiff = [`≔${start}..${end}`, pl("REPLACED")].join("\n");
 		expect(() => applyDiff(file, rangeDiff)).toThrow(HashlineMismatchError);
-		// With even partial snapshot evidence (one boundary verified), the
-		// rebase lands.
-		const verified = applyDiffWithSnapshot(file, rangeDiff, [[1, original[0]]]);
+		// Partial snapshot (only the start boundary verified) is still rejected
+		// — the end boundary rests on hash-only evidence and could collide.
+		expect(() => applyDiffWithSnapshot(file, rangeDiff, [[1, original[0]]])).toThrow(HashlineMismatchError);
+		// Full snapshot (every boundary verified) lands cleanly.
+		const verified = applyDiffWithSnapshot(file, rangeDiff, [
+			[1, original[0]],
+			[3, original[2]],
+		]);
 		expect(verified.lines).toBe("// header\nREPLACED\ntail");
+	});
+
+	it("refuses to rebase a range when a partial snapshot lets a collision drive the second boundary (PR #1214 review fix)", () => {
+		// https://github.com/can1357/oh-my-pi/pull/1214#discussion_r3291582800
+		// Sparse `expectedContent` (verified start anchor + unverified end anchor)
+		// would previously satisfy the `verifiedAnchorCount > 0` gate, even when
+		// the unverified end boundary was satisfied by a real 2-char hash
+		// collision rather than the model's intended target. That yielded a
+		// unique-but-wrong delta and relocated the range onto unrelated lines.
+		// `lineA0` and `lineB962` are the same empirically-confirmed collision
+		// pair used by the earlier 1214 regression — both hash to `wm`.
+		const colliding = computeLineHash(1, "lineA0");
+		expect(computeLineHash(1, "lineB962")).toBe(colliding);
+
+		// Current file: model's intended target (`lineA0` at line 3) has been
+		// rewritten away, but a colliding line (`lineB962`) sits at line 4.
+		// Naïve hash equality at delta=+1 makes (line 2, "alpha") + (line 4,
+		// "lineB962") look like a valid landing for a `1..3` range — even
+		// though the model's true `lineA0` no longer exists.
+		const file = ["// header", "alpha", "FILLER", "lineB962", "tail"].join("\n");
+		const startAnchor = tag(1, "alpha");
+		const endAnchor = `3${colliding}`; // mock model authored anchor for `lineA0` at line 3.
+		const diff = [`≔${startAnchor}..${endAnchor}`, pl("REPLACED")].join("\n");
+
+		// Sparse snapshot: only the start anchor is content-verified. The end
+		// boundary has no snapshot entry, so the rebase falls back to hash
+		// equality there — and the collision matches. The full-coverage
+		// requirement must reject rather than silently corrupt the file.
+		expect(() =>
+			applyHashlineEdits(file, parseHashline(diff), {
+				expectedContent: new Map([[1, "alpha"]]),
+			}),
+		).toThrow(HashlineMismatchError);
+
+		// Full coverage with the *actual* expected content (lineA0 at line 3)
+		// still rejects — the candidate target line carries `lineB962`, not
+		// `lineA0`, so content verification fails and the rebase aborts.
+		expect(() =>
+			applyHashlineEdits(file, parseHashline(diff), {
+				expectedContent: new Map([
+					[1, "alpha"],
+					[3, "lineA0"],
+				]),
+			}),
+		).toThrow(HashlineMismatchError);
 	});
 
 	it("refuses to silently rebase across a real 2-char hash collision (PR #1214 review fix)", () => {

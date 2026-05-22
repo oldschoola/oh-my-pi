@@ -11,18 +11,19 @@
  * across unrelated lines are common. Hash equality alone is NOT sufficient
  * evidence to relocate an edit — a colliding line elsewhere in the file
  * would silently corrupt unrelated code. The rebase therefore requires
- * each rebased group to carry at least one **content-verified** anchor:
- * the caller supplies an `expectedContent` map (typically the per-session
- * `FileReadSnapshot` the model last observed) and the candidate target's
+ * **every** boundary anchor in a group to be content-verified against
+ * caller-supplied evidence: the `expectedContent` map (typically the
+ * per-session `FileReadSnapshot` the model last observed) must carry an
+ * entry for each boundary anchor's stored line, the candidate target's
  * line text MUST exactly equal what the model expected at the stored
- * line number AND the anchor's stored hash MUST agree with that expected
+ * line number, AND the anchor's stored hash MUST agree with that expected
  * content. Content evidence is additive to hash validation, never a
  * replacement: a mistyped hash whose snapshot content happens to match
  * the rebased line is still rejected, because this pass bypasses the
  * strict validator and owns hash verification for the edits it accepts.
- * Groups whose anchors are entirely outside the snapshot fall through to
- * the original mismatch error rather than risk a hash-collision-driven
- * misplacement.
+ * Groups with any boundary outside the snapshot fall through to the
+ * original mismatch error rather than risk a hash-collision-driven
+ * misplacement on the unverified anchor.
  *
  * Algorithm:
  *  1. Group edits by source diff line (`HashlineEdit.lineNum`). Every group
@@ -31,11 +32,11 @@
  *     MUST shift by the same delta or the range corrupts.
  *  2. For each group with at least one mismatched boundary anchor, find a
  *     single uniform delta `D` such that every boundary anchor in the group
- *     matches (by content if known, else by hash) when shifted by `D`. At
- *     least one anchor in the group must be content-verified at that delta.
+ *     matches when shifted by `D`, AND every boundary in the group is
+ *     content-verified at that delta.
  *  3. Accept only when exactly one such `D` exists. Multiple candidates,
- *     no candidates, or candidates with zero verified anchors all fall
- *     through to the original mismatch error.
+ *     no candidates, or candidates with any unverified boundary anchor
+ *     all fall through to the original mismatch error.
  */
 
 import { RANGE_INTERIOR_HASH } from "./constants";
@@ -238,10 +239,13 @@ export function tryRebaseHashlineEdits(
 		const candidate = candidates[0];
 		if (candidate.delta === 0) return null;
 
-		// Safety gate: require at least one content-verified anchor in the
-		// group. Pure hash matches are too weak (2-char hash, 647 buckets)
-		// to relocate an edit safely on their own — see file header.
-		if (candidate.verifiedAnchorCount === 0) return null;
+		// Safety gate: every boundary anchor in the group must be content-verified
+		// against the caller-supplied snapshot. With a sparse snapshot, a single
+		// verified anchor is not enough — a sibling boundary satisfied via a 2-char
+		// (647-bucket) hash collision can yield a unique-but-wrong delta and silently
+		// relocate the edit. Require full coverage so range-boundary edits cannot
+		// straddle a verified line and a collision-matched line.
+		if (candidate.verifiedAnchorCount < group.boundaryAnchors.length) return null;
 
 		deltaByGroup.set(group.sourceLineNum, candidate.delta);
 		totalShifted++;
