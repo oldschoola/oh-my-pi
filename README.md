@@ -434,7 +434,7 @@ Everything below shares the same engine; pick the one that matches what you actu
 | `omp stats`        | Token, request, and cost usage rolled up across every session.                                        |
 | `omp update`       | Check for and install a new release.                                                                  |
 | `omp shell`        | Drop into the same persistent bash session the `bash` tool uses — handy for poking at it directly.    |
-| `omp search` (`q`) | Run `web_search` from the shell without spinning up the TUI; rank-merges every configured provider.   |
+| `omp search` (`q`) | Run `web_search` from the shell without spinning up the TUI; walks the configured provider chain and returns the first one that responds.                |
 | `omp read PATH`    | Run `read` from the shell against any path, internal scheme, or URL and print exactly what the model would see. |
 | `omp auth-broker`  | Start the credential-vault server that other omp processes (slot containers, swarm extensions) talk to. |
 | `omp auth-gateway` | Forward-proxy provider traffic through the broker so the agent never touches the real keys.           |
