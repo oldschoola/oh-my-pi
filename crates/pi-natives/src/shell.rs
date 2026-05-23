@@ -290,10 +290,11 @@ fn bridge_chunks(
 	(Some(tx), Some(handle))
 }
 
-/// One Windows-style path the bash fixup pre-pass rewrote to use forward
-/// slashes so the POSIX shell (`brush`) doesn't eat the backslashes as
-/// quoting escapes. Reported alongside [`BashFixupResult`] so the bash tool
-/// can surface a one-shot notice teaching the agent to emit forward slashes.
+/// One Windows-style path the bash fixup pre-pass re-slashed.
+///
+/// The POSIX shell (`brush`) would otherwise eat each `\` as a quoting
+/// escape. Reported alongside [`BashFixupResult`] so the bash tool can
+/// surface a one-shot notice teaching the agent to emit forward slashes.
 #[napi(object)]
 pub struct RewrittenPath {
 	/// Path token exactly as the agent emitted it (e.g. `C:\tmp\foo`).
