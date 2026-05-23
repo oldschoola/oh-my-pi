@@ -14,7 +14,10 @@ use pi_shell::{
 	ShellExecuteOptions as CoreShellExecuteOptions, ShellOptions as CoreShellOptions,
 	ShellRunOptions as CoreShellRunOptions, ShellRunResult as CoreShellRunResult,
 	execute_shell as core_execute_shell,
-	fixup::{BashFixupResult as CoreBashFixupResult, apply_bash_fixups as core_apply_bash_fixups},
+	fixup::{
+		BashFixupResult as CoreBashFixupResult, RewrittenPath as CoreRewrittenPath,
+		apply_bash_fixups as core_apply_bash_fixups,
+	},
 	minimizer,
 };
 
@@ -287,19 +290,44 @@ fn bridge_chunks(
 	(Some(tx), Some(handle))
 }
 
+/// One Windows-style path the bash fixup pre-pass rewrote to use forward
+/// slashes so the POSIX shell (`brush`) doesn't eat the backslashes as
+/// quoting escapes. Reported alongside [`BashFixupResult`] so the bash tool
+/// can surface a one-shot notice teaching the agent to emit forward slashes.
+#[napi(object)]
+pub struct RewrittenPath {
+	/// Path token exactly as the agent emitted it (e.g. `C:\tmp\foo`).
+	pub from: String,
+	/// Same token with `\` flipped to `/` (e.g. `C:/tmp/foo`).
+	pub to:   String,
+}
+
+impl From<CoreRewrittenPath> for RewrittenPath {
+	fn from(value: CoreRewrittenPath) -> Self {
+		Self { from: value.from, to: value.to }
+	}
+}
+
 /// Result of [`apply_bash_fixups`]: a possibly-rewritten command plus the
-/// substrings that were removed (in source order).
+/// substrings that were removed and any Windows paths that were re-slashed
+/// (both in source order).
 #[napi(object)]
 pub struct BashFixupResult {
 	/// Possibly-rewritten command. Equal to the input when no fixup fired.
-	pub command:  String,
+	pub command:   String,
 	/// Substrings removed, in source order — suitable for a user-facing notice.
-	pub stripped: Vec<String>,
+	pub stripped:  Vec<String>,
+	/// Windows paths re-slashed, in source order.
+	pub rewritten: Vec<RewrittenPath>,
 }
 
 impl From<CoreBashFixupResult> for BashFixupResult {
 	fn from(value: CoreBashFixupResult) -> Self {
-		Self { command: value.command, stripped: value.stripped }
+		Self {
+			command:   value.command,
+			stripped:  value.stripped,
+			rewritten: value.rewritten.into_iter().map(Into::into).collect(),
+		}
 	}
 }
 

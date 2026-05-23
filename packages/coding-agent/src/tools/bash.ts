@@ -24,7 +24,7 @@ import { CachedOutputBlock } from "../tui/output-block";
 import { getSixelLineMask } from "../utils/sixel";
 import type { ToolSession } from ".";
 import { truncateForPrompt } from "./approval";
-import { applyBashFixups } from "./bash-command-fixup";
+import { applyBashFixups, formatBashFixupNotice, type RewrittenPath } from "./bash-command-fixup";
 import { type BashInteractiveResult, runInteractiveBashPty } from "./bash-interactive";
 import { checkBashInterception } from "./bash-interceptor";
 import { canUseInteractiveBashPty } from "./bash-pty-selection";
@@ -330,6 +330,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 	readonly #asyncEnabled: boolean;
 	readonly #autoBackgroundEnabled: boolean;
 	readonly #autoBackgroundThresholdMs: number;
+	#bashFixupNoticeEmitted = false;
 
 	constructor(private readonly session: ToolSession) {
 		this.#asyncEnabled = this.session.settings.get("async.enabled");
@@ -590,10 +591,14 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		// Apply conservative bash fixups (strip trailing `| head|tail` and redundant
 		// `2>&1`). The helper is single-line only and refuses anything that could
 		// change semantics.
+		let bashFixups: string[] = [];
+		let bashRewrittenPaths: RewrittenPath[] = [];
 		if (this.session.settings.get("bash.stripTrailingHeadTail")) {
 			const fixup = applyBashFixups(command);
-			if (fixup.stripped.length > 0) {
+			if (fixup.stripped.length > 0 || fixup.rewritten.length > 0) {
 				command = fixup.command;
+				bashFixups = fixup.stripped;
+				bashRewrittenPaths = fixup.rewritten;
 			}
 		}
 
@@ -675,6 +680,13 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		const pendingNotices: string[] = [];
 		const timeoutClampNotice = formatTimeoutClampNotice(requestedTimeoutSec, timeoutSec);
 		if (timeoutClampNotice) pendingNotices.push(timeoutClampNotice);
+		const bashFixupNotice = this.#bashFixupNoticeEmitted
+			? undefined
+			: formatBashFixupNotice(bashFixups, bashRewrittenPaths);
+		if (bashFixupNotice) {
+			pendingNotices.push(bashFixupNotice);
+			this.#bashFixupNoticeEmitted = true;
+		}
 
 		if (asyncRequested) {
 			if (!AsyncJobManager.instance()) {

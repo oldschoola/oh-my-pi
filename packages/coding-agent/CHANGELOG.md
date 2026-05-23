@@ -245,6 +245,7 @@
 
 - Fixed parsing of inline `|TEXT` payloads containing whitespace on `»` and `«` inserts, which previously failed with unrecognized-op errors
 - Fixed anchored insert handling so an inline `|TEXT` body matching the anchor line is treated as anchor decoration and no longer inserted as a duplicate
+- Fixed bash commands containing unquoted Windows drive paths (`dir C:\tmp\foo`) being mangled to `C:tmpfoo` by brush's POSIX backslash-escape handling on Windows; the pre-execution fixup now rewrites `[A-Za-z]:\…` tokens to forward slashes and emits a one-shot notice teaching the agent to use `/`
 
 ## [15.3.0] - 2026-05-25
 

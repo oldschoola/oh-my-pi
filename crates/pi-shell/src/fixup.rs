@@ -32,9 +32,23 @@ use regex::Regex;
 #[derive(Debug, Clone, Default)]
 pub struct BashFixupResult {
 	/// Possibly-rewritten command. Equal to the input when no fixup fired.
-	pub command:  String,
+	pub command:   String,
 	/// Substrings removed, in source order. Suitable for a user-facing notice.
-	pub stripped: Vec<String>,
+	pub stripped:  Vec<String>,
+	/// Windows drive-letter paths that were rewritten to forward slashes, in
+	/// source order. Each entry is `(original, rewritten)`. Empty when no
+	/// path rewrite fired.
+	pub rewritten: Vec<RewrittenPath>,
+}
+
+/// One Windows path the pre-pass converted from backslashes to forward
+/// slashes so the POSIX shell doesn't treat each `\` as a quoting escape.
+#[derive(Debug, Clone)]
+pub struct RewrittenPath {
+	/// Path token as the agent wrote it (e.g. `C:\tmp\foo`).
+	pub from: String,
+	/// Same token with `\` flipped to `/` (e.g. `C:/tmp/foo`).
+	pub to:   String,
 }
 
 /// Apply the bash fixups to `cmd`. See module docs for full rules.
@@ -43,15 +57,24 @@ pub fn apply_bash_fixups(cmd: &str) -> BashFixupResult {
 	// rewritten and the agent rarely passes them as bash tool input. Bailing
 	// early also keeps the per-call cost bounded.
 	if cmd.contains('\n') || cmd.contains('\r') {
-		return BashFixupResult { command: cmd.to_owned(), stripped: vec![] };
+		return BashFixupResult { command: cmd.to_owned(), stripped: vec![], rewritten: vec![] };
 	}
+
+	// Pre-pass: rewrite unquoted Windows drive paths so the POSIX shell
+	// doesn't eat each `\` as a quoting escape. Running this first means the
+	// brush AST pass and any downstream consumer see a single canonical
+	// command string with already-sane spans.
+	let (working, rewritten) = match try_rewrite_windows_paths(cmd) {
+		Some((rewritten_cmd, paths)) => (rewritten_cmd, paths),
+		None => (cmd.to_owned(), Vec::new()),
+	};
 
 	let options = ParserOptions::default();
 	let source_info = SourceInfo::default();
-	let mut reader = BufReader::new(cmd.as_bytes());
+	let mut reader = BufReader::new(working.as_bytes());
 	let mut parser = Parser::new(&mut reader, &options, &source_info);
 	let Ok(program) = parser.parse_program() else {
-		return BashFixupResult { command: cmd.to_owned(), stripped: vec![] };
+		return BashFixupResult { command: working, stripped: vec![], rewritten };
 	};
 
 	// `ranges` drives output construction; `stripped` is reported to the
@@ -66,32 +89,32 @@ pub fn apply_bash_fixups(cmd: &str) -> BashFixupResult {
 	// stream-check.
 	for complete in &program.complete_commands {
 		for CompoundListItem(and_or, _sep) in &complete.0 {
-			walk_andor(and_or, cmd, &mut ranges, &mut stripped);
+			walk_andor(and_or, &working, &mut ranges, &mut stripped);
 		}
 	}
 
 	if ranges.is_empty() {
-		return BashFixupResult { command: cmd.to_owned(), stripped: vec![] };
+		return BashFixupResult { command: working, stripped: vec![], rewritten };
 	}
 
 	ranges.sort_by_key(|(s, _)| *s);
-	let mut out = String::with_capacity(cmd.len());
+	let mut out = String::with_capacity(working.len());
 	let mut cursor = 0;
 	for (s, e) in ranges {
 		// Defensive: ranges should be disjoint by construction.
 		if s < cursor {
 			continue;
 		}
-		out.push_str(&cmd[cursor..s]);
+		out.push_str(&working[cursor..s]);
 		cursor = e;
 	}
-	out.push_str(&cmd[cursor..]);
+	out.push_str(&working[cursor..]);
 	// Trim trailing horizontal whitespace introduced by removals at EOS.
 	while matches!(out.as_bytes().last(), Some(b' ' | b'\t')) {
 		out.pop();
 	}
 
-	BashFixupResult { command: out, stripped }
+	BashFixupResult { command: out, stripped, rewritten }
 }
 
 fn walk_andor(
@@ -344,6 +367,223 @@ static SAFE_ARG_RE: LazyLock<Regex> = LazyLock::new(|| {
 	.expect("static safe-arg regex compiles")
 });
 
+/// Quote-tracking states for [`try_rewrite_windows_paths`].
+#[derive(Copy, Clone, Eq, PartialEq)]
+enum QuoteState {
+	/// No quoting active. Drive-letter pattern matching runs here.
+	Unquoted,
+	/// Inside `'…'`. Bytes are opaque to the shell — pass through verbatim.
+	Single,
+	/// Inside `"…"`. Backslash escapes a limited set; pass through verbatim
+	/// either way, the agent's quoting is an explicit signal.
+	Double,
+}
+
+/// Rewrite each unquoted `<drive>:\…` token in `cmd` from backslashes to
+/// forward slashes. POSIX bash treats `\X` as "literal X" outside quotes, so a
+/// raw Windows path like `C:\tmp\foo` arrives at the child as `C:tmpfoo` and
+/// fails. Returns `None` when no drive-letter pattern is present (cheap byte
+/// scan keeps the common-case cost near zero) or when no actual rewrite fired.
+fn try_rewrite_windows_paths(cmd: &str) -> Option<(String, Vec<RewrittenPath>)> {
+	let bytes = cmd.as_bytes();
+	let n = bytes.len();
+	// Fast bail: every rewrite candidate contains the three bytes
+	// `[A-Za-z] ':' '\\'`. Scanning for the cheap two-byte `:\\` first lets
+	// the common no-op case finish in a single linear pass with no
+	// allocation.
+	if !contains_drive_marker(bytes) {
+		return None;
+	}
+
+	let mut out: Vec<u8> = Vec::with_capacity(n);
+	let mut rewritten: Vec<RewrittenPath> = Vec::new();
+	let mut i = 0;
+	let mut state = QuoteState::Unquoted;
+
+	while i < n {
+		let b = bytes[i];
+		match state {
+			QuoteState::Single => {
+				out.push(b);
+				if b == b'\'' {
+					state = QuoteState::Unquoted;
+				}
+				i += 1;
+			},
+			QuoteState::Double => {
+				// In `"…"`, `\X` only escapes a tiny set (`\\`, `"`, `$`,
+				// backtick, newline); other `\X` is literal `\X`. We don't
+				// need to distinguish — we preserve bytes verbatim and only
+				// need to consume escaped quotes so we don't exit the string
+				// early. Treating `\<any>` as 2 opaque bytes is sufficient
+				// because any backslash that wasn't a real escape becomes a
+				// literal `\` to brush, which then passes it through.
+				if b == b'\\' && i + 1 < n {
+					out.push(b);
+					out.push(bytes[i + 1]);
+					i += 2;
+					continue;
+				}
+				out.push(b);
+				if b == b'"' {
+					state = QuoteState::Unquoted;
+				}
+				i += 1;
+			},
+			QuoteState::Unquoted => {
+				// Consume `\X` as a unit so a backslash in front of a quote
+				// or special char doesn't flip our state. We are not the
+				// shell parser; we just need to avoid mis-detecting boundaries.
+				if b == b'\\' && i + 1 < n {
+					out.push(b);
+					out.push(bytes[i + 1]);
+					i += 2;
+					continue;
+				}
+				if b == b'\'' {
+					out.push(b);
+					state = QuoteState::Single;
+					i += 1;
+					continue;
+				}
+				if b == b'"' {
+					out.push(b);
+					state = QuoteState::Double;
+					i += 1;
+					continue;
+				}
+
+				// Drive-letter pattern: `[A-Za-z] ':' '\\'` at a word
+				// boundary (so we don't trip on `xC:\foo`). The boundary check
+				// also keeps URL fragments safe — they use `:/`, not `:\`.
+				if b.is_ascii_alphabetic()
+					&& i + 2 < n
+					&& bytes[i + 1] == b':'
+					&& bytes[i + 2] == b'\\'
+					&& is_path_start_boundary(i, bytes)
+				{
+					let token_start = i;
+					let mut buf: Vec<u8> = Vec::with_capacity(16);
+					buf.push(b);
+					buf.push(b':');
+					buf.push(b'/');
+					let mut j = i + 3;
+					while j < n {
+						let bj = bytes[j];
+						if bj == b'\\' {
+							// True shell escape (`\ `, `\"`, `\\`, …) keeps
+							// the backslash so brush still consumes it
+							// correctly; a `\X` in path context (`\foo`,
+							// `\1`, `\.`) is what the bug eats, so flip it.
+							if j + 1 < n && is_shell_escape_target(bytes[j + 1]) {
+								buf.push(b'\\');
+								buf.push(bytes[j + 1]);
+								j += 2;
+								continue;
+							}
+							buf.push(b'/');
+							j += 1;
+							continue;
+						}
+						if is_token_terminator(bj) {
+							break;
+						}
+						buf.push(bj);
+						j += 1;
+					}
+
+					// Defensive: `from`/`to` must be valid UTF-8. The pre-pass
+					// only flips ASCII bytes, so this only fails when the
+					// token boundary fell inside a multi-byte codepoint —
+					// which our terminator set (all ASCII) cannot do, but we
+					// bail safely anyway.
+					let from = cmd.get(token_start..j).map(str::to_owned);
+					let to = String::from_utf8(buf.clone()).ok();
+					match (from, to) {
+						(Some(from), Some(to)) => {
+							out.extend_from_slice(&buf);
+							rewritten.push(RewrittenPath { from, to });
+						},
+						_ => {
+							// Bail: copy the original token verbatim so we
+							// don't corrupt input on the rare failure path.
+							out.extend_from_slice(&bytes[token_start..j]);
+						},
+					}
+					i = j;
+					continue;
+				}
+
+				out.push(b);
+				i += 1;
+			},
+		}
+	}
+
+	if rewritten.is_empty() {
+		return None;
+	}
+	// `out` only ever holds bytes from the original (which is valid UTF-8)
+	// plus our ASCII rewrites, so the result is guaranteed valid UTF-8.
+	let out_str = String::from_utf8(out).ok()?;
+	Some((out_str, rewritten))
+}
+
+/// Cheap pre-scan that fires only when the three-byte drive-letter shape is
+/// present somewhere in `bytes`. Saves the full quote-tracking walk on the
+/// common Linux/macOS case where there are no Windows paths at all.
+fn contains_drive_marker(bytes: &[u8]) -> bool {
+	bytes
+		.windows(3)
+		.any(|w| w[0].is_ascii_alphabetic() && w[1] == b':' && w[2] == b'\\')
+}
+
+/// True when the byte preceding `i` is not an identifier-continuation
+/// character — i.e. `i` looks like the start of a new shell token. Lets the
+/// rewriter ignore drive-letter shapes embedded mid-identifier (`fooC:\bar`)
+/// while still firing after spaces, redirects, `=`, or start-of-input.
+const fn is_path_start_boundary(i: usize, bytes: &[u8]) -> bool {
+	if i == 0 {
+		return true;
+	}
+	!matches!(bytes[i - 1], b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_')
+}
+
+/// True when `b` ends an unquoted shell word. Used to bound the path-token
+/// walk; everything up to (but not including) the first such byte is the
+/// token we rewrite.
+const fn is_token_terminator(b: u8) -> bool {
+	matches!(
+		b,
+		b' ' | b'\t' | b'|' | b';' | b'&' | b'<' | b'>' | b'(' | b')' | b'`' | b'\'' | b'"' | b'$'
+	)
+}
+
+/// Bytes that, when preceded by `\` in unquoted bash, form a true escape
+/// sequence (the backslash carries meaning and must survive the rewrite).
+/// A backslash followed by anything outside this set in path context is
+/// the bug we're fixing — bash silently drops it, so we replace it with `/`.
+const fn is_shell_escape_target(b: u8) -> bool {
+	matches!(
+		b,
+		b' '
+			| b'\t'
+			| b'"' | b'\''
+			| b'\\'
+			| b'$' | b'`'
+			| b';' | b'&'
+			| b'|' | b'<'
+			| b'>' | b'('
+			| b')' | b'*'
+			| b'?' | b'['
+			| b']' | b'{'
+			| b'}' | b'#'
+			| b'~' | b'!'
+			| b'\n'
+			| b'\r'
+	)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -449,5 +689,84 @@ mod tests {
 			assert_eq!(cmd, *input, "input: {input:?}");
 			assert!(stripped.is_empty(), "input: {input:?}");
 		}
+		// The Windows-path rewriter also stays quiet for every input above.
+		for input in untouched {
+			let r = apply_bash_fixups(input);
+			assert!(r.rewritten.is_empty(), "input: {input:?}");
+		}
+	}
+
+	#[test]
+	fn rewrites_windows_drive_paths() {
+		// Each row: (input, expected command, expected (from, to) pairs).
+		let cases: &[(&str, &str, &[(&str, &str)])] = &[
+			// Plain unquoted drive path.
+			(r"dir C:\tmp\pr-workspace\oh-my-pi", "dir C:/tmp/pr-workspace/oh-my-pi", &[(
+				r"C:\tmp\pr-workspace\oh-my-pi",
+				"C:/tmp/pr-workspace/oh-my-pi",
+			)]),
+			// Multiple paths in one command.
+			(r"cp C:\a\b D:\c\d", "cp C:/a/b D:/c/d", &[(r"C:\a\b", "C:/a/b"), (r"D:\c\d", "D:/c/d")]),
+			// Drive path after a redirect operator.
+			(r"cmd > C:\out.log", "cmd > C:/out.log", &[(r"C:\out.log", "C:/out.log")]),
+			// Mixed-case drive letter.
+			(r"ls c:\users\me", "ls c:/users/me", &[(r"c:\users\me", "c:/users/me")]),
+			// Embedded after `=` (no surrounding whitespace).
+			(r"FOO=C:\bin\tool run", "FOO=C:/bin/tool run", &[(r"C:\bin\tool", "C:/bin/tool")]),
+			// Drive path tied into a `cd ... &&` wrapper (matches the real-world
+			// failure that triggered this fix).
+			(r"cd C:\tmp && ls", "cd C:/tmp && ls", &[(r"C:\tmp", "C:/tmp")]),
+		];
+		for (input, want_cmd, want_pairs) in cases {
+			let r = apply_bash_fixups(input);
+			assert_eq!(r.command, *want_cmd, "input: {input:?}");
+			let got: Vec<(&str, &str)> = r
+				.rewritten
+				.iter()
+				.map(|p| (p.from.as_str(), p.to.as_str()))
+				.collect();
+			assert_eq!(got, *want_pairs, "input: {input:?}");
+		}
+	}
+
+	#[test]
+	fn leaves_quoted_or_unrelated_paths_alone() {
+		// Inputs that look path-adjacent but must NOT be rewritten.
+		let untouched: &[&str] = &[
+			// Already forward-slash form.
+			"dir C:/tmp/foo",
+			// Single-quoted — agent's explicit signal, brush preserves bytes.
+			r"dir 'C:\tmp\foo'",
+			// Double-quoted — same rationale; `\X` survives the POSIX `"…"` pass.
+			"dir \"C:\\tmp\\foo\"",
+			// Bare drive letter without trailing backslash (not a path).
+			"echo C: && echo done",
+			// URL — colon followed by `/`, not `\`.
+			"curl https://example.com/foo:bar",
+			// Drive letter mid-identifier — boundary check skips it.
+			r"echo fooC:\bar",
+			// No drive-letter pattern at all.
+			"echo hello world",
+		];
+		for input in untouched {
+			let r = apply_bash_fixups(input);
+			assert_eq!(r.command, *input, "input: {input:?}");
+			assert!(r.rewritten.is_empty(), "input: {input:?}");
+		}
+	}
+
+	#[test]
+	fn windows_rewrite_chains_with_head_tail_strip() {
+		// Combined fix: rewrite the drive path *and* strip the harmless
+		// trailing `| head -5` in one pass.
+		let r = apply_bash_fixups(r"dir C:\tmp\foo | head -5");
+		assert_eq!(r.command, "dir C:/tmp/foo");
+		assert_eq!(r.stripped, vec!["| head -5".to_owned()]);
+		let pairs: Vec<(&str, &str)> = r
+			.rewritten
+			.iter()
+			.map(|p| (p.from.as_str(), p.to.as_str()))
+			.collect();
+		assert_eq!(pairs, vec![(r"C:\tmp\foo", "C:/tmp/foo")]);
 	}
 }

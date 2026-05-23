@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { applyBashFixups, type BashFixupResult } from "../../src/tools/bash-command-fixup";
+import { applyBashFixups, formatBashFixupNotice, type BashFixupResult } from "../../src/tools/bash-command-fixup";
 
 function fixup(command: string): BashFixupResult {
 	return applyBashFixups(command);
@@ -120,6 +120,106 @@ describe("applyBashFixups — preserves semantics-bearing pipelines", () => {
 			const out = fixup(input);
 			expect(out.command).toBe(input);
 			expect(out.stripped).toEqual([]);
+			expect(out.rewritten).toEqual([]);
 		});
 	}
+});
+
+describe("applyBashFixups — rewrites unquoted Windows drive paths", () => {
+	// [input, expected command, expected (from, to) pairs]
+	const cases: Array<[string, string, Array<[string, string]>]> = [
+		// Plain backslash-form drive path (the exact symptom from the bug report).
+		[
+			"dir C:\\tmp\\pr-workspace\\oh-my-pi",
+			"dir C:/tmp/pr-workspace/oh-my-pi",
+			[["C:\\tmp\\pr-workspace\\oh-my-pi", "C:/tmp/pr-workspace/oh-my-pi"]],
+		],
+		// `cd ... &&` wrapper — the shape the bash tool also unpacks downstream.
+		["cd C:\\tmp && ls", "cd C:/tmp && ls", [["C:\\tmp", "C:/tmp"]]],
+		// Multiple paths in one command.
+		[
+			"cp C:\\a\\b D:\\c\\d",
+			"cp C:/a/b D:/c/d",
+			[
+				["C:\\a\\b", "C:/a/b"],
+				["D:\\c\\d", "D:/c/d"],
+			],
+		],
+		// Drive path after a redirect.
+		["cmd > C:\\out.log", "cmd > C:/out.log", [["C:\\out.log", "C:/out.log"]]],
+	];
+
+	for (const [input, expectedCommand, expectedRewritten] of cases) {
+		it(`rewrites: ${input}`, () => {
+			const out = fixup(input);
+			expect(out.command).toBe(expectedCommand);
+			expect(out.rewritten.map(p => [p.from, p.to] as [string, string])).toEqual(expectedRewritten);
+		});
+	}
+});
+
+describe("applyBashFixups — leaves quoted / non-Windows paths alone", () => {
+	const untouched: string[] = [
+		// Already forward-slash form.
+		"dir C:/tmp/foo",
+		// Single-quoted — preserve the agent's explicit signal.
+		"dir 'C:\\tmp\\foo'",
+		// Double-quoted — POSIX `"…"` already passes `\X` through unchanged.
+		'dir "C:\\tmp\\foo"',
+		// Bare drive letter without trailing `\`.
+		"echo C: && echo done",
+		// URL: `:` followed by `/`, not `\`.
+		"curl https://example.com/foo:bar",
+	];
+
+	for (const input of untouched) {
+		it(`leaves alone: ${JSON.stringify(input)}`, () => {
+			const out = fixup(input);
+			expect(out.command).toBe(input);
+			expect(out.rewritten).toEqual([]);
+		});
+	}
+});
+
+describe("applyBashFixups — chains Windows rewrite with head/tail strip", () => {
+	it("does both in a single pass", () => {
+		const out = fixup("dir C:\\tmp\\foo | head -5");
+		expect(out.command).toBe("dir C:/tmp/foo");
+		expect(out.stripped).toEqual(["| head -5"]);
+		expect(out.rewritten).toEqual([{ from: "C:\\tmp\\foo", to: "C:/tmp/foo" }]);
+	});
+});
+
+describe("formatBashFixupNotice", () => {
+	it("returns undefined when nothing was stripped or rewritten", () => {
+		expect(formatBashFixupNotice([])).toBeUndefined();
+		expect(formatBashFixupNotice([], [])).toBeUndefined();
+	});
+
+	it("embeds a single stripped segment in the notice", () => {
+		const notice = formatBashFixupNotice(["| head -5"]);
+		expect(notice).toContain("`| head -5`");
+		expect(notice).toContain("stderr is already merged");
+	});
+
+	it("joins multiple stripped segments with commas", () => {
+		const notice = formatBashFixupNotice(["| tail -3", "2>&1"]);
+		expect(notice).toContain("`| tail -3`");
+		expect(notice).toContain("`2>&1`");
+		expect(notice).toMatch(/`\| tail -3`,\s*`2>&1`/);
+	});
+
+	it("calls out a single rewritten Windows path with from → to and guidance", () => {
+		const notice = formatBashFixupNotice([], [{ from: "C:\\tmp\\foo", to: "C:/tmp/foo" }]);
+		expect(notice).toContain("`C:\\tmp\\foo` → `C:/tmp/foo`");
+		expect(notice).toContain("forward slashes");
+	});
+
+	it("emits both rewrite and strip sentences when both fixups fired", () => {
+		const notice = formatBashFixupNotice(["| head -5"], [{ from: "C:\\tmp\\foo", to: "C:/tmp/foo" }]);
+		expect(notice).toContain("`C:\\tmp\\foo` → `C:/tmp/foo`");
+		expect(notice).toContain("`| head -5`");
+		// One <system-warning> envelope around both sentences.
+		expect(notice?.match(/<system-warning>/g)?.length).toBe(1);
+	});
 });

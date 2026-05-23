@@ -675,13 +675,16 @@ export interface AstReplaceResult {
 
 /**
  * Result of [`apply_bash_fixups`]: a possibly-rewritten command plus the
- * substrings that were removed (in source order).
+ * substrings that were removed and any Windows paths that were re-slashed
+ * (both in source order).
  */
 export interface BashFixupResult {
   /** Possibly-rewritten command. Equal to the input when no fixup fired. */
   command: string
   /** Substrings removed, in source order — suitable for a user-facing notice. */
   stripped: Array<string>
+  /** Windows paths re-slashed, in source order. */
+  rewritten: Array<RewrittenPath>
 }
 
 /** Clipboard image payload encoded as PNG bytes. */
@@ -1493,6 +1496,19 @@ export interface PtyStartOptions {
  * Returns an error if clipboard access fails or image encoding fails.
  */
 export declare function readImageFromClipboard(): Promise<ClipboardImage | undefined | null>
+
+/**
+ * One Windows-style path the bash fixup pre-pass rewrote to use forward
+ * slashes so the POSIX shell (`brush`) doesn't eat the backslashes as
+ * quoting escapes. Reported alongside [`BashFixupResult`] so the bash tool
+ * can surface a one-shot notice teaching the agent to emit forward slashes.
+ */
+export interface RewrittenPath {
+  /** Path token exactly as the agent emitted it (e.g. `C:\tmp\foo`). */
+  from: string
+  /** Same token with `\` flipped to `/` (e.g. `C:/tmp/foo`). */
+  to: string
+}
 
 /**
  * Search content for a pattern (one-shot, compiles pattern each time).
