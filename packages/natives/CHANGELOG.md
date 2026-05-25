@@ -14,15 +14,15 @@
 
 - Fixed bash heredocs (`<<`) and here-strings (`<<<`) deadlocking the shell on Windows past ~4 KiB and on macOS past 16-64 KiB. `brush_core::interp::setup_open_file_with_contents` wrote the entire body into an anonymous pipe synchronously before handing the reader to the next command; once the body exceeded the OS pipe buffer the writer blocked forever and the `bash` tool timed out at the hard 305 s ceiling without ever launching the consumer. The Linux fast path still uses `F_SETPIPE_SZ` to grow the pipe in-place; every other OS-threaded platform (and Linux bodies above `pipe-max-size`) now decouples the write onto a fire-and-forget thread that terminates naturally on drain or `BrokenPipe`; no-thread targets keep the upstream synchronous path so heredocs do not fail at thread spawn.
 
+### Changed
+
+- Extended `applyBashFixups` to also rewrite unquoted Windows drive paths (`C:\tmp\foo` → `C:/tmp/foo`) before the brush AST pass, so POSIX bash on Windows stops eating each `\` as a quoting escape. The result now carries a `rewritten: Array<{ from, to }>` field alongside `stripped`.
+
 ## [15.3.2] - 2026-05-25
 
 ### Fixed
 
 - Fixed `matchesKey` claiming `ctrl+m`/`ctrl+j`/`ctrl+i`/`ctrl+h`/`ctrl+[` for the single bytes terminals emit for Enter/Tab/Backspace/Escape in legacy mode. Pressing Enter no longer triggers a `ctrl+m` binding; the named keys now own those bytes and the colliding `ctrl+<letter>` combinations only match when the terminal disambiguates via the Kitty keyboard protocol or `modifyOtherKeys`. The same gate now also applies to `ctrl+alt+<letter>` legacy `ESC + <ctrl-char>` sequences (e.g. `\x1b\r` is Alt+Enter, not Ctrl+Alt+M). ([#1354](https://github.com/can1357/oh-my-pi/issues/1354))
-### Changed
-
-- Extended `applyBashFixups` to also rewrite unquoted Windows drive paths (`C:\tmp\foo` → `C:/tmp/foo`) before the brush AST pass, so POSIX bash on Windows stops eating each `\` as a quoting escape. The result now carries a `rewritten: Array<{ from, to }>` field alongside `stripped`.
-
 ## [15.0.2] - 2026-05-15
 
 ### Added
