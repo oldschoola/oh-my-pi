@@ -173,58 +173,25 @@ export function splitPathAndSel(rawPath: string): { path: string; sel?: string }
  *
  * Falls back to the input unchanged when nothing matches.
  */
-/** Peel a single trailing selector from a URL whose scheme allows colons in
- * the resource (e.g. `mcp://`). MCP resource URIs are server-defined and may
- * legitimately end with `:raw`, `:1-50`, etc., so we refuse to peel by default
- * — the URI stays opaque and is forwarded to the protocol handler verbatim.
- *
- * Mirrors the http(s):// convention documented on the `read` tool: add a
- * trailing slash before the selector to disambiguate. Concretely, peeling only
- * happens when the colon is immediately preceded by `/`, giving the user an
- * explicit, escapable signal: `mcp://server/resource/:1-50` peels, while
- * `mcp://server/resource:1-50` is treated as a literal resource URI.
- *
- * The disambiguation slash is consumed along with the colon — `McpProtocolHandler`
- * resolves resources by verbatim URI match (`r.uri === uri`), so leaving the
- * trailing `/` on the returned path would make `mcp://server/resource/:1-50`
- * resolve as `mcp://server/resource/` and miss the registered resource at
- * `mcp://server/resource`.
- *
- * Bare integers (which look like ports) are NEVER peeled even with the slash
- * escape — require an L-prefix, dash, plus, or comma to commit. Accepts:
- * `raw`, `conflicts`, `L\d+...`, `\d+-\d+`, `\d+,\d+...`, `\d+\+\d+`. */
-function peelStrictTrailingSelector(rawPath: string, schemeEnd: number): { path: string; sel?: string } {
-	const colon = rawPath.lastIndexOf(":");
-	if (colon < schemeEnd) return { path: rawPath };
-	// Require the documented trailing-slash escape — colon must follow `/`.
-	// Without it the URI is opaque and the caller likely means the literal
-	// `:tail` suffix as part of a server-defined resource id.
-	if (rawPath[colon - 1] !== "/") return { path: rawPath };
-	const tail = rawPath.slice(colon + 1);
-	if (!FILE_LINE_RANGE_ONLY_RE.test(tail) && !FILE_RAW_ONLY_RE.test(tail) && !/^conflicts$/i.test(tail)) {
-		return { path: rawPath };
-	}
-	// Reject bare integer — indistinguishable from a port. Require an L-prefix,
-	// dash, plus, or comma to commit to peeling.
-	if (/^\d+$/.test(tail)) return { path: rawPath };
-	// Strip the escape slash along with the selector. Guard against degenerate
-	// inputs like `mcp://:1-50` (where the only slash is part of `://`) by
-	// confirming the peeled path still carries a scheme separator.
-	const peeled = rawPath.slice(0, colon - 1);
-	if (!peeled.includes("://")) return { path: rawPath };
-	return { path: peeled, sel: tail };
+/** MCP resource URIs are server-defined and may legitimately end with
+ * selector-shaped tails like `:raw`, `:conflicts`, `:1-50`, or even `/:raw`.
+ * `McpProtocolHandler` resolves by exact resource URI match (`r.uri === uri`),
+ * so syntactically peeling a selector here can make valid resources
+ * unreachable. Keep mcp:// opaque; selector support for MCP resources needs a
+ * resolver-aware path that can try the exact URI before interpreting a suffix
+ * as a read selector. */
+function keepOpaqueResourceUri(rawPath: string): { path: string } {
+	return { path: rawPath };
 }
 
 export function splitInternalUrlSel(rawPath: string): { path: string; sel?: string } {
 	const schemeMatch = rawPath.match(INTERNAL_URL_SCHEME_RE);
 	if (!schemeMatch) return { path: rawPath };
 	const scheme = schemeMatch[1].toLowerCase();
-	// `mcp://` resource URIs may legitimately contain colons (e.g. ports in
-	// server addresses), but a trailing *unambiguous* selector — `1-50`, `raw`,
-	// `conflicts`, `L10`, `1,5` — should still be peeled so the read tool can
-	// apply line ranges. Bare integers stay folded into the URI.
+	// `mcp://` resource URIs are server-defined and may legitimately contain
+	// selector-shaped suffixes. Keep them opaque so exact resource lookup wins.
 	if (!INTERNAL_SCHEMES_WITH_SELECTORS[scheme]) {
-		if (scheme === "mcp") return peelStrictTrailingSelector(rawPath, schemeMatch[0].length);
+		if (scheme === "mcp") return keepOpaqueResourceUri(rawPath);
 		return { path: rawPath };
 	}
 

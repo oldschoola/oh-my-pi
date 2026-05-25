@@ -77,24 +77,21 @@ describe("splitInternalUrlSel", () => {
 		});
 	});
 
-	it("peels unambiguous selectors from mcp:// URLs via the trailing-slash escape", () => {
-		// Mirrors the documented http(s):// convention: add `/` before the selector
-		// to disambiguate. The disambiguation slash is consumed along with the
-		// selector so the returned path matches the registered MCP resource URI
-		// (McpProtocolHandler resolves via verbatim `r.uri === uri` match — leaving
-		// a stray `/` would make `mcp://server/resource/:1-50` miss the resource
-		// registered at `mcp://server/resource`).
+	it("keeps escaped selector-shaped mcp:// suffixes opaque too", () => {
+		// MCP resource URIs are exact server-defined IDs. A resource may
+		// legitimately end in `/:raw` or `/:1-50`; splitting before resolution
+		// would make that resource unreachable with no exact-URI escape hatch.
 		expect(splitInternalUrlSel("mcp://server/resource/:1-50")).toEqual({
-			path: "mcp://server/resource",
-			sel: "1-50",
+			path: "mcp://server/resource/:1-50",
 		});
 		expect(splitInternalUrlSel("mcp://server/resource/:raw")).toEqual({
-			path: "mcp://server/resource",
-			sel: "raw",
+			path: "mcp://server/resource/:raw",
 		});
 		expect(splitInternalUrlSel("mcp://server/resource/:L10")).toEqual({
-			path: "mcp://server/resource",
-			sel: "L10",
+			path: "mcp://server/resource/:L10",
+		});
+		expect(splitInternalUrlSel("mcp://server/resource/:conflicts")).toEqual({
+			path: "mcp://server/resource/:conflicts",
 		});
 	});
 
