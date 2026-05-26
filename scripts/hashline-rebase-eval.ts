@@ -5,6 +5,15 @@
  * and runs each through `applyHashlineEdits`. The wrapper script invokes this
  * twice — once on the current branch (rebase enabled) and once with apply.ts
  * reverted to upstream (rebase disabled) — and diffs the resulting JSON.
+ *
+ * GRAMMAR NOTE: this file emits diffs in the pre-rewrite hashline grammar
+ * (`= ${anchor}..${anchor}` ranges, `≔`/`«`/`»` prefix sigils) because that is
+ * the grammar in effect on this branch's `packages/coding-agent/src/hashline`.
+ * After rebasing onto upstream `f9866798c` ("hashline grammar for anchor
+ * ranges and payload"), the grammar moves to dash ranges (`-`) and postfix
+ * op sigils (`^`/`v`/`->`). When that rebase happens this script MUST be
+ * migrated in the same commit or the cases will fail to parse and the eval
+ * numbers in the PR body will no longer be reproducible.
  */
 
 import {
