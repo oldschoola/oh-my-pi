@@ -588,18 +588,19 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		let command = rawCommand;
 		const env = normalizeBashEnv(rawEnv);
 
-		// Apply conservative bash fixups (strip trailing `| head|tail` and redundant
-		// `2>&1`). The helper is single-line only and refuses anything that could
-		// change semantics.
+		// Apply conservative bash fixups. The Windows-path rewrite always runs
+		// (only fixes a brush quoting artifact); the head/tail/2>&1 strip is
+		// gated on `bash.stripTrailingHeadTail` so users who want their pipes
+		// to survive keep the rewrite without forfeiting the strip's setting.
 		let bashFixups: string[] = [];
 		let bashRewrittenPaths: RewrittenPath[] = [];
-		if (this.session.settings.get("bash.stripTrailingHeadTail")) {
-			const fixup = applyBashFixups(command);
-			if (fixup.stripped.length > 0 || fixup.rewritten.length > 0) {
-				command = fixup.command;
-				bashFixups = fixup.stripped;
-				bashRewrittenPaths = fixup.rewritten;
-			}
+		const fixup = applyBashFixups(command, {
+			stripRedundantPipes: this.session.settings.get("bash.stripTrailingHeadTail"),
+		});
+		if (fixup.stripped.length > 0 || fixup.rewritten.length > 0) {
+			command = fixup.command;
+			bashFixups = fixup.stripped;
+			bashRewrittenPaths = fixup.rewritten;
 		}
 
 		// Extract leading `cd <path> && ...` into cwd when the model ignores the cwd parameter.

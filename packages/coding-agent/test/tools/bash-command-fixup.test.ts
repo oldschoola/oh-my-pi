@@ -190,6 +190,70 @@ describe("applyBashFixups — chains Windows rewrite with head/tail strip", () =
 	});
 });
 
+describe("applyBashFixups — Windows-path rewrite edge cases", () => {
+	it("rewrites a path that ends with a trailing backslash", () => {
+		const out = fixup("cd C:\\tmp\\");
+		expect(out.command).toBe("cd C:/tmp/");
+		expect(out.rewritten).toEqual([{ from: "C:\\tmp\\", to: "C:/tmp/" }]);
+	});
+
+	it("preserves real shell escapes (e.g. `\\ `) inside the path token", () => {
+		// `\ ` is a real escape: the agent meant a literal space inside the token.
+		// The rewriter must keep the backslash before space while flipping the
+		// surrounding path separators.
+		const out = fixup("dir C:\\Program\\ Files\\foo");
+		expect(out.command).toBe("dir C:/Program\\ Files/foo");
+		expect(out.rewritten).toEqual([{ from: "C:\\Program\\ Files\\foo", to: "C:/Program\\ Files/foo" }]);
+	});
+
+	it("leaves UNC paths alone (not in the [A-Za-z]:\\ shape)", () => {
+		// UNC paths use leading `\\server\share`; the rewriter only fires on
+		// drive-letter form. This test pins the current behavior — agents using
+		// UNC paths will still hit the brush quoting bug, which is acceptable
+		// because UNC paths are rare and adding support would widen scope.
+		const out = fixup("dir \\\\server\\share\\path");
+		expect(out.command).toBe("dir \\\\server\\share\\path");
+		expect(out.rewritten).toEqual([]);
+	});
+});
+
+describe("applyBashFixups — stripRedundantPipes option", () => {
+	it("defaults to stripping head/tail when options omitted", () => {
+		const out = applyBashFixups("ls | head -5");
+		expect(out.command).toBe("ls");
+		expect(out.stripped).toEqual(["| head -5"]);
+	});
+
+	it("strips head/tail when stripRedundantPipes is true", () => {
+		const out = applyBashFixups("ls | head -5", { stripRedundantPipes: true });
+		expect(out.command).toBe("ls");
+		expect(out.stripped).toEqual(["| head -5"]);
+	});
+
+	it("preserves head/tail when stripRedundantPipes is false", () => {
+		const out = applyBashFixups("ls | head -5", { stripRedundantPipes: false });
+		expect(out.command).toBe("ls | head -5");
+		expect(out.stripped).toEqual([]);
+	});
+
+	it("still rewrites Windows paths when stripRedundantPipes is false", () => {
+		// The whole point of the option split: a user who disables strip must
+		// not silently lose the Windows-path rewrite. The path token is
+		// re-slashed but the `| head -5` survives intact.
+		const out = applyBashFixups("dir C:\\tmp\\foo | head -5", { stripRedundantPipes: false });
+		expect(out.command).toBe("dir C:/tmp/foo | head -5");
+		expect(out.stripped).toEqual([]);
+		expect(out.rewritten).toEqual([{ from: "C:\\tmp\\foo", to: "C:/tmp/foo" }]);
+	});
+
+	it("still strips 2>&1 when option omitted and rewrites paths in the same pass", () => {
+		const out = applyBashFixups("dir C:\\tmp\\foo 2>&1");
+		expect(out.command).toBe("dir C:/tmp/foo");
+		expect(out.stripped).toEqual(["2>&1"]);
+		expect(out.rewritten).toEqual([{ from: "C:\\tmp\\foo", to: "C:/tmp/foo" }]);
+	});
+});
+
 describe("formatBashFixupNotice", () => {
 	it("returns undefined when nothing was stripped or rewritten", () => {
 		expect(formatBashFixupNotice([])).toBeUndefined();

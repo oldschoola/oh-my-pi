@@ -6,7 +6,9 @@
  *  1. Rewrite unquoted Windows drive paths (`C:\tmp\foo` → `C:/tmp/foo`). The
  *     POSIX shell brush treats `\X` as "literal X" outside quotes, so a raw
  *     Windows path arrives at the child as `C:tmpfoo` and fails. Quoted paths
- *     are left alone — quoting is the agent's explicit signal.
+ *     are left alone — quoting is the agent's explicit signal. This rewrite
+ *     always runs because it only changes byte-equivalent representation, not
+ *     semantics.
  *
  *  2. Trailing `| head [args]` / `| tail [args]` (and the `|&` variant) on a
  *     top-level segment — these pipes exist purely to limit output length.
@@ -17,6 +19,10 @@
  *     pipe or other redirect. The harness already merges stderr into stdout,
  *     so the duplication is purely cosmetic — and often a leftover after
  *     fixup (2) drops a downstream pipe.
+ *
+ * Fixups (2) and (3) are policy-gated via `BashFixupOptions.stripRedundantPipes`
+ * so a host that wants `| head -5` pipelines to survive can keep the path
+ * rewrite without forfeiting the harness's truncation guarantees.
  *
  * The heavy lifting (tokenization, quoting, heredoc handling, command
  * substitution, nested compound commands) lives in Rust under
@@ -37,12 +43,24 @@ export interface BashFixupResult {
 }
 
 /**
- * Apply both fixups to a bash command. On any parse failure, multi-line input,
- * or no-op transform, returns the input verbatim with `stripped: []` and
- * `rewritten: []`.
+ * Knobs for [`applyBashFixups`]. Omit fields to take the defaults.
  */
-export function applyBashFixups(command: string): BashFixupResult {
-	return nativeApplyBashFixups(command);
+export interface BashFixupOptions {
+	/** When `false`, the `| head|tail` and trailing-redundant `2>&1` strip is
+	 * skipped. Defaults to `true`. The Windows-path rewrite always runs. */
+	stripRedundantPipes?: boolean;
+}
+
+/**
+ * Apply the fixups to a bash command. On parse failure or no-op transform
+ * the returned `command` still carries any Windows-path rewrites that fired
+ * during the pre-pass (the pass runs before the brush AST parse).
+ *
+ * When `options.stripRedundantPipes` is `false`, `stripped` is always empty
+ * and the head/tail/`2>&1` strip is skipped entirely.
+ */
+export function applyBashFixups(command: string, options?: BashFixupOptions): BashFixupResult {
+	return nativeApplyBashFixups(command, options ? { stripRedundantPipes: options.stripRedundantPipes } : undefined);
 }
 
 /**

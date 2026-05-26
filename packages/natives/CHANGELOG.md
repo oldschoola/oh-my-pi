@@ -16,13 +16,14 @@
 
 ### Changed
 
-- Extended `applyBashFixups` to also rewrite unquoted Windows drive paths (`C:\tmp\foo` → `C:/tmp/foo`) before the brush AST pass, so POSIX bash on Windows stops eating each `\` as a quoting escape. The result now carries a `rewritten: Array<{ from, to }>` field alongside `stripped`.
+- Extended `applyBashFixups` to also rewrite unquoted Windows drive paths (`C:\tmp\foo` → `C:/tmp/foo`) before the brush AST pass, so POSIX bash on Windows stops eating each `\` as a quoting escape. The result now carries a `rewritten: Array<{ from, to }>` field alongside `stripped`. Added an optional `options: { stripRedundantPipes?: boolean }` argument so hosts can keep `| head -5` pipelines without forfeiting the path rewrite — the rewrite is unconditional, only the strip is policy-gated.
 
 ## [15.3.2] - 2026-05-25
 
 ### Fixed
 
 - Fixed `matchesKey` claiming `ctrl+m`/`ctrl+j`/`ctrl+i`/`ctrl+h`/`ctrl+[` for the single bytes terminals emit for Enter/Tab/Backspace/Escape in legacy mode. Pressing Enter no longer triggers a `ctrl+m` binding; the named keys now own those bytes and the colliding `ctrl+<letter>` combinations only match when the terminal disambiguates via the Kitty keyboard protocol or `modifyOtherKeys`. The same gate now also applies to `ctrl+alt+<letter>` legacy `ESC + <ctrl-char>` sequences (e.g. `\x1b\r` is Alt+Enter, not Ctrl+Alt+M). ([#1354](https://github.com/can1357/oh-my-pi/issues/1354))
+
 ## [15.0.2] - 2026-05-15
 
 ### Added

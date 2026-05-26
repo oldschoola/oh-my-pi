@@ -15,8 +15,8 @@ use pi_shell::{
 	ShellRunOptions as CoreShellRunOptions, ShellRunResult as CoreShellRunResult,
 	execute_shell as core_execute_shell,
 	fixup::{
-		BashFixupResult as CoreBashFixupResult, RewrittenPath as CoreRewrittenPath,
-		apply_bash_fixups as core_apply_bash_fixups,
+		BashFixupOptions as CoreBashFixupOptions, BashFixupResult as CoreBashFixupResult,
+		RewrittenPath as CoreRewrittenPath, apply_bash_fixups_with_options as core_apply_bash_fixups_with_options,
 	},
 	minimizer,
 };
@@ -332,14 +332,35 @@ impl From<CoreBashFixupResult> for BashFixupResult {
 	}
 }
 
+/// Optional knobs for [`applyBashFixups`].
+///
+/// The Windows-path rewrite always runs because it is byte-equivalent
+/// outside quotes; only the head/tail/`2>&1` strip is policy-gated, so the
+/// host can disable it for agents that rely on `| head -5` surviving.
+#[napi(object)]
+pub struct BashFixupOptions {
+	/// When `false`, the `| head|tail [args]` and trailing-redundant `2>&1`
+	/// strip is skipped. Defaults to `true` when omitted.
+	pub strip_redundant_pipes: Option<bool>,
+}
+
+impl From<BashFixupOptions> for CoreBashFixupOptions {
+	fn from(value: BashFixupOptions) -> Self {
+		Self { strip_redundant_pipes: value.strip_redundant_pipes.unwrap_or(true) }
+	}
+}
+
 /// Apply conservative pre-execution rewrites to a bash command.
 ///
-/// Strips trailing `| head|tail [safe-args]` and redundant trailing `2>&1`
-/// from each top-level pipeline. The full rules and bail conditions live in
+/// Always rewrites unquoted Windows drive paths (`C:\…` → `C:/…`). When
+/// `options.strip_redundant_pipes` is true (default), also strips trailing
+/// `| head|tail [safe-args]` and redundant trailing `2>&1` from each
+/// top-level pipeline. Full rules and bail conditions live in
 /// `pi_shell::fixup`. Synchronous and cheap (one parse pass over the input).
 #[napi]
-pub fn apply_bash_fixups(command: String) -> BashFixupResult {
-	core_apply_bash_fixups(&command).into()
+pub fn apply_bash_fixups(command: String, options: Option<BashFixupOptions>) -> BashFixupResult {
+	let core_options = options.map(CoreBashFixupOptions::from).unwrap_or_default();
+	core_apply_bash_fixups_with_options(&command, core_options).into()
 }
 
 #[cfg(test)]

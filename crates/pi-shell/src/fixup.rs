@@ -41,6 +41,25 @@ pub struct BashFixupResult {
 	pub rewritten: Vec<RewrittenPath>,
 }
 
+/// Knobs for [`apply_bash_fixups`].
+///
+/// The Windows-path rewrite always runs — it is byte-equivalent outside
+/// quotes (`\X` → `/X`) and exists to undo a brush parsing artifact, not to
+/// change semantics. The head/tail/`2>&1` strip is policy-driven and can be
+/// disabled by the host so agents that rely on `| head -5` survive.
+#[derive(Debug, Clone, Copy)]
+pub struct BashFixupOptions {
+	/// When `false`, the `| head|tail [args]` and trailing-redundant `2>&1`
+	/// strip is skipped. Defaults to `true`.
+	pub strip_redundant_pipes: bool,
+}
+
+impl Default for BashFixupOptions {
+	fn default() -> Self {
+		Self { strip_redundant_pipes: true }
+	}
+}
+
 /// One Windows path the pre-pass converted from backslashes to forward
 /// slashes so the POSIX shell doesn't treat each `\` as a quoting escape.
 #[derive(Debug, Clone)]
@@ -51,8 +70,13 @@ pub struct RewrittenPath {
 	pub to:   String,
 }
 
-/// Apply the bash fixups to `cmd`. See module docs for full rules.
+/// Apply the bash fixups to `cmd` with default options. See module docs.
 pub fn apply_bash_fixups(cmd: &str) -> BashFixupResult {
+	apply_bash_fixups_with_options(cmd, BashFixupOptions::default())
+}
+
+/// Apply the bash fixups to `cmd` with explicit options. See module docs.
+pub fn apply_bash_fixups_with_options(cmd: &str, options: BashFixupOptions) -> BashFixupResult {
 	// Multi-line input is out of scope: heredoc/loop bodies can't be safely
 	// rewritten and the agent rarely passes them as bash tool input. Bailing
 	// early also keeps the per-call cost bounded.
@@ -69,10 +93,15 @@ pub fn apply_bash_fixups(cmd: &str) -> BashFixupResult {
 		None => (cmd.to_owned(), Vec::new()),
 	};
 
-	let options = ParserOptions::default();
+	if !options.strip_redundant_pipes {
+		// Path rewrite still applied; head/tail/2>&1 strip is policy-gated off.
+		return BashFixupResult { command: working, stripped: vec![], rewritten };
+	}
+
+	let parse_options = ParserOptions::default();
 	let source_info = SourceInfo::default();
 	let mut reader = BufReader::new(working.as_bytes());
-	let mut parser = Parser::new(&mut reader, &options, &source_info);
+	let mut parser = Parser::new(&mut reader, &parse_options, &source_info);
 	let Ok(program) = parser.parse_program() else {
 		return BashFixupResult { command: working, stripped: vec![], rewritten };
 	};
@@ -768,5 +797,54 @@ mod tests {
 			.map(|p| (p.from.as_str(), p.to.as_str()))
 			.collect();
 		assert_eq!(pairs, vec![(r"C:\tmp\foo", "C:/tmp/foo")]);
+	}
+
+	#[test]
+	fn rewrites_path_ending_in_trailing_backslash() {
+		let r = apply_bash_fixups(r"cd C:\tmp\");
+		assert_eq!(r.command, "cd C:/tmp/");
+		assert_eq!(r.rewritten.len(), 1);
+		assert_eq!(r.rewritten[0].from, r"C:\tmp\");
+		assert_eq!(r.rewritten[0].to, "C:/tmp/");
+	}
+
+	#[test]
+	fn preserves_real_escape_inside_path_token() {
+		// `\ ` is a real shell escape (literal space). It must survive the
+		// rewrite while the surrounding separators flip to `/`.
+		let r = apply_bash_fixups(r"dir C:\Program\ Files\foo");
+		assert_eq!(r.command, r"dir C:/Program\ Files/foo");
+		assert_eq!(r.rewritten.len(), 1);
+		assert_eq!(r.rewritten[0].from, r"C:\Program\ Files\foo");
+		assert_eq!(r.rewritten[0].to, r"C:/Program\ Files/foo");
+	}
+
+	#[test]
+	fn leaves_unc_paths_alone() {
+		// UNC paths use `\\server\share`; the rewriter requires `[A-Za-z]:\`
+		// so it never fires here. Pinning current behavior so a future widening
+		// of scope is an explicit decision, not an accident.
+		let r = apply_bash_fixups(r"dir \\server\share\path");
+		assert_eq!(r.command, r"dir \\server\share\path");
+		assert!(r.rewritten.is_empty());
+	}
+
+	#[test]
+	fn options_skip_strip_keeps_path_rewrite() {
+		let r = apply_bash_fixups_with_options(
+			r"dir C:\tmp\foo | head -5",
+			BashFixupOptions { strip_redundant_pipes: false },
+		);
+		assert_eq!(r.command, "dir C:/tmp/foo | head -5");
+		assert!(r.stripped.is_empty());
+		assert_eq!(r.rewritten.len(), 1);
+		assert_eq!(r.rewritten[0].to, "C:/tmp/foo");
+	}
+
+	#[test]
+	fn options_skip_strip_still_skips_2to1() {
+		let r = apply_bash_fixups_with_options("cmd 2>&1", BashFixupOptions { strip_redundant_pipes: false });
+		assert_eq!(r.command, "cmd 2>&1");
+		assert!(r.stripped.is_empty());
 	}
 }

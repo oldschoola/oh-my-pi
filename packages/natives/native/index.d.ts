@@ -481,11 +481,13 @@ export declare function __piNativesV15_5_3(): void
 /**
  * Apply conservative pre-execution rewrites to a bash command.
  *
- * Strips trailing `| head|tail [safe-args]` and redundant trailing `2>&1`
- * from each top-level pipeline. The full rules and bail conditions live in
+ * Always rewrites unquoted Windows drive paths (`C:\…` → `C:/…`). When
+ * `options.strip_redundant_pipes` is true (default), also strips trailing
+ * `| head|tail [safe-args]` and redundant trailing `2>&1` from each
+ * top-level pipeline. Full rules and bail conditions live in
  * `pi_shell::fixup`. Synchronous and cheap (one parse pass over the input).
  */
-export declare function applyBashFixups(command: string): BashFixupResult
+export declare function applyBashFixups(command: string, options?: BashFixupOptions | undefined | null): BashFixupResult
 
 /**
  * Apply ast-grep rewrite rules to matching files; honors `dryRun` and returns
@@ -671,6 +673,21 @@ export interface AstReplaceResult {
   limitReached: boolean
   /** Parse or pattern errors when not failing the whole operation. */
   parseErrors?: Array<string>
+}
+
+/**
+ * Optional knobs for [`applyBashFixups`].
+ *
+ * The Windows-path rewrite always runs because it is byte-equivalent
+ * outside quotes; only the head/tail/`2>&1` strip is policy-gated, so the
+ * host can disable it for agents that rely on `| head -5` surviving.
+ */
+export interface BashFixupOptions {
+  /**
+   * When `false`, the `| head|tail [args]` and trailing-redundant `2>&1`
+   * strip is skipped. Defaults to `true` when omitted.
+   */
+  stripRedundantPipes?: boolean
 }
 
 /**
@@ -1498,10 +1515,11 @@ export interface PtyStartOptions {
 export declare function readImageFromClipboard(): Promise<ClipboardImage | undefined | null>
 
 /**
- * One Windows-style path the bash fixup pre-pass rewrote to use forward
- * slashes so the POSIX shell (`brush`) doesn't eat the backslashes as
- * quoting escapes. Reported alongside [`BashFixupResult`] so the bash tool
- * can surface a one-shot notice teaching the agent to emit forward slashes.
+ * One Windows-style path the bash fixup pre-pass re-slashed.
+ *
+ * The POSIX shell (`brush`) would otherwise eat each `\` as a quoting
+ * escape. Reported alongside [`BashFixupResult`] so the bash tool can
+ * surface a one-shot notice teaching the agent to emit forward slashes.
  */
 export interface RewrittenPath {
   /** Path token exactly as the agent emitted it (e.g. `C:\tmp\foo`). */
