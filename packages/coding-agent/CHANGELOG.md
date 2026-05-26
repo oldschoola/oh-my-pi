@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `skill_create` accepting providers that return the string `"required"` from `buildToolChoice` as if it were a structured tool-choice; the tool now hard-fails with the same "no resolve channel" error as `knowledge_create` so users never see a `"pending user approval"` directive that was never queued
+- Fixed Phase-2 consolidator overwriting `scripts/`, `templates/`, and `examples/` assets in read-only skill directories (`readOnly: true` with `aiMaintained: true`); the asset write/prune loop now consults the same `readOnly` gate that already protects `SKILL.md`
+- Fixed `cleanupConsolidatedArtifacts` empty-pass `pruneSkillsDir` deleting read-only skill directories whose frontmatter still carried `aiMaintained: true`; the empty-pass now mirrors the main-loop `readOnly` check
+- Fixed `knowledge_create kind=directory` on an existing directory (and `knowledge_move` with `source === destination`) reporting `"pending user approval"` for a resolve directive that was never queued; idempotent no-ops are now surfaced as completed `(no-op)` results
+- Fixed `extractSummarySection` truncating multi-paragraph `## Summary` sections at the first newline; the regex end-anchor now matches true end-of-string so `knowledge_query` snippets and `knowledge_read part=summary` return the full section
+- Fixed Phase-2 consolidator becoming a permanent no-op against legacy `MEMORY.md` / `memory_summary.md` / `skills/<n>/SKILL.md` files after the first migration; `migrateLegacyMemoryLayout` now promotes each renamed marker-less doc into a body-marker-wrapped doc so subsequent consolidations can refresh the body region as they did pre-PR
+- Fixed `knowledge_move kind="directory"` bypassing `allowCreateDirectories: false` when the destination parent already existed; the gate now fires for any directory move into a sidecar-locked tree, mirroring the document branch's `allowCreateDocuments` check
+- Fixed `knowledge://memory/...` URLs serving content from a different bucket when the type-root directory itself was a symlink to another bucket; `tryResolveInRoot` now refuses any type root whose `realpath` does not equal its canonical path
+- Changed `knowledge.enabled` setting default from `false` to `true` so the seven `knowledge_*` tools are available out of the box alongside the four-bucket memory taxonomy they operate on
+
 ## [15.4.0] - 2026-05-26
 
 ### Breaking Changes
@@ -32,7 +44,6 @@
 - Refreshed expired OpenAI Codex OAuth tokens during `web_search` execution and persisted the updated credentials so searches continue working after token expiry
 - Fixed built-in `explore` agent failing every invocation with `schema_violation: files.0.ref: must not be present` on releases prior to 15.3.2 by renaming the `files[].ref` property to `files[].path` in the agent's output schema; `ref` is a JTD-reserved keyword (RFC 8927) and collides with JSON Type Definition's schema-reference form, so the converter previously dropped it from the generated JSON Schema. Defense-in-depth alongside the 15.3.2 converter fix ([#1379](https://github.com/can1357/oh-my-pi/issues/1379)).
 - Increased the `yield` tool's schema-validation retry budget from 1 to 3 so subagents whose first structured-output attempt mismatches the declared output schema get up to three retries before the parent's post-mortem `schema_violation` check hard-fails the task. The tool now also surfaces remaining retry attempts and an explicit "call yield again with the corrected shape" directive in each rejection message, giving the model the context it needs to converge — particularly helpful for models like GLM that tend to invent per-element field names instead of following the declared schema.
-
 ## [15.3.2] - 2026-05-25
 ### Added
 

@@ -22,11 +22,6 @@ function ensureWithinRoot(targetPath: string, rootPath: string): void {
 	}
 }
 
-function toLocalValidationError(error: unknown): Error {
-	const message = error instanceof Error ? error.message : String(error);
-	return new Error(message.replace("skill://", "local://"));
-}
-
 function getContentType(filePath: string): InternalResource["contentType"] {
 	const ext = path.extname(filePath).toLowerCase();
 	if (ext === ".md") return "text/markdown";
@@ -100,11 +95,7 @@ function extractRelativePath(url: InternalUrl): string {
 	} catch {
 		throw new Error(`Invalid URL encoding in local:// path: ${url.href}`);
 	}
-	try {
-		validateRelativePath(decoded);
-	} catch (error) {
-		throw toLocalValidationError(error);
-	}
+	validateRelativePath(decoded, "local");
 	return decoded;
 }
 

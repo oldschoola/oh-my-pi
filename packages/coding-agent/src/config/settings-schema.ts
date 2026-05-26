@@ -1937,6 +1937,17 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
+	"knowledge.enabled": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "tools",
+			label: "Knowledge",
+			description:
+				"Enable the seven knowledge tools (list/query/read/create/edit/move/delete) for the unified memory taxonomy.",
+		},
+	},
+
 	"recipe.enabled": {
 		type: "boolean",
 		default: true,

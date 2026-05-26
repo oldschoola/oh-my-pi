@@ -39,6 +39,15 @@ import { HindsightRetainTool } from "./hindsight-retain";
 import { InspectImageTool } from "./inspect-image";
 import { IrcTool } from "./irc";
 import { JobTool } from "./job";
+import {
+	KnowledgeCreateTool,
+	KnowledgeDeleteTool,
+	KnowledgeEditTool,
+	KnowledgeListTool,
+	KnowledgeMoveTool,
+	KnowledgeQueryTool,
+	KnowledgeReadTool,
+} from "./knowledge";
 import { wrapToolWithMetaNotice } from "./output-meta";
 import { ReadTool } from "./read";
 import { RecipeTool } from "./recipe";
@@ -48,6 +57,7 @@ import { ResolveTool } from "./resolve";
 import { reportFindingTool } from "./review";
 import { SearchTool } from "./search";
 import { SearchToolBm25Tool } from "./search-tool-bm25";
+import { SkillCreateTool, SkillListTool, SkillReloadTool } from "./skill";
 import { loadSshTool } from "./ssh";
 import { type TodoPhase, TodoWriteTool } from "./todo-write";
 import { WriteTool } from "./write";
@@ -81,6 +91,7 @@ export * from "./image-gen";
 export * from "./inspect-image";
 export * from "./irc";
 export * from "./job";
+export * from "./knowledge";
 export * from "./read";
 export * from "./recipe";
 export * from "./render-mermaid";
@@ -89,6 +100,7 @@ export * from "./resolve";
 export * from "./review";
 export * from "./search";
 export * from "./search-tool-bm25";
+export * from "./skill";
 export * from "./ssh";
 export * from "./todo-write";
 export * from "./vim";
@@ -302,6 +314,16 @@ export const BUILTIN_TOOLS: Record<string, ToolFactory> = {
 	rewind: RewindTool.createIf,
 	task: s => TaskTool.create(s),
 	job: JobTool.createIf,
+	knowledge_list: s => new KnowledgeListTool(s),
+	knowledge_query: s => new KnowledgeQueryTool(s),
+	knowledge_read: s => new KnowledgeReadTool(s),
+	knowledge_create: s => new KnowledgeCreateTool(s),
+	knowledge_edit: s => new KnowledgeEditTool(s),
+	knowledge_move: s => new KnowledgeMoveTool(s),
+	knowledge_delete: s => new KnowledgeDeleteTool(s),
+	skill_create: s => new SkillCreateTool(s),
+	skill_reload: s => new SkillReloadTool(s),
+	skill_list: s => new SkillListTool(s),
 	recipe: RecipeTool.createIf,
 	irc: IrcTool.createIf,
 	todo_write: s => new TodoWriteTool(s),
@@ -460,6 +482,8 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		// search_tool_bm25 is allowed when either legacy mcp.discoveryMode or new tools.discoveryMode is active.
 		if (name === "search_tool_bm25") return discoveryActive;
 		if (name === "calc") return session.settings.get("calc.enabled");
+		if (name.startsWith("knowledge_")) return session.settings.get("knowledge.enabled");
+		if (name.startsWith("skill_")) return session.settings.get("skills.enabled") !== false;
 		if (name === "browser") return session.settings.get("browser.enabled");
 		if (name === "checkpoint" || name === "rewind") return session.settings.get("checkpoint.enabled");
 		if (name === "irc") {

@@ -15,9 +15,19 @@ export interface Skill {
 	baseDir: string;
 	source: string;
 	/**
-	 * When `true`, the skill is loaded and reachable via `skill://<name>` and
-	 * (when enabled) `/skill:<name>`, but is excluded from the rendered system
-	 * prompt's `<skills>` listing.
+	 * Effective surface for this skill:
+	 *
+	 *   - `"auto"`  (default) — listed in the rendered `<skills>` block.
+	 *   - `"command"` — loaded and reachable via `skill://<name>` and
+	 *     `/skill:<name>` only.
+	 *
+	 * Set via frontmatter `skillSurface`. The legacy `hide: true` flag is
+	 * carried over as `"command"`.
+	 */
+	surface?: "auto" | "command";
+	/**
+	 * @deprecated Mirrors `surface === "command"`. Retained so callsites that
+	 * still read `.hide` keep working until they migrate.
 	 */
 	hide?: boolean;
 	/** Source metadata for display */
@@ -36,6 +46,9 @@ export interface LoadSkillsResult {
 
 let activeSkills: readonly Skill[] = [];
 
+type ActiveSkillsListener = (skills: readonly Skill[]) => void;
+const activeSkillsListeners = new Set<ActiveSkillsListener>();
+
 /**
  * Process-global snapshot of skills the active session loaded.
  * Read by internal URL protocol handlers (skill://).
@@ -44,14 +57,57 @@ export function getActiveSkills(): readonly Skill[] {
 	return activeSkills;
 }
 
-/** Replace the active skill snapshot. Called once per top-level session. */
+/**
+ * Replace the active skill snapshot. Fans out to every registered
+ * listener so per-session caches (`AgentSession.#skills`, interactive
+ * `skillCommands` maps, etc.) refresh after `skill_reload` instead of
+ * staying frozen at the snapshot taken at session start.
+ *
+ * Listener errors are swallowed: one bad subscriber must not derail
+ * the whole reload path. Subscribers SHOULD be defensive.
+ */
 export function setActiveSkills(value: readonly Skill[]): void {
 	activeSkills = value;
+	for (const listener of activeSkillsListeners) {
+		try {
+			listener(value);
+		} catch {
+			// Subscribers handle their own logging — keep the fan-out alive.
+		}
+	}
+}
+
+/**
+ * Subscribe to active-skills changes. Returns an unsubscribe function
+ * the caller MUST invoke when its lifecycle ends (e.g. session dispose)
+ * to avoid leaking references into long-lived test runs.
+ */
+export function subscribeToActiveSkills(listener: ActiveSkillsListener): () => void {
+	activeSkillsListeners.add(listener);
+	return () => {
+		activeSkillsListeners.delete(listener);
+	};
 }
 
 /** Reset the active skill snapshot. Test-only. */
 export function resetActiveSkillsForTests(): void {
 	activeSkills = [];
+	activeSkillsListeners.clear();
+}
+
+/**
+ * Derive the runtime surface for a skill from its frontmatter.
+ *
+ * Precedence: explicit `skillSurface` wins; otherwise legacy `hide: true`
+ * maps to `"command"`; otherwise default `"auto"`.
+ */
+export function deriveSkillSurface(
+	frontmatter: { skillSurface?: unknown; hide?: unknown } | undefined,
+): "auto" | "command" {
+	const explicit = frontmatter?.skillSurface;
+	if (explicit === "auto" || explicit === "command") return explicit;
+	if (frontmatter?.hide === true) return "command";
+	return "auto";
 }
 
 export interface LoadSkillsFromDirOptions {
@@ -82,7 +138,8 @@ export async function loadSkillsFromDir(options: LoadSkillsFromDirOptions): Prom
 			filePath: capSkill.path,
 			baseDir: capSkill.path.replace(/[\\/]SKILL\.md$/, ""),
 			source: options.source,
-			hide: capSkill.frontmatter?.hide === true,
+			surface: deriveSkillSurface(capSkill.frontmatter),
+			hide: deriveSkillSurface(capSkill.frontmatter) === "command",
 			_source: capSkill._source,
 		})),
 		warnings: (result.warnings ?? []).map(message => ({ skillPath: options.dir, message })),
@@ -197,7 +254,8 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 				filePath: capSkill.path,
 				baseDir: capSkill.path.replace(/[\\/]SKILL\.md$/, ""),
 				source: `${capSkill._source.provider}:${capSkill.level}`,
-				hide: capSkill.frontmatter?.hide === true,
+				surface: deriveSkillSurface(capSkill.frontmatter),
+				hide: deriveSkillSurface(capSkill.frontmatter) === "command",
 				_source: capSkill._source,
 			});
 			realPathSet.add(resolvedPath);
@@ -234,7 +292,8 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 					filePath: capSkill.path,
 					baseDir: capSkill.path.replace(/[\\/]SKILL\.md$/, ""),
 					source: "custom:user",
-					hide: capSkill.frontmatter?.hide === true,
+					surface: deriveSkillSurface(capSkill.frontmatter),
+					hide: deriveSkillSurface(capSkill.frontmatter) === "command",
 					_source: { ...capSkill._source, providerName: "Custom" },
 				},
 				path: capSkill.path,

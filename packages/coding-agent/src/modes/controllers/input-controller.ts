@@ -3,6 +3,7 @@ import { type AgentMessage, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { AutocompleteProvider, SlashCommand } from "@oh-my-pi/pi-tui";
 import { $env, sanitizeText } from "@oh-my-pi/pi-utils";
 import { isSettingsInitialized, settings } from "../../config/settings";
+import { buildKnowledgePromptMessage } from "../../memories/knowledge-ops";
 import { expandEmoticons } from "../../modes/emoji-autocomplete";
 import { createPromptActionAutocompleteProvider } from "../../modes/prompt-action-autocomplete";
 import { theme } from "../../modes/theme/theme";
@@ -249,6 +250,13 @@ export class InputController {
 				return;
 			}
 
+			// Handle knowledge slash commands (/knowledge:<slug> [args]). Same
+			// dispatch semantics as /skill:; falls through to plain text if the
+			// command name is not in the snapshot.
+			if (await this.#invokeKnowledgeCommand(text, "steer")) {
+				return;
+			}
+
 			// Handle bash command (! for normal, !! for excluded from context)
 			if (text.startsWith("!")) {
 				const isExcluded = text.startsWith("!!");
@@ -473,6 +481,59 @@ export class InputController {
 		return true;
 	}
 
+	/**
+	 * Dispatch a `/knowledge:<slug> [args]` invocation. Mirrors
+	 * `#invokeSkillCommand` but resolves through the session's
+	 * `knowledgeCommands` map (populated at session init from
+	 * `listCommandEnabledDocs`). The dispatched CustomMessage reuses
+	 * `SKILL_PROMPT_MESSAGE_TYPE` because the rendering surface is
+	 * identical: a slash-command-injected doc body with a meta footer
+	 * (`Knowledge: <type>/<path>` instead of `Skill: <path>`). Returns
+	 * true when the text was a registered knowledge command and was
+	 * dispatched; false otherwise so the caller can fall through to
+	 * plain-text handling.
+	 */
+	async #invokeKnowledgeCommand(text: string, streamingBehavior: "steer" | "followUp"): Promise<boolean> {
+		if (!text.startsWith("/knowledge:")) return false;
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+		const entry = this.ctx.knowledgeCommands?.get(commandName);
+		if (!entry) return false;
+		this.ctx.editor.addToHistory(text);
+		this.ctx.editor.setText("");
+		try {
+			const built = await buildKnowledgePromptMessage(entry, args);
+			const details: SkillPromptDetails = {
+				name: built.details.name,
+				path: built.details.path,
+				args: built.details.args,
+				lineCount: built.details.lineCount,
+			};
+			if (this.ctx.session.isStreaming) {
+				const tag = this.ctx.session.enqueueCustomMessageDisplay(text, streamingBehavior);
+				details.__pendingDisplayTag = tag;
+			}
+			await this.ctx.session.promptCustomMessage(
+				{
+					customType: SKILL_PROMPT_MESSAGE_TYPE,
+					content: built.message,
+					display: true,
+					details,
+					attribution: "user",
+				},
+				{ streamingBehavior },
+			);
+			if (this.ctx.session.isStreaming) {
+				this.ctx.updatePendingMessagesDisplay();
+				this.ctx.ui.requestRender();
+			}
+		} catch (err) {
+			this.ctx.showError(`Failed to load knowledge doc: ${err instanceof Error ? err.message : String(err)}`);
+		}
+		return true;
+	}
+
 	/** Send editor text as a follow-up message (queued behind current stream). */
 	async handleFollowUp(): Promise<void> {
 		const text = this.ctx.editor.getText().trim();
@@ -493,6 +554,9 @@ export class InputController {
 		// which keybinding submitted them. Enter routes them as `steer`;
 		// Ctrl+Enter (this handler) routes them as `followUp`.
 		if (await this.#invokeSkillCommand(text, "followUp")) {
+			return;
+		}
+		if (await this.#invokeKnowledgeCommand(text, "followUp")) {
 			return;
 		}
 

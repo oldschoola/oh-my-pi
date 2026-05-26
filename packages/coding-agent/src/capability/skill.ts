@@ -15,11 +15,20 @@ export interface SkillFrontmatter {
 	globs?: string[];
 	alwaysApply?: boolean;
 	/**
-	 * When `true`, the skill is loaded and accessible via `skill://<name>` (and
-	 * `/skill:<name>` slash commands), but is omitted from the rendered system
-	 * prompt's skill listing. Use for skills the user opts into explicitly
-	 * rather than ones the model should auto-discover.
+	 * Positive-framing surface selector.
+	 *
+	 *   - `"auto"`  (default) — listed in the rendered `<skills>` section so
+	 *     the model can auto-discover it.
+	 *   - `"command"` — loaded and reachable via `skill://<name>` and the
+	 *     `/skill:<name>` slash command, but **omitted** from the rendered
+	 *     prompt listing. Use this for skills the user opts into explicitly.
+	 *
+	 * Back-compat: `hide: true` is treated as `skillSurface: "command"`. New
+	 * skills SHOULD use `skillSurface`; `hide` may be removed in a future
+	 * release.
 	 */
+	skillSurface?: "auto" | "command";
+	/** @deprecated Use `skillSurface: "command"` instead. */
 	hide?: boolean;
 	[key: string]: unknown;
 }

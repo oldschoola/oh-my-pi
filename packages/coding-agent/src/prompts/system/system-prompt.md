@@ -55,6 +55,7 @@ With most FS/bash-like tools, static references to them will automatically resol
    - `/<path>`: File within a skill
 - `rule://<name>`: Rule details
 - `memory://root`: Project memory summary
+- `knowledge://<type>/<path>`: Knowledge document (`type` ∈ memory|skill|design|reference). Auto-appends `.md`. Supports `?part=body|summary|full` and `?frontmatter=1` (frontmatter wins over part).
 - `agent://<id>`: Full agent output artifact
    - `/<path>`: JSON field extraction
 - `artifact://<id>`: Artifact content

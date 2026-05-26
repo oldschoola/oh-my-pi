@@ -49,6 +49,21 @@ describe("splitInternalUrlSel", () => {
 		expect(splitInternalUrlSel("skill://plugin:name")).toEqual({ path: "skill://plugin:name" });
 	});
 
+	it("peels selectors from knowledge:// URLs", () => {
+		expect(splitInternalUrlSel("knowledge://memory/notes.md:50-100")).toEqual({
+			path: "knowledge://memory/notes.md",
+			sel: "50-100",
+		});
+		expect(splitInternalUrlSel("knowledge://memory/notes.md:raw")).toEqual({
+			path: "knowledge://memory/notes.md",
+			sel: "raw",
+		});
+		expect(splitInternalUrlSel("knowledge://memory/notes.md?part=body:1-20")).toEqual({
+			path: "knowledge://memory/notes.md?part=body",
+			sel: "1-20",
+		});
+	});
+
 	it("stops at the scheme separator `://`", () => {
 		expect(splitInternalUrlSel("agent://1-50")).toEqual({ path: "agent://1-50" });
 	});

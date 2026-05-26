@@ -211,16 +211,23 @@ describe("memories runtime", () => {
 		});
 
 		const memoryRoot = getMemoryRoot(fx.agentDir, fx.session.sessionManager.getCwd());
+		const bodyOf = (raw: string): string => {
+			const start = raw.indexOf("<!-- omp:body:start -->");
+			const end = raw.indexOf("<!-- omp:body:end -->");
+			return start === -1 || end === -1
+				? raw.trim()
+				: raw.slice(start + "<!-- omp:body:start -->".length, end).trim();
+		};
 		await waitFor(async () => {
-			expect((await fs.readFile(path.join(memoryRoot, "MEMORY.md"), "utf8")).trim()).toBe(
+			expect(bodyOf(await fs.readFile(path.join(memoryRoot, "memory", "MEMORY.md"), "utf8"))).toBe(
 				"# Memory\n\nConsolidated body",
 			);
-			expect((await fs.readFile(path.join(memoryRoot, "memory_summary.md"), "utf8")).trim()).toBe(
+			expect(bodyOf(await fs.readFile(path.join(memoryRoot, "memory", "memory_summary.md"), "utf8"))).toBe(
 				"Consolidated summary",
 			);
-			expect(
-				(await fs.readFile(path.join(memoryRoot, "skills", "deploy-playbook", "SKILL.md"), "utf8")).trim(),
-			).toBe("# Deploy\nUse blue/green.");
+			expect(bodyOf(await fs.readFile(path.join(memoryRoot, "skill", "deploy-playbook", "SKILL.md"), "utf8"))).toBe(
+				"# Deploy\nUse blue/green.",
+			);
 		});
 
 		expect(fx.session.refreshBaseSystemPrompt).toHaveBeenCalledTimes(1);
@@ -349,7 +356,7 @@ describe("buildMemoryToolDeveloperInstructions", () => {
 
 	test("returns undefined for missing or empty summaries", async () => {
 		const agentDir = await makeTempDir("memories-runtime-instructions");
-		const settings = Settings.isolated({ "memory.backend": "local" });
+		const settings = Settings.isolated({ "memory.backend": "local", "knowledge.enabled": false });
 
 		expect(await buildMemoryToolDeveloperInstructions(agentDir, settings)).toBeUndefined();
 
@@ -364,6 +371,7 @@ describe("buildMemoryToolDeveloperInstructions", () => {
 		const settings = Settings.isolated({
 			"memory.backend": "local",
 			"memories.summaryInjectionTokenLimit": 8,
+			"knowledge.enabled": false,
 		});
 		const memoryRoot = getMemoryRoot(agentDir, settings.getCwd());
 		await fs.mkdir(memoryRoot, { recursive: true });
@@ -374,7 +382,7 @@ describe("buildMemoryToolDeveloperInstructions", () => {
 
 		const payload = await buildMemoryToolDeveloperInstructions(agentDir, settings);
 		expect(payload).toBeDefined();
-		expect(payload).toContain("memory://root/memory_summary.md");
+		expect(payload).toContain("memory://root/memory/memory_summary.md");
 		expect(payload).not.toContain(memoryRoot);
 		expect(payload).toContain("...[truncated]...");
 	});

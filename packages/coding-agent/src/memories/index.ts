@@ -4,15 +4,28 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import { completeSimple, Effort, type Model } from "@oh-my-pi/pi-ai";
-import { getAgentDbPath, getMemoriesDir, logger, parseJsonlLenient, prompt } from "@oh-my-pi/pi-utils";
+import { getAgentDbPath, getMemoriesDir, isEnoent, logger, parseJsonlLenient, prompt } from "@oh-my-pi/pi-utils";
 import type { ModelRegistry } from "../config/model-registry";
 import { resolveModelRoleValue } from "../config/model-resolver";
 import type { Settings } from "../config/settings";
+import knowledgeMaintenanceTemplate from "../prompts/knowledge/maintenance.md" with { type: "text" };
+import knowledgeUsageTemplate from "../prompts/knowledge/usage.md" with { type: "text" };
 import consolidationTemplate from "../prompts/memories/consolidation.md" with { type: "text" };
 import readPathTemplate from "../prompts/memories/read-path.md" with { type: "text" };
 import stageOneInputTemplate from "../prompts/memories/stage_one_input.md" with { type: "text" };
 import stageOneSystemTemplate from "../prompts/memories/stage_one_system.md" with { type: "text" };
 import type { AgentSession } from "../session/agent-session";
+import { checkWritePermission, resolveDirectoryConfig, resolveDocConfig, TYPE_DIRS } from "./directory-config";
+import {
+	buildMemoryDoc,
+	deriveDocId,
+	type InjectMode,
+	type MemoryDocFrontmatter,
+	type MemoryDocType,
+	parseMemoryDoc,
+	rewriteDocBody,
+} from "./document";
+import { seedBuiltinDocs } from "./seed-docs";
 import {
 	claimStage1Jobs,
 	clearMemoryData as clearMemoryDataInDb,
@@ -105,10 +118,15 @@ interface ConsolidationSkillSchema {
 	templates?: ConsolidationSkillFileSchema[];
 	examples?: ConsolidationSkillFileSchema[];
 }
+interface ConsolidationDesignDraftSchema {
+	path: string;
+	content: string;
+}
 interface ConsolidationOutputSchema {
 	memory_md: string;
 	memory_summary: string;
 	skills: ConsolidationSkillSchema[];
+	design_drafts: ConsolidationDesignDraftSchema[];
 }
 
 /**
@@ -153,23 +171,23 @@ export async function buildMemoryToolDeveloperInstructions(
 	const cfg = loadMemoryConfig(settings);
 	if (!cfg.enabled) return undefined;
 	const memoryRoot = getMemoryRoot(agentDir, settings.getCwd());
-	const summaryPath = path.join(memoryRoot, "memory_summary.md");
+	const summary = await readMemorySummaryWithLegacyFallback(memoryRoot);
+	const knowledgeEnabled = settings.get("knowledge.enabled") === true;
 
-	let text: string;
-	try {
-		text = await Bun.file(summaryPath).text();
-	} catch {
-		return undefined;
+	const sections: string[] = [];
+	if (summary) {
+		const truncated = truncateByApproxTokens(summary, cfg.summaryInjectionTokenLimit);
+		if (truncated.trim()) {
+			sections.push(prompt.render(readPathTemplate, { memory_summary: truncated }));
+		}
 	}
-
-	const summary = text.trim();
-	if (!summary) return undefined;
-	const truncated = truncateByApproxTokens(summary, cfg.summaryInjectionTokenLimit);
-	if (!truncated.trim()) return undefined;
-
-	return prompt.render(readPathTemplate, {
-		memory_summary: truncated,
-	});
+	if (knowledgeEnabled) {
+		// Always inject the usage + maintenance rules when the knowledge
+		// tools are on, regardless of whether a summary exists yet.
+		sections.push(knowledgeUsageTemplate.trim(), knowledgeMaintenanceTemplate.trim());
+	}
+	if (sections.length === 0) return undefined;
+	return sections.join("\n\n");
 }
 
 /**
@@ -368,6 +386,8 @@ async function runPhase2(options: {
 		const outputs = listStage1OutputsForGlobal(db, config.maxRawMemoriesForGlobal, cwd);
 		const newWatermark = computeCompletionWatermark(claim.inputWatermark, outputs);
 
+		await migrateLegacyMemoryLayout(memoryRoot);
+		await seedBuiltinDocs(memoryRoot);
 		await syncPhase2Artifacts(memoryRoot, outputs);
 		if (outputs.length === 0) {
 			await cleanupConsolidatedArtifacts(memoryRoot);
@@ -679,10 +699,74 @@ async function syncPhase2Artifacts(memoryRoot: string, outputs: Stage1OutputRow[
 	await Bun.write(path.join(memoryRoot, "raw_memories.md"), rawBody);
 }
 
-async function cleanupConsolidatedArtifacts(memoryRoot: string): Promise<void> {
+/** @internal Exported for tests. */
+export async function cleanupConsolidatedArtifacts(memoryRoot: string): Promise<void> {
+	// Only remove AI-maintained artifacts. design/ and reference/ stay
+	// untouched — they are user-owned. Inside skill/, only directories whose
+	// effective config still says aiMaintained: true are eligible for delete.
+	await removeIfAiMaintained(memoryRoot, path.join(memoryRoot, "memory", "MEMORY.md"));
+	await removeIfAiMaintained(memoryRoot, path.join(memoryRoot, "memory", "memory_summary.md"));
+	await pruneSkillsDir(memoryRoot, path.join(memoryRoot, "skill"));
+
+	// Legacy locations: clean up only when no taxonomy override blocks them.
+	// Old roots have no .omp-meta files, so this is effectively unconditional
+	// for installs that never upgraded.
 	await fs.rm(path.join(memoryRoot, "MEMORY.md"), { force: true });
 	await fs.rm(path.join(memoryRoot, "memory_summary.md"), { force: true });
-	await fs.rm(path.join(memoryRoot, "skills"), { recursive: true, force: true });
+	await pruneSkillsDir(memoryRoot, path.join(memoryRoot, "skills"));
+}
+
+/** Remove a file iff its effective config still permits AI deletion. */
+async function removeIfAiMaintained(memoryRoot: string, absPath: string): Promise<void> {
+	const exists = await Bun.file(absPath)
+		.exists()
+		.catch(() => false);
+	if (!exists) return;
+	let frontmatter: MemoryDocFrontmatter = {};
+	try {
+		const text = await Bun.file(absPath).text();
+		frontmatter = parseMemoryDoc(text).frontmatter;
+	} catch {
+		// fall through with empty frontmatter
+	}
+	// If the doc is outside the taxonomy (legacy path), unconditional remove.
+	// Otherwise consult the doc-level config.
+	const config = await resolveDirectoryConfig(memoryRoot, path.dirname(absPath));
+	if (config) {
+		const aiMaintained = frontmatter.aiMaintained ?? config.aiMaintained;
+		const readOnly = frontmatter.readOnly ?? config.readOnly;
+		if (!aiMaintained || readOnly) return;
+	}
+	await fs.rm(absPath, { force: true });
+}
+
+/** Remove only AI-maintained skill directories under `skillsDir`. */
+async function pruneSkillsDir(memoryRoot: string, skillsDir: string): Promise<void> {
+	const entries = await fs.readdir(skillsDir, { withFileTypes: true }).catch(() => []);
+	for (const entry of entries) {
+		if (!entry.isDirectory()) continue;
+		const dir = path.join(skillsDir, entry.name);
+		const skillFile = path.join(dir, "SKILL.md");
+		let frontmatter: MemoryDocFrontmatter = {};
+		try {
+			const text = await Bun.file(skillFile).text();
+			frontmatter = parseMemoryDoc(text).frontmatter;
+		} catch {
+			// no SKILL.md or unparsable — fall through with empty frontmatter
+		}
+		const config = await resolveDirectoryConfig(memoryRoot, dir);
+		if (config) {
+			const aiMaintained = frontmatter.aiMaintained ?? config.aiMaintained;
+			const readOnly = frontmatter.readOnly ?? config.readOnly;
+			if (!aiMaintained || readOnly) continue;
+		}
+		await fs.rm(dir, { recursive: true, force: true });
+	}
+	// Drop the dir itself if it's now empty.
+	const remaining = await fs.readdir(skillsDir).catch(() => [] as string[]);
+	if (remaining.length === 0) {
+		await fs.rm(skillsDir, { recursive: true, force: true });
+	}
 }
 
 function buildRawMemoriesMarkdown(outputs: Stage1OutputRow[]): string {
@@ -730,6 +814,7 @@ async function runConsolidationModel(options: {
 		templates: ConsolidationSkillFileSchema[];
 		examples: ConsolidationSkillFileSchema[];
 	}>;
+	designDrafts: ConsolidationDesignDraftSchema[];
 }> {
 	const { memoryRoot, model, apiKey } = options;
 	const rawMemories = await Bun.file(path.join(memoryRoot, "raw_memories.md")).text();
@@ -787,10 +872,12 @@ async function runConsolidationModel(options: {
 	if (!memoryMd || !memorySummary) {
 		throw new Error("phase2 returned empty consolidated memory");
 	}
-	return { memoryMd, memorySummary, skills };
+	const designDrafts = sanitizeDesignDrafts(schemaOutput.design_drafts);
+	return { memoryMd, memorySummary, skills, designDrafts };
 }
 
-async function applyConsolidation(
+/** @internal Exported for tests. */
+export async function applyConsolidation(
 	memoryRoot: string,
 	consolidated: {
 		memoryMd: string;
@@ -802,46 +889,481 @@ async function applyConsolidation(
 			templates: ConsolidationSkillFileSchema[];
 			examples: ConsolidationSkillFileSchema[];
 		}>;
+		designDrafts: ConsolidationDesignDraftSchema[];
 	},
 ): Promise<void> {
-	await Bun.write(path.join(memoryRoot, "MEMORY.md"), `${consolidated.memoryMd.trim()}\n`);
-	await Bun.write(path.join(memoryRoot, "memory_summary.md"), `${consolidated.memorySummary.trim()}\n`);
-	const skillsDir = path.join(memoryRoot, "skills");
-	await fs.mkdir(skillsDir, { recursive: true });
+	await migrateLegacyMemoryLayout(memoryRoot);
+	await seedBuiltinDocs(memoryRoot);
+
+	const memoryDir = path.join(memoryRoot, TYPE_DIRS.memory);
+	await fs.mkdir(memoryDir, { recursive: true });
+
+	await writeMemoryDoc(memoryRoot, path.join(memoryDir, "MEMORY.md"), {
+		type: "memory",
+		title: "Project Memory",
+		injectMode: "none",
+		summary: "Long-term project memory.",
+		body: consolidated.memoryMd,
+	});
+	await writeMemoryDoc(memoryRoot, path.join(memoryDir, "memory_summary.md"), {
+		type: "memory",
+		title: "Memory Summary",
+		injectMode: "summary",
+		summary: "Prompt-time guidance auto-injected each session.",
+		body: consolidated.memorySummary,
+	});
+
+	const skillsRoot = path.join(memoryRoot, TYPE_DIRS.skill);
+	await fs.mkdir(skillsRoot, { recursive: true });
+	const skillsRootConfig = await resolveDirectoryConfig(memoryRoot, skillsRoot);
+	const skillsRootAllowsCreate = skillsRootConfig?.allowCreateDirectories !== false;
 	const keep = new Set<string>();
 	for (const skill of consolidated.skills) {
-		const dir = path.join(skillsDir, skill.name);
+		const dir = path.join(skillsRoot, skill.name);
 		keep.add(skill.name);
+		const dirAlreadyExists = await fs
+			.stat(dir)
+			.then(s => s.isDirectory())
+			.catch(() => false);
+		if (!dirAlreadyExists && !skillsRootAllowsCreate) {
+			logger.debug("Skipped skill dir create: allowCreateDirectories=false at skills root", {
+				skill: skill.name,
+			});
+			continue;
+		}
 		await fs.mkdir(dir, { recursive: true });
-		const files = new Map<string, string>();
-		files.set("SKILL.md", `${skill.content.trim()}\n`);
+		const skillPath = path.join(dir, "SKILL.md");
+		await writeMemoryDoc(memoryRoot, skillPath, {
+			type: "skill",
+			title: skill.name,
+			injectMode: "none",
+			summary: `Skill playbook: ${skill.name}`,
+			body: skill.content,
+		});
+
+		// Asset buckets (scripts/templates/examples) are not body-marker docs;
+		// they are written verbatim and pruned to match the consolidator output.
+		// Both writes and the trailing prune are gated on the skill dir's
+		// effective `aiMaintained` AND `readOnly`: a user-protected or
+		// read-only skill keeps its assets intact even when the consolidator
+		// emits a same-named skill.
+		const gate = await resolveSkillGate(memoryRoot, dir, skillPath);
+		if (!gate.aiMaintained || gate.readOnly) {
+			logger.debug("Skipped skill asset writes: user-protected", {
+				skill: skill.name,
+				aiMaintained: gate.aiMaintained,
+				readOnly: gate.readOnly,
+			});
+			continue;
+		}
+
+		const assetFiles = new Map<string, string>();
 		for (const item of skill.scripts) {
-			files.set(path.posix.join("scripts", item.path), `${item.content.trim()}\n`);
+			assetFiles.set(path.posix.join("scripts", item.path), `${item.content.trim()}\n`);
 		}
 		for (const item of skill.templates) {
-			files.set(path.posix.join("templates", item.path), `${item.content.trim()}\n`);
+			assetFiles.set(path.posix.join("templates", item.path), `${item.content.trim()}\n`);
 		}
 		for (const item of skill.examples) {
-			files.set(path.posix.join("examples", item.path), `${item.content.trim()}\n`);
+			assetFiles.set(path.posix.join("examples", item.path), `${item.content.trim()}\n`);
 		}
-
-		for (const [relativePath, content] of [...files.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+		for (const [relativePath, content] of [...assetFiles.entries()].sort(([a], [b]) => a.localeCompare(b))) {
 			await Bun.write(path.join(dir, ...relativePath.split("/")), content);
 		}
-
-		const keepFiles = new Set(files.keys());
 		const existingFiles = await listRelativeFiles(dir);
+		const keepFiles = new Set<string>(["SKILL.md", ...assetFiles.keys()]);
 		for (const relativePath of existingFiles) {
 			if (keepFiles.has(relativePath)) continue;
 			await fs.rm(path.join(dir, ...relativePath.split("/")), { force: true });
 		}
 		await pruneEmptyDirectories(dir);
 	}
-	const dirs = await fs.readdir(skillsDir, { withFileTypes: true }).catch(() => []);
+
+	// Prune skill dirs the consolidator no longer emits — but only when the
+	// dir is AI-maintained. User-protected skills survive.
+	const dirs = await fs.readdir(skillsRoot, { withFileTypes: true }).catch(() => []);
 	for (const dirent of dirs) {
 		if (!dirent.isDirectory()) continue;
 		if (keep.has(dirent.name)) continue;
-		await fs.rm(path.join(skillsDir, dirent.name), { recursive: true, force: true });
+		const dir = path.join(skillsRoot, dirent.name);
+		const skillFile = path.join(dir, "SKILL.md");
+		const gate = await resolveSkillGate(memoryRoot, dir, skillFile);
+		if (!gate.aiMaintained || gate.readOnly) continue;
+		await fs.rm(dir, { recursive: true, force: true });
+	}
+
+	// Drafts surfaced for user review go to design/_drafts/. They are
+	// frontmatter-tagged aiMaintained: false so the next pass refuses to
+	// touch them — drafts are write-once until the user promotes them.
+	if (consolidated.designDrafts.length > 0) {
+		const draftsDir = path.join(memoryRoot, TYPE_DIRS.design, "_drafts");
+		await fs.mkdir(draftsDir, { recursive: true });
+		for (const draft of consolidated.designDrafts) {
+			const safeRel = sanitizeSkillRelativePath(draft.path);
+			if (!safeRel) continue;
+			const absPath = path.join(draftsDir, ...safeRel.split("/"));
+			// Already-existing drafts are user-owned (or refused on prior pass).
+			const exists = await Bun.file(absPath)
+				.exists()
+				.catch(() => false);
+			if (exists) continue;
+			await fs.mkdir(path.dirname(absPath), { recursive: true });
+			const denied = await checkWritePermission(memoryRoot, absPath, "create", { aiMaintained: false });
+			if (denied) {
+				logger.debug("Skipped design_drafts write: permission denied", { path: absPath, reason: denied });
+				continue;
+			}
+			const relFromTypeRoot = path.posix.join("_drafts", safeRel);
+			const now = unixNow();
+			const content = buildMemoryDoc({
+				frontmatter: {
+					id: deriveDocId(relFromTypeRoot),
+					type: "design",
+					path: relFromTypeRoot,
+					title: safeRel.replace(/\.md$/i, ""),
+					injectMode: "none",
+					aiMaintained: false,
+					readOnly: false,
+					summaryEnabled: false,
+					explicitMaintenanceRules: false,
+					createdAt: now,
+					updatedAt: now,
+				},
+				title: safeRel.replace(/\.md$/i, ""),
+				summary: "Proposed design note — review and promote out of `_drafts/` to accept.",
+				body: draft.content,
+			});
+			await Bun.write(absPath, content);
+		}
+	}
+}
+
+/**
+ * Write a memory doc, honouring body markers and per-dir permissions.
+ *
+ * - If the doc already exists with `<!-- omp:body:start -->` markers, only
+ *   the body region is rewritten.
+ * - If the doc exists without markers, it is treated as user-authored and
+ *   left alone (writer logs and returns).
+ * - If the doc is missing, a fresh frontmatter + body-marker doc is written.
+ */
+async function writeMemoryDoc(
+	memoryRoot: string,
+	absPath: string,
+	spec: {
+		type: MemoryDocType;
+		title: string;
+		injectMode: InjectMode;
+		summary?: string;
+		maintenanceRules?: readonly string[];
+		body: string;
+	},
+): Promise<void> {
+	const trimmedBody = spec.body.trim();
+	if (!trimmedBody) return;
+
+	let existing: string | undefined;
+	try {
+		existing = await Bun.file(absPath).text();
+	} catch {
+		existing = undefined;
+	}
+
+	if (existing !== undefined) {
+		const doc = parseMemoryDoc(existing);
+		if (!doc.hasBodyMarkers) {
+			logger.debug("Skipped memory write: doc lacks body markers (user-authored)", { path: absPath });
+			return;
+		}
+		const denied = await checkWritePermission(memoryRoot, absPath, "update", doc.frontmatter);
+		if (denied) {
+			logger.debug("Skipped memory write: permission denied", { path: absPath, reason: denied });
+			return;
+		}
+		// Phase-2 routes only to `aiMaintained: true` paths. `aiMaintained: false`
+		// docs are user-protected — direct edits flow through the knowledge tools
+		// with user approval, not through the consolidator.
+		const docConfig = await resolveDocConfig(memoryRoot, absPath, doc.frontmatter);
+		if (docConfig && !docConfig.aiMaintained) {
+			logger.debug("Skipped memory write: target is not AI-maintained", { path: absPath });
+			return;
+		}
+		const rewritten = rewriteDocBody(doc, trimmedBody);
+		if (rewritten === undefined) return;
+		await Bun.write(absPath, rewritten);
+		return;
+	}
+
+	const denied = await checkWritePermission(memoryRoot, absPath, "create");
+	if (denied) {
+		logger.debug("Skipped memory write: permission denied", { path: absPath, reason: denied });
+		return;
+	}
+
+	// Same routing rule as the update branch: Phase-2 only creates docs in
+	// AI-maintained directories. `aiMaintained: false` targets are user-owned
+	// and must flow through the knowledge tools' approval sink, not the
+	// consolidator. `checkWritePermission` deliberately does not block this
+	// (it gates `readOnly` and `allowCreateDocuments` only), so the check is
+	// explicit here.
+	const parentConfig = await resolveDirectoryConfig(memoryRoot, path.dirname(absPath));
+	if (parentConfig && !parentConfig.aiMaintained) {
+		logger.debug("Skipped memory create: target dir is not AI-maintained", { path: absPath });
+		return;
+	}
+	const rel = computeRelativeFromTypeRoot(memoryRoot, absPath, spec.type);
+	const now = unixNow();
+	const content = buildMemoryDoc({
+		frontmatter: {
+			id: deriveDocId(rel),
+			type: spec.type,
+			path: rel,
+			title: spec.title,
+			injectMode: spec.injectMode,
+			inheritInjectMode: false,
+			inheritAiConfig: false,
+			aiMaintained: true,
+			readOnly: false,
+			summaryEnabled: true,
+			explicitMaintenanceRules: false,
+			createdAt: now,
+			updatedAt: now,
+		},
+		title: spec.title,
+		summary: spec.summary,
+		maintenanceRules: spec.maintenanceRules,
+		body: trimmedBody,
+	});
+	await Bun.write(absPath, content);
+}
+
+/**
+ * Resolve the effective `aiMaintained` / `readOnly` for a skill directory
+ * by reading SKILL.md frontmatter first and falling back to the directory's
+ * sidecar-resolved config. Missing / unparseable SKILL.md falls through to
+ * the dir config; missing dir config falls through to the skill type-default
+ * (`aiMaintained: true`, `readOnly: false`).
+ *
+ * Used to gate asset writes/prunes that bypass `writeMemoryDoc` — `readOnly`
+ * here is the hard refusal, mirroring `checkWritePermission` for the
+ * SKILL.md write path.
+ */
+async function resolveSkillGate(
+	memoryRoot: string,
+	skillDir: string,
+	skillFile: string,
+): Promise<{ aiMaintained: boolean; readOnly: boolean }> {
+	let frontmatter: MemoryDocFrontmatter = {};
+	let hasBodyMarkers = true;
+	let skillFileExists = true;
+	try {
+		const text = await Bun.file(skillFile).text();
+		const parsed = parseMemoryDoc(text);
+		frontmatter = parsed.frontmatter;
+		hasBodyMarkers = parsed.hasBodyMarkers;
+	} catch {
+		// missing or unparseable — defer to dir config. A truly absent
+		// SKILL.md is fine (fresh skill dir); a markerless one signals
+		// user-authored content that the consolidator must not touch.
+		skillFileExists = false;
+	}
+	const config = await resolveDirectoryConfig(memoryRoot, skillDir);
+	// A markerless SKILL.md is treated by `writeMemoryDoc` as user-authored
+	// and skipped. Mirror that here so the surrounding asset writes and the
+	// trailing skill prune cannot mutate `scripts/`, `templates/`, or
+	// `examples/` under a user-owned skill — even when frontmatter is
+	// silent and the dir config still defaults to `aiMaintained: true`.
+	if (skillFileExists && !hasBodyMarkers) {
+		return { aiMaintained: false, readOnly: frontmatter.readOnly ?? config?.readOnly ?? false };
+	}
+	const aiMaintained = frontmatter.aiMaintained ?? config?.aiMaintained ?? true;
+	const readOnly = frontmatter.readOnly ?? config?.readOnly ?? false;
+	return { aiMaintained, readOnly };
+}
+
+function computeRelativeFromTypeRoot(memoryRoot: string, absPath: string, type: MemoryDocType): string {
+	const typeRoot = path.join(memoryRoot, TYPE_DIRS[type]);
+	const rel = path.relative(typeRoot, absPath).split(path.sep).join("/");
+	return rel || path.basename(absPath);
+}
+
+async function readMemorySummaryWithLegacyFallback(memoryRoot: string): Promise<string | undefined> {
+	const candidates = [
+		path.join(memoryRoot, TYPE_DIRS.memory, "memory_summary.md"),
+		path.join(memoryRoot, "memory_summary.md"),
+	];
+	for (const candidate of candidates) {
+		let raw: string;
+		try {
+			raw = await Bun.file(candidate).text();
+		} catch {
+			continue;
+		}
+		// For new-shape docs with body markers we surface only the body
+		// region; legacy docs flow through verbatim.
+		const doc = parseMemoryDoc(raw);
+		const summary = doc.hasBodyMarkers ? doc.body.trim() : raw.trim();
+		if (summary) return summary;
+	}
+	return undefined;
+}
+
+/**
+ * One-shot best-effort migration of an old-shape memory root to the new
+ * taxonomy. Idempotent: safe to call on every Phase-2.
+ *
+ *   memory_root/MEMORY.md         → memory_root/memory/MEMORY.md
+ *   memory_root/memory_summary.md → memory_root/memory/memory_summary.md
+ *   memory_root/skills/<n>/       → memory_root/skill/<n>/
+ *
+ * Migrated files were AI-authored by the pre-PR consolidator, which wrote
+ * plain markdown without body markers. After the rename we promote each
+ * migrated `.md` into a marker-wrapped doc so subsequent Phase-2 runs
+ * recognize the file as AI-maintained and refresh the body region;
+ * otherwise `writeMemoryDoc` would treat the marker-less file as
+ * user-authored and the consolidator would silently no-op against it.
+ *
+ * If both old and new exist for the same artifact, the new shape wins and
+ * the old is left alone (the user may have intentionally written to it).
+ */
+async function migrateLegacyMemoryLayout(memoryRoot: string): Promise<void> {
+	const memoryDir = path.join(memoryRoot, TYPE_DIRS.memory);
+	const moves: Array<{
+		from: string;
+		to: string;
+		isDir: boolean;
+		type: MemoryDocType;
+		title: string;
+		summary?: string;
+	}> = [
+		{
+			from: path.join(memoryRoot, "MEMORY.md"),
+			to: path.join(memoryDir, "MEMORY.md"),
+			isDir: false,
+			type: "memory",
+			title: "Project Memory",
+			summary: "Long-term project memory.",
+		},
+		{
+			from: path.join(memoryRoot, "memory_summary.md"),
+			to: path.join(memoryDir, "memory_summary.md"),
+			isDir: false,
+			type: "memory",
+			title: "Memory Summary",
+			summary: "Prompt-time guidance auto-injected each session.",
+		},
+		{
+			from: path.join(memoryRoot, "skills"),
+			to: path.join(memoryRoot, TYPE_DIRS.skill),
+			isDir: true,
+			type: "skill",
+			title: "skill",
+		},
+	];
+	for (const move of moves) {
+		const fromExists = await Bun.file(move.from)
+			.exists()
+			.catch(() => false);
+		if (!fromExists && move.isDir) {
+			const stat = await fs.stat(move.from).catch(() => undefined);
+			if (!stat) continue;
+		} else if (!fromExists) {
+			continue;
+		}
+		const toExists = await Bun.file(move.to)
+			.exists()
+			.catch(() => false);
+		const toStat = move.isDir ? await fs.stat(move.to).catch(() => undefined) : undefined;
+		if (toExists || toStat) continue;
+		await fs.mkdir(path.dirname(move.to), { recursive: true });
+		try {
+			await fs.rename(move.from, move.to);
+		} catch (error) {
+			logger.warn("Memory layout migration step failed", {
+				from: move.from,
+				to: move.to,
+				error: String(error),
+			});
+			continue;
+		}
+		if (move.isDir) {
+			// Wrap every SKILL.md under the migrated skill tree. The
+			// consolidator overwrites these files on every Phase-2; without
+			// markers `writeMemoryDoc` treats them as user-authored.
+			await promoteLegacySkillDir(memoryRoot, move.to);
+		} else {
+			await promoteLegacyMemoryFile(memoryRoot, move.to, move.type, move.title, move.summary);
+		}
+	}
+}
+
+/**
+ * Wrap a marker-less legacy memory doc in body markers + frontmatter so the
+ * next consolidator pass can refresh its body region. Idempotent: already
+ * marker-wrapped docs are left untouched.
+ */
+async function promoteLegacyMemoryFile(
+	memoryRoot: string,
+	absPath: string,
+	type: MemoryDocType,
+	title: string,
+	summary: string | undefined,
+): Promise<void> {
+	let raw: string;
+	try {
+		raw = await Bun.file(absPath).text();
+	} catch (error) {
+		if (isEnoent(error)) return;
+		throw error;
+	}
+	const existing = parseMemoryDoc(raw);
+	if (existing.hasBodyMarkers) return;
+	// User-protected docs (`aiMaintained: false` / `readOnly: true`) keep
+	// their pre-PR shape — promoting them would force them under the
+	// consolidator's refresh path, defeating the user's protection.
+	if (existing.frontmatter.aiMaintained === false || existing.frontmatter.readOnly === true) {
+		return;
+	}
+	const rel = computeRelativeFromTypeRoot(memoryRoot, absPath, type);
+	const now = unixNow();
+	const body = raw.trim() || "<!-- Empty memory body. Replace with project content. -->";
+	const wrapped = buildMemoryDoc({
+		frontmatter: {
+			id: deriveDocId(rel),
+			type,
+			path: rel,
+			title,
+			injectMode: type === "memory" && path.basename(absPath) === "memory_summary.md" ? "summary" : "none",
+			inheritInjectMode: false,
+			inheritAiConfig: false,
+			aiMaintained: true,
+			readOnly: false,
+			summaryEnabled: true,
+			explicitMaintenanceRules: false,
+			createdAt: now,
+			updatedAt: now,
+		},
+		title,
+		summary,
+		body,
+	});
+	await Bun.write(absPath, wrapped);
+}
+
+/**
+ * Walk a migrated `skill/` directory and promote every marker-less
+ * `<n>/SKILL.md` so subsequent consolidations can refresh them.
+ */
+async function promoteLegacySkillDir(memoryRoot: string, skillsRoot: string): Promise<void> {
+	const entries = await fs.readdir(skillsRoot, { withFileTypes: true }).catch(() => []);
+	for (const entry of entries) {
+		if (!entry.isDirectory()) continue;
+		const skillFile = path.join(skillsRoot, entry.name, "SKILL.md");
+		const exists = await Bun.file(skillFile)
+			.exists()
+			.catch(() => false);
+		if (!exists) continue;
+		await promoteLegacyMemoryFile(memoryRoot, skillFile, "skill", entry.name, `Skill playbook: ${entry.name}`);
 	}
 }
 
@@ -923,10 +1445,15 @@ function parseStage1OutputSchema(value: Record<string, unknown>): Stage1OutputSc
 }
 
 function parseConsolidationOutputSchema(value: Record<string, unknown>): ConsolidationOutputSchema | undefined {
-	if (!hasExactKeys(value, ["memory_md", "memory_summary", "skills"])) return undefined;
+	const allowedKeys = ["memory_md", "memory_summary", "skills", "design_drafts"];
+	const sortedKeys = Object.keys(value).sort();
+	for (const key of sortedKeys) {
+		if (!allowedKeys.includes(key)) return undefined;
+	}
 	if (typeof value.memory_md !== "string") return undefined;
 	if (typeof value.memory_summary !== "string") return undefined;
 	if (!Array.isArray(value.skills)) return undefined;
+	if (value.design_drafts !== undefined && !Array.isArray(value.design_drafts)) return undefined;
 	const skills: ConsolidationSkillSchema[] = [];
 	for (const item of value.skills) {
 		if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
@@ -946,11 +1473,37 @@ function parseConsolidationOutputSchema(value: Record<string, unknown>): Consoli
 			examples,
 		});
 	}
+
+	const designDrafts: ConsolidationDesignDraftSchema[] = [];
+	if (Array.isArray(value.design_drafts)) {
+		for (const item of value.design_drafts) {
+			if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
+			const data = item as Record<string, unknown>;
+			if (!hasExactKeys(data, ["path", "content"])) return undefined;
+			if (typeof data.path !== "string" || typeof data.content !== "string") return undefined;
+			designDrafts.push({ path: data.path, content: data.content });
+		}
+	}
+
 	return {
 		memory_md: value.memory_md,
 		memory_summary: value.memory_summary,
 		skills,
+		design_drafts: designDrafts,
 	};
+}
+
+/** Strip empty/invalid draft entries; the schema parser already type-validates. */
+function sanitizeDesignDrafts(drafts: ConsolidationDesignDraftSchema[]): ConsolidationDesignDraftSchema[] {
+	const out: ConsolidationDesignDraftSchema[] = [];
+	for (const draft of drafts) {
+		const safe = sanitizeSkillRelativePath(draft.path);
+		if (!safe) continue;
+		const body = redactSecrets(draft.content).trim();
+		if (!body) continue;
+		out.push({ path: safe, content: body });
+	}
+	return out;
 }
 
 function hasExactKeys(value: Record<string, unknown>, expectedKeys: string[], allowMissing = false): boolean {

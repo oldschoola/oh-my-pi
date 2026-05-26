@@ -6,8 +6,42 @@ import { AgentRegistry } from "../registry/agent-registry";
 import { validateRelativePath } from "./skill-protocol";
 import type { InternalResource, InternalUrl, ProtocolHandler } from "./types";
 
-const DEFAULT_MEMORY_FILE = "memory_summary.md";
+const DEFAULT_MEMORY_FILE = "memory/memory_summary.md";
+const LEGACY_DEFAULT_MEMORY_FILE = "memory_summary.md";
 const MEMORY_NAMESPACE = "root";
+
+/**
+ * Returns alternative paths under `memoryRoot` to try after the primary
+ * resolution missed. Mirrors the layout migration: requests for old-shape
+ * paths fall through to new-shape paths and vice versa.
+ */
+function legacyRedirectsFor(targetPath: string, memoryRoot: string): string[] {
+	const rel = path.relative(memoryRoot, targetPath).split(path.sep).join("/");
+	if (!rel || rel.startsWith("..")) return [];
+
+	// New shape primary → legacy fallback
+	if (rel === "memory/memory_summary.md") {
+		return [path.join(memoryRoot, "memory_summary.md")];
+	}
+	if (rel === "memory/MEMORY.md") {
+		return [path.join(memoryRoot, "MEMORY.md")];
+	}
+	if (rel.startsWith("skill/")) {
+		return [path.join(memoryRoot, "skills", ...rel.slice("skill/".length).split("/"))];
+	}
+
+	// Legacy primary → new-shape fallback
+	if (rel === "memory_summary.md") {
+		return [path.join(memoryRoot, "memory", "memory_summary.md")];
+	}
+	if (rel === "MEMORY.md") {
+		return [path.join(memoryRoot, "memory", "MEMORY.md")];
+	}
+	if (rel.startsWith("skills/")) {
+		return [path.join(memoryRoot, "skill", ...rel.slice("skills/".length).split("/"))];
+	}
+	return [];
+}
 
 /**
  * Snapshot of memory roots for every registered session, deduped.
@@ -32,11 +66,6 @@ function ensureWithinRoot(targetPath: string, rootPath: string): void {
 	}
 }
 
-function toMemoryValidationError(error: unknown): Error {
-	const message = error instanceof Error ? error.message : String(error);
-	return new Error(message.replace("skill://", "memory://"));
-}
-
 /**
  * Resolve a memory:// URL to an absolute filesystem path under memory root.
  */
@@ -52,6 +81,9 @@ export function resolveMemoryUrlToPath(url: InternalUrl, memoryRoot: string): st
 	const rawPathname = url.rawPathname ?? url.pathname;
 	const hasPath = rawPathname && rawPathname !== "/" && rawPathname !== "";
 	if (!hasPath) {
+		// Default file is the new-shape summary. Back-compat fallback happens
+		// in tryResolveInRoot: if the new path is missing, the legacy path is
+		// tried.
 		return path.resolve(memoryRoot, DEFAULT_MEMORY_FILE);
 	}
 	let relativePath: string;
@@ -61,11 +93,7 @@ export function resolveMemoryUrlToPath(url: InternalUrl, memoryRoot: string): st
 		throw new Error(`Invalid URL encoding in memory:// path: ${url.href}`);
 	}
 
-	try {
-		validateRelativePath(relativePath);
-	} catch (error) {
-		throw toMemoryValidationError(error);
-	}
+	validateRelativePath(relativePath, "memory");
 
 	return path.resolve(memoryRoot, relativePath);
 }
@@ -95,8 +123,37 @@ async function tryResolveInRoot(url: InternalUrl, memoryRoot: string): Promise<I
 	try {
 		realTargetPath = await fs.realpath(targetPath);
 	} catch (error) {
-		if (isEnoent(error)) return undefined;
-		throw error;
+		if (!isEnoent(error)) throw error;
+		// Primary missed — walk legacy/new fallbacks before giving up.
+		const fallbacks = legacyRedirectsFor(targetPath, resolvedRoot);
+		let fallbackResolved: string | undefined;
+		for (const fallback of fallbacks) {
+			ensureWithinRoot(fallback, resolvedRoot);
+			try {
+				fallbackResolved = await fs.realpath(fallback);
+				break;
+			} catch (innerErr) {
+				if (!isEnoent(innerErr)) throw innerErr;
+			}
+		}
+		if (!fallbackResolved) {
+			// Bare `memory://root` with no explicit path and nothing on disk:
+			// some callers depend on this missing → undefined contract.
+			const rawPathname = url.rawPathname ?? url.pathname;
+			const hasPath = rawPathname && rawPathname !== "/" && rawPathname !== "";
+			if (!hasPath) {
+				// Try legacy default too — `tryResolveInRoot` returns undefined,
+				// the handler then raises a clear error.
+				const legacyDefault = path.resolve(resolvedRoot, LEGACY_DEFAULT_MEMORY_FILE);
+				try {
+					fallbackResolved = await fs.realpath(legacyDefault);
+				} catch (legacyErr) {
+					if (!isEnoent(legacyErr)) throw legacyErr;
+				}
+			}
+		}
+		if (!fallbackResolved) return undefined;
+		realTargetPath = fallbackResolved;
 	}
 
 	ensureWithinRoot(realTargetPath, resolvedRoot);
@@ -108,6 +165,9 @@ async function tryResolveInRoot(url: InternalUrl, memoryRoot: string): Promise<I
 
 	const content = await Bun.file(realTargetPath).text();
 	const ext = path.extname(realTargetPath).toLowerCase();
+	// .md → text/markdown; .omp-meta / .yaml / .yml / everything else →
+	// text/plain (the InternalResource union does not currently include
+	// text/yaml; consumers can detect YAML by extension).
 	const contentType: InternalResource["contentType"] = ext === ".md" ? "text/markdown" : "text/plain";
 
 	return {

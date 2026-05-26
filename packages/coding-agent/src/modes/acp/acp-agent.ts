@@ -54,6 +54,8 @@ import { buildSkillPromptMessage, getSkillSlashCommandName } from "../../extensi
 import { loadSlashCommands } from "../../extensibility/slash-commands";
 import { MCPManager } from "../../mcp/manager";
 import type { MCPServerConfig } from "../../mcp/types";
+import { getMemoryRoot } from "../../memories";
+import { buildKnowledgePromptMessage, listCommandEnabledDocs } from "../../memories/knowledge-ops";
 import { loadAllExtensions } from "../../modes/components/extensions/state-manager";
 import { theme } from "../../modes/theme/theme";
 import type { AgentSession, AgentSessionEvent } from "../../session/agent-session";
@@ -645,6 +647,10 @@ export class AcpAgent implements Agent {
 		if (skillResult) {
 			return;
 		}
+		const knowledgeResult = await this.#tryRunKnowledgeCommand(record, text);
+		if (knowledgeResult) {
+			return;
+		}
 
 		const builtinResult = await executeAcpBuiltinSlashCommand(text, {
 			session: record.session,
@@ -710,6 +716,56 @@ export class AcpAgent implements Agent {
 			content: built.message,
 			display: true,
 			details: built.details,
+			attribution: "user",
+		});
+		return true;
+	}
+
+	/**
+	 * Dispatch `/knowledge:<slug> [args]` against the doc set marked
+	 * `commandEnabled: true` in frontmatter. Per-call disk walk is fine
+	 * here — knowledge slash invocations are rare and the alternative
+	 * (per-record cache invalidated on every `knowledge_create`) would
+	 * cost more code than it saves.
+	 */
+	async #tryRunKnowledgeCommand(record: ManagedSessionRecord, text: string): Promise<boolean> {
+		if (!text.startsWith("/knowledge:")) {
+			return false;
+		}
+		if (record.session.settings.get("knowledge.enabled") === false) {
+			return false;
+		}
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+		const slug = commandName.slice("knowledge:".length);
+		if (!slug) {
+			return false;
+		}
+		const sm = record.session.sessionManager;
+		const memoryRoot = getMemoryRoot(record.session.settings.getAgentDir(), sm.getCwd());
+		let entries: Awaited<ReturnType<typeof listCommandEnabledDocs>>;
+		try {
+			entries = await listCommandEnabledDocs(memoryRoot);
+		} catch (error) {
+			logger.warn("Failed to list knowledge slash commands", { error: String(error) });
+			return false;
+		}
+		const entry = entries.find(candidate => candidate.slug === slug);
+		if (!entry) {
+			return false;
+		}
+		const built = await buildKnowledgePromptMessage(entry, args);
+		await record.session.promptCustomMessage({
+			customType: SKILL_PROMPT_MESSAGE_TYPE,
+			content: built.message,
+			display: true,
+			details: {
+				name: built.details.name,
+				path: built.details.path,
+				args: built.details.args,
+				lineCount: built.details.lineCount,
+			},
 			attribution: "user",
 		});
 		return true;
@@ -1411,6 +1467,22 @@ export class AcpAgent implements Agent {
 					description: skill.description || `Run ${skill.name} skill`,
 					input: { hint: "arguments" },
 				});
+			}
+		}
+
+		if (session.settings.get("knowledge.enabled") !== false) {
+			try {
+				const memoryRoot = getMemoryRoot(session.settings.getAgentDir(), session.sessionManager.getCwd());
+				const knowledgeEntries = await listCommandEnabledDocs(memoryRoot);
+				for (const entry of knowledgeEntries) {
+					appendCommand({
+						name: `knowledge:${entry.slug}`,
+						description: entry.description || entry.title,
+						input: { hint: "arguments" },
+					});
+				}
+			} catch (error) {
+				logger.warn("Failed to load knowledge slash commands for ACP", { error: String(error) });
 			}
 		}
 

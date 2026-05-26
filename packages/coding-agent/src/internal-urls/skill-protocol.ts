@@ -18,16 +18,19 @@ function getContentType(filePath: string): InternalResource["contentType"] {
 }
 
 /**
- * Validate that a path is safe (no traversal, no absolute paths).
+ * Validate that a path is safe (no traversal, no absolute paths). The
+ * `schemeLabel` (without trailing `://`) is interpolated into error
+ * messages so per-scheme callers (memory, knowledge, local) surface the
+ * right URL in diagnostics — defaults to `"skill"` for back-compat.
  */
-export function validateRelativePath(relativePath: string): void {
+export function validateRelativePath(relativePath: string, schemeLabel = "skill"): void {
 	if (path.isAbsolute(relativePath)) {
-		throw new Error("Absolute paths are not allowed in skill:// URLs");
+		throw new Error(`Absolute paths are not allowed in ${schemeLabel}:// URLs`);
 	}
 
 	const normalized = path.normalize(relativePath);
 	if (normalized.startsWith("..") || normalized.includes("/../") || normalized.includes("/..")) {
-		throw new Error("Path traversal (..) is not allowed in skill:// URLs");
+		throw new Error(`Path traversal (..) is not allowed in ${schemeLabel}:// URLs`);
 	}
 }
 

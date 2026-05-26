@@ -41,6 +41,8 @@ import { BUILTIN_SLASH_COMMANDS, loadSlashCommands } from "../extensibility/slas
 import type { Goal, GoalModeState } from "../goals/state";
 import { resolveLocalUrlToPath } from "../internal-urls";
 import { LSP_STARTUP_EVENT_CHANNEL, type LspStartupEvent } from "../lsp/startup-events";
+import { getMemoryRoot } from "../memories";
+import { type KnowledgeCommandEntry, listCommandEnabledDocs } from "../memories/knowledge-ops";
 import {
 	humanizePlanTitle,
 	type PlanApprovalDetails,
@@ -280,6 +282,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	lastStatusText: Text | undefined = undefined;
 	fileSlashCommands: Set<string> = new Set();
 	skillCommands: Map<string, string> = new Map();
+	knowledgeCommands: Map<string, KnowledgeCommandEntry> = new Map();
+	#skillsChangedUnsubscribe?: () => void;
 	oauthManualInput: OAuthManualInputManager = new OAuthManualInputManager();
 
 	#pendingSlashCommands: SlashCommand[] = [];
@@ -400,14 +404,23 @@ export class InteractiveMode implements InteractiveModeContext {
 			description: `${loaded.command.description} (${loaded.source})`,
 		}));
 
-		// Build skill commands from session.skills (if enabled)
+		// Build skill commands from session.skills (if enabled). Subscribed
+		// to `onSkillsChanged` so `skill_reload` rewires `/skill:<name>`
+		// dispatch in-place instead of waiting for a session restart.
 		const skillCommandList: SlashCommand[] = [];
-		if (settings.get("skills.enableSkillCommands")) {
+		const skillCommandsEnabled = settings.get("skills.enableSkillCommands");
+		if (skillCommandsEnabled) {
 			for (const skill of this.session.skills) {
 				const commandName = `skill:${skill.name}`;
 				this.skillCommands.set(commandName, skill.filePath);
 				skillCommandList.push({ name: commandName, description: skill.description });
 			}
+			this.#skillsChangedUnsubscribe = this.session.onSkillsChanged(skills => {
+				this.skillCommands.clear();
+				for (const skill of skills) {
+					this.skillCommands.set(`skill:${skill.name}`, skill.filePath);
+				}
+			});
 		}
 
 		// Store pending commands for init() where file commands are loaded async
@@ -439,6 +452,23 @@ export class InteractiveMode implements InteractiveModeContext {
 		// guarantees the decision persists even when the prompt is triggered
 		// from a subagent whose own `Settings` is an in-memory snapshot.
 		setAutoQaConsentHandler(() => this.#promptAutoQaConsent(), Settings.instance);
+
+		// Snapshot the `commandEnabled: true` knowledge docs so
+		// `/knowledge:<slug>` dispatch works for the rest of this session.
+		// New docs created later with `knowledge_create commandEnabled: true`
+		// only become dispatchable after the next session start, mirroring
+		// the existing `<skills>` block snapshot contract.
+		if (settings.get("knowledge.enabled") !== false) {
+			try {
+				const memoryRoot = getMemoryRoot(this.settings.getAgentDir(), this.session.sessionManager.getCwd());
+				const entries = await listCommandEnabledDocs(memoryRoot);
+				for (const entry of entries) {
+					this.knowledgeCommands.set(`knowledge:${entry.slug}`, entry);
+				}
+			} catch (error) {
+				logger.warn("Failed to load knowledge slash commands", { error: String(error) });
+			}
+		}
 
 		await logger.time(
 			"InteractiveMode.init:slashCommands",
@@ -2050,6 +2080,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		}
 		if (this.#cleanupUnsubscribe) {
 			this.#cleanupUnsubscribe();
+		}
+		if (this.#skillsChangedUnsubscribe) {
+			this.#skillsChangedUnsubscribe();
+			this.#skillsChangedUnsubscribe = undefined;
 		}
 		// Clear the process-global consent handler so it doesn't outlive this
 		// InteractiveMode instance (e.g. test harnesses, headless re-init).

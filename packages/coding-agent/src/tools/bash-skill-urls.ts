@@ -11,9 +11,18 @@ import { ToolError } from "./tool-errors";
 const SKILL_URL_PATTERN = /'skill:\/\/[^'\s")`\\]+'|"skill:\/\/[^"\s')`\\]+"|skill:\/\/[^\s'")`\\]+/g;
 
 const INTERNAL_URL_PATTERN_INCLUDING_NORMALIZED_LOCAL =
-	/'(?:skill|agent|artifact|plan|memory|rule|local):\/\/[^'\s")`\\]+'|"(?:skill|agent|artifact|plan|memory|rule|local):\/\/[^"\s')`\\]+"|(?:skill|agent|artifact|plan|memory|rule|local):\/\/[^\s'")`\\]+|'local:\/[^'\s")`\\]+'|"local:\/[^"\s')`\\]+"|(?<![./\\\\\w-])local:\/[^\s'")`\\]+/g;
+	/'(?:skill|knowledge|agent|artifact|plan|memory|rule|local):\/\/[^'\s")`\\]+'|"(?:skill|knowledge|agent|artifact|plan|memory|rule|local):\/\/[^"\s')`\\]+"|(?:skill|knowledge|agent|artifact|plan|memory|rule|local):\/\/[^\s'")`\\]+|'local:\/[^'\s")`\\]+'|"local:\/[^"\s')`\\]+"|(?<![./\\\\\w-])local:\/[^\s'")`\\]+/g;
 
-const SUPPORTED_INTERNAL_SCHEMES = ["skill", "agent", "artifact", "plan", "memory", "rule", "local"] as const;
+const SUPPORTED_INTERNAL_SCHEMES = [
+	"skill",
+	"knowledge",
+	"agent",
+	"artifact",
+	"plan",
+	"memory",
+	"rule",
+	"local",
+] as const;
 
 type SupportedInternalScheme = (typeof SUPPORTED_INTERNAL_SCHEMES)[number];
 
@@ -216,7 +225,7 @@ export function expandSkillUrls(command: string, skills: readonly Skill[]): stri
 
 /**
  * Expand supported internal URLs in a bash command string to shell-escaped absolute paths.
- * Supported schemes: skill://, agent://, artifact://, memory://, rule://, local://
+ * Supported schemes: skill://, knowledge://, agent://, artifact://, memory://, rule://, local://
  */
 export async function expandInternalUrls(command: string, options: InternalUrlExpansionOptions): Promise<string> {
 	if (!command.includes("://") && !command.includes("local:/")) return command;

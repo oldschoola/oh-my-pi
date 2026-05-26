@@ -12,6 +12,7 @@ export * from "./agent-protocol";
 export * from "./artifact-protocol";
 export * from "./issue-pr-protocol";
 export * from "./json-query";
+export * from "./knowledge-protocol";
 export * from "./local-protocol";
 export * from "./mcp-protocol";
 export * from "./memory-protocol";

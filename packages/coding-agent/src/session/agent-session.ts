@@ -135,7 +135,7 @@ import type {
 import type { CompactOptions, ContextUsage } from "../extensibility/extensions/types";
 import { ExtensionToolWrapper } from "../extensibility/extensions/wrapper";
 import type { HookCommandContext } from "../extensibility/hooks/types";
-import type { Skill, SkillWarning } from "../extensibility/skills";
+import { type Skill, type SkillWarning, subscribeToActiveSkills } from "../extensibility/skills";
 import { expandSlashCommand, type FileSlashCommand } from "../extensibility/slash-commands";
 import { GoalRuntime } from "../goals/runtime";
 import type { Goal, GoalModeState } from "../goals/state";
@@ -832,6 +832,10 @@ export class AgentSession {
 
 	#skills: Skill[];
 	#skillWarnings: SkillWarning[];
+	/** Unsubscribe handle for `subscribeToActiveSkills`; cleared on dispose. */
+	#activeSkillsUnsubscribe: (() => void) | undefined;
+	/** Listeners notified when `#skills` is replaced via `setActiveSkills`. */
+	#skillsChangedListeners = new Set<(skills: readonly Skill[]) => void>();
 
 	// Custom commands (TypeScript slash commands)
 	#customCommands: LoadedCustomCommand[] = [];
@@ -1005,6 +1009,20 @@ export class AgentSession {
 		this.#extensionRunner = config.extensionRunner;
 		this.#skills = config.skills ?? [];
 		this.#skillWarnings = config.skillWarnings ?? [];
+		// Track process-global skill-snapshot changes (`skill_reload` calls
+		// `setActiveSkills` after a successful reload) so this session's
+		// cached skill list and any subscribed UI command maps refresh in
+		// place instead of staying frozen at session start.
+		this.#activeSkillsUnsubscribe = subscribeToActiveSkills(skills => {
+			this.#skills = [...skills];
+			for (const listener of this.#skillsChangedListeners) {
+				try {
+					listener(this.#skills);
+				} catch (error) {
+					logger.warn("Skills-changed listener threw", { error: String(error) });
+				}
+			}
+		});
 		this.#customCommands = config.customCommands ?? [];
 		this.#skillsSettings = config.skillsSettings;
 		this.#modelRegistry = config.modelRegistry;
@@ -2793,6 +2811,11 @@ export class AgentSession {
 			this.#unsubscribeAppendOnly = undefined;
 		}
 		this.#eventListeners = [];
+		if (this.#activeSkillsUnsubscribe) {
+			this.#activeSkillsUnsubscribe();
+			this.#activeSkillsUnsubscribe = undefined;
+		}
+		this.#skillsChangedListeners.clear();
 	}
 
 	#closeAllProviderSessions(reason: string): void {
@@ -4662,6 +4685,20 @@ export class AgentSession {
 	/** Skills loaded by SDK (empty if --no-skills or skills: [] was passed) */
 	get skills(): readonly Skill[] {
 		return this.#skills;
+	}
+
+	/**
+	 * Subscribe to skill-snapshot changes for this session. Triggered when
+	 * `skill_reload` (or any other call to `setActiveSkills`) replaces the
+	 * process-global snapshot. Returns an unsubscribe function the caller
+	 * MUST invoke when its lifecycle ends. Listener errors are swallowed
+	 * and logged so one bad subscriber never derails the reload fan-out.
+	 */
+	onSkillsChanged(listener: (skills: readonly Skill[]) => void): () => void {
+		this.#skillsChangedListeners.add(listener);
+		return () => {
+			this.#skillsChangedListeners.delete(listener);
+		};
 	}
 
 	/** Skill loading warnings captured by SDK */

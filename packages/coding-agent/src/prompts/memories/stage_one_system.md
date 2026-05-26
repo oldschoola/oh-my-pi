@@ -7,6 +7,10 @@ Extraction goals:
 - You MUST keep concrete technical signal (constraints, decisions, workflows, pitfalls, resolved failures).
 - You NEVER include transient chatter and low-signal noise.
 
+Your output is consumed by the four-bucket consolidator, which sorts durable signal into
+`memory/`, `skill/<name>/`, and (rarely) `design/_drafts/`. Capture enough context that the
+consolidator can route the signal correctly without re-reading the rollout.
+
 Output contract (required keys):
 {
   "rollout_summary": "string",

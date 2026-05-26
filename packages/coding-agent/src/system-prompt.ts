@@ -532,9 +532,11 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 
 	// Filter skills for the rendered system prompt:
 	// - require the `read` tool so the model can actually fetch skill content;
-	// - drop skills with frontmatter `hide: true` (still loadable via skill:// and /skill:<name>).
+	// - drop skills whose `surface` resolves to `"command"` (still loadable
+	//   via skill:// and /skill:<name>). Legacy `hide: true` frontmatter maps
+	//   to `surface: "command"` via `deriveSkillSurface`.
 	const hasRead = tools?.has("read");
-	const filteredSkills = hasRead ? skills.filter(skill => skill.hide !== true) : [];
+	const filteredSkills = hasRead ? skills.filter(skill => (skill.surface ?? "auto") !== "command") : [];
 
 	const effectiveSystemPromptCustomization = dedupePromptSource(systemPromptCustomization, [
 		resolvedCustomPrompt,
