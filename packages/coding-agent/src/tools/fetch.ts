@@ -1279,11 +1279,7 @@ export function __primeReadUrlCacheForTest(
 ): void {
 	cacheReadUrlEntry(session, requestedUrl, raw, entry);
 }
-export function __lookupReadUrlCache(
-	session: ToolSession,
-	url: string,
-	raw: boolean,
-): ReadUrlCacheEntry | undefined {
+export function __lookupReadUrlCache(session: ToolSession, url: string, raw: boolean): ReadUrlCacheEntry | undefined {
 	return touchReadUrlCacheKey(getReadUrlCacheKey(session, url, raw));
 }
 
