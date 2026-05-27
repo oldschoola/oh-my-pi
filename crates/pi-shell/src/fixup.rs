@@ -831,10 +831,9 @@ mod tests {
 
 	#[test]
 	fn options_skip_strip_keeps_path_rewrite() {
-		let r = apply_bash_fixups_with_options(
-			r"dir C:\tmp\foo | head -5",
-			BashFixupOptions { strip_redundant_pipes: false },
-		);
+		let r = apply_bash_fixups_with_options(r"dir C:\tmp\foo | head -5", BashFixupOptions {
+			strip_redundant_pipes: false,
+		});
 		assert_eq!(r.command, "dir C:/tmp/foo | head -5");
 		assert!(r.stripped.is_empty());
 		assert_eq!(r.rewritten.len(), 1);
@@ -843,7 +842,9 @@ mod tests {
 
 	#[test]
 	fn options_skip_strip_still_skips_2to1() {
-		let r = apply_bash_fixups_with_options("cmd 2>&1", BashFixupOptions { strip_redundant_pipes: false });
+		let r = apply_bash_fixups_with_options("cmd 2>&1", BashFixupOptions {
+			strip_redundant_pipes: false,
+		});
 		assert_eq!(r.command, "cmd 2>&1");
 		assert!(r.stripped.is_empty());
 	}

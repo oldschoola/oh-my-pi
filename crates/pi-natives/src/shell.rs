@@ -16,7 +16,8 @@ use pi_shell::{
 	execute_shell as core_execute_shell,
 	fixup::{
 		BashFixupOptions as CoreBashFixupOptions, BashFixupResult as CoreBashFixupResult,
-		RewrittenPath as CoreRewrittenPath, apply_bash_fixups_with_options as core_apply_bash_fixups_with_options,
+		RewrittenPath as CoreRewrittenPath,
+		apply_bash_fixups_with_options as core_apply_bash_fixups_with_options,
 	},
 	minimizer,
 };
