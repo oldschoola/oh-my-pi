@@ -1174,7 +1174,44 @@ interface ReadUrlCacheEntry {
 	output: string;
 }
 
+/**
+ * Cap the URL response cache at this many distinct entries. Each entry inserts
+ * up to two keys (requestedUrl + finalUrl), so the underlying Map can hold up
+ * to `READ_URL_CACHE_CAP * 2` keys before eviction. Entries can carry inline
+ * base64 image payloads up to ~300KB, so an unbounded cache is a real leak in
+ * long-lived sessions.
+ */
+export const READ_URL_CACHE_CAP = 32;
 const readUrlCache = new Map<string, ReadUrlCacheEntry>();
+
+/**
+ * LRU read: re-inserts the key so Map iteration order treats it as the most
+ * recently used. Returns undefined when the key is absent.
+ */
+function touchReadUrlCacheKey(key: string): ReadUrlCacheEntry | undefined {
+	const existing = readUrlCache.get(key);
+	if (existing === undefined) return undefined;
+	readUrlCache.delete(key);
+	readUrlCache.set(key, existing);
+	return existing;
+}
+
+/**
+ * LRU write: re-inserts the key at the back of the iteration order, then drops
+ * oldest keys until the cache is within the cap. The cap is applied to keys
+ * (not logical entries) for cheap deterministic bookkeeping; the worst case is
+ * that an entry's two keys age out one at a time.
+ */
+function insertReadUrlCacheKey(key: string, entry: ReadUrlCacheEntry): void {
+	if (readUrlCache.has(key)) readUrlCache.delete(key);
+	readUrlCache.set(key, entry);
+	const maxKeys = READ_URL_CACHE_CAP * 2;
+	while (readUrlCache.size > maxKeys) {
+		const oldestKey = readUrlCache.keys().next().value;
+		if (oldestKey === undefined) break;
+		readUrlCache.delete(oldestKey);
+	}
+}
 
 function getReadUrlCacheKey(session: ToolSession, requestedUrl: string, raw: boolean): string {
 	const scope = session.getSessionFile() ?? session.cwd;
@@ -1223,8 +1260,31 @@ async function ensureReadUrlCacheArtifact(session: ToolSession, entry: ReadUrlCa
 }
 
 function cacheReadUrlEntry(session: ToolSession, requestedUrl: string, raw: boolean, entry: ReadUrlCacheEntry): void {
-	readUrlCache.set(getReadUrlCacheKey(session, requestedUrl, raw), entry);
-	readUrlCache.set(getReadUrlCacheKey(session, entry.details.finalUrl, raw), entry);
+	insertReadUrlCacheKey(getReadUrlCacheKey(session, requestedUrl, raw), entry);
+	insertReadUrlCacheKey(getReadUrlCacheKey(session, entry.details.finalUrl, raw), entry);
+}
+
+/** Test-only helpers; kept inline to avoid an extra import path. */
+export function __getReadUrlCacheSize(): number {
+	return readUrlCache.size;
+}
+export function __resetReadUrlCache(): void {
+	readUrlCache.clear();
+}
+export function __primeReadUrlCacheForTest(
+	session: ToolSession,
+	requestedUrl: string,
+	raw: boolean,
+	entry: ReadUrlCacheEntry,
+): void {
+	cacheReadUrlEntry(session, requestedUrl, raw, entry);
+}
+export function __lookupReadUrlCache(
+	session: ToolSession,
+	url: string,
+	raw: boolean,
+): ReadUrlCacheEntry | undefined {
+	return touchReadUrlCacheKey(getReadUrlCacheKey(session, url, raw));
 }
 
 async function buildReadUrlCacheEntry(
@@ -1269,7 +1329,7 @@ export async function loadReadUrlCacheEntry(
 	options?: { ensureArtifact?: boolean; preferCached?: boolean },
 ): Promise<ReadUrlCacheEntry> {
 	const raw = params.raw ?? false;
-	const cached = readUrlCache.get(getReadUrlCacheKey(session, params.path, raw));
+	const cached = touchReadUrlCacheKey(getReadUrlCacheKey(session, params.path, raw));
 	if (options?.preferCached && cached) {
 		const prepared = options.ensureArtifact ? await ensureReadUrlCacheArtifact(session, cached) : cached;
 		const materialized = await materializeReadUrlCacheEntry(session, prepared);
