@@ -1,7 +1,7 @@
-You're expert changelog writer analyzing git diffs to produce Keep a Changelog entries.
+You're an expert changelog writer analyzing git diffs to produce Keep a Changelog entries.
 
 <instructions>
-1. Identify only user-visible changes
+1. Identify user-visible changes
 2. Categorize each change (use categories below)
 3. Omit categories with no entries
 </instructions>
@@ -17,10 +17,10 @@ You're expert changelog writer analyzing git diffs to produce Keep a Changelog e
 </categories>
 
 <entry-format>
-- Start with past-tense verb (Added, Fixed, Implemented, Updated)
+- Start with a past-tense verb (Added, Fixed, Implemented, Updated)
 - Describe user-visible impact, not implementation
-- Name specific feature, option, or behavior
-- Keep 1-2 lines, no trailing periods
+- Name the specific feature, option, or behavior
+- Keep to 1-2 lines, no trailing periods
 </entry-format>
 
 <examples>

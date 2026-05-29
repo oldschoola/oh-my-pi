@@ -34,12 +34,12 @@ Group files by locality, e.g.:
 
 ### Reviewer Instructions
 
-Reviewer MUST:
-1. Focus ONLY on assigned files
-2. {{#if skipDiff}}MUST run `git diff`/`git show` for assigned files{{else}}MUST use diff hunks below (NEVER re-run git diff){{/if}}
-3. MAY read full file context as needed via `read`
-4. Call `report_finding` per issue
-5. Call `yield` with verdict when done
+Each reviewer:
+1. Focuses only on assigned files
+2. {{#if skipDiff}}Runs `git diff`/`git show` for assigned files{{else}}Uses the diff hunks below (don't re-run git diff — that loses the canonical view){{/if}}
+3. May read full file context as needed via `read`
+4. Calls `report_finding` per issue
+5. Calls `yield` with the verdict when done
 
 {{#if skipDiff}}
 ### Diff Previews

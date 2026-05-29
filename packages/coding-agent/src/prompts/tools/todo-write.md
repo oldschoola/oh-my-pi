@@ -18,12 +18,12 @@ Allowed `op` values are only `init`, `start`, `done`, `drop`, `rm`, `append`, an
 
 ## Anatomy
 - **Task content**: 5–10 words, what is being done, not how. Used as the task identifier — unique.
-- **Phase name**: short noun phrase (e.g. `Foundation`, `Auth`, `Verification`). Used as the phase identifier — unique. Do not add prefixes like `1.`, `A)`, `Phase 1:`, etc.
+- **Phase name**: short noun phrase (e.g. `Foundation`, `Auth`, `Verification`). Used as the phase identifier — unique. Don't add prefixes like `1.`, `A)`, `Phase 1:`, etc.
 
 ## Rules
-- Mark tasks done immediately after finishing.
-- Complete phases in order.
-- On blockers, `append` a new task to the active phase to unblock yourself, or `drop`.
+- Mark tasks done as soon as they're finished — the next pending task only promotes once you do.
+- Work through phases in order; the list assumes that ordering.
+- On blockers, `append` a new task to the active phase to unblock yourself, or `drop` the blocked task.
 - `task` and `phase` fields reference content/name verbatim; keep them stable once introduced.
 
 ## When to create a list

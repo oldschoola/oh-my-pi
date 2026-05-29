@@ -1,18 +1,19 @@
-You MUST incorporate new messages above into the existing handoff summary in <previous-summary> tags, used by another LLM to resume task.
-RULES:
-- MUST preserve all information from previous summary
-- MUST add new progress, decisions, and context from new messages
-- MUST update Progress: move items from "In Progress" to "Done" when completed
-- MUST update "Next Steps" based on what was accomplished
-- MUST preserve exact file paths, function names, and error messages
-- You MAY remove anything no longer relevant
+Incorporate the new messages above into the existing handoff summary in <previous-summary> tags — the merged summary is what the next LLM uses to resume.
 
-IMPORTANT: If new messages end with unanswered question or request to user, you MUST add it to Critical Context (replacing any previous pending question if answered).
+Rules:
+- Preserve all information from the previous summary
+- Add new progress, decisions, and context from the new messages
+- Update Progress: move items from "In Progress" to "Done" when completed
+- Update "Next Steps" based on what was accomplished
+- Preserve exact file paths, function names, and error messages
+- Remove anything no longer relevant
 
-You MUST use this format (omit sections if not applicable):
+Important: if the new messages end with an unanswered question or request to the user, add it to Critical Context (replacing any previous pending question if answered).
+
+Use this format (omit sections if not applicable):
 
 ## Goal
-[Preserve existing goals; add new ones if task expanded]
+[Preserve existing goals; add new ones if the task expanded]
 
 ## Constraints & Preferences
 - [Preserve existing; add new ones discovered]
@@ -23,10 +24,10 @@ You MUST use this format (omit sections if not applicable):
 - [x] [Include previously done and newly completed items]
 
 ### In Progress
-- [ ] [Current work—update based on progress]
+- [ ] [Current work — update based on progress]
 
 ### Blocked
-- [Current blockers—remove if resolved]
+- [Current blockers — remove if resolved]
 
 ## Key Decisions
 - **[Decision]**: [Brief rationale] (preserve all previous, add new)
@@ -40,6 +41,6 @@ You MUST use this format (omit sections if not applicable):
 ## Additional Notes
 [Other important info not fitting above]
 
-You MUST output only the structured summary; you NEVER include extra text.
+Output only the structured summary — no extra text.
 
-Sections MUST be kept concise. You MUST preserve relevant tool outputs/command results. You MUST include repository state changes (branch, uncommitted changes) if mentioned.
+Keep sections concise. Preserve relevant tool outputs/command results. Include repository state changes (branch, uncommitted changes) when they were mentioned.

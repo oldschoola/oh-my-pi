@@ -58,6 +58,10 @@ pi-*.html
 packages/coding-agent/src/internal-urls/docs-index.generated.ts
 /runs/
 python/omp-rpc/src/omp_rpc.egg-info/
+
+# Local-only gentle-coding bench artifacts (kept on disk, not committed)
+docs/gentle-coding-runs/
+
 # parallel-agent worktrees
 .wt/
 CPU*.md

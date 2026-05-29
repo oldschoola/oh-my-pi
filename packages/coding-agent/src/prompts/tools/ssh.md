@@ -1,7 +1,7 @@
 Runs commands on remote hosts.
 
 <instruction>
-You MUST build commands from the reference below
+Build commands from the reference below — each shell type accepts a different set.
 </instruction>
 
 <commands>
@@ -22,7 +22,7 @@ You MUST build commands from the reference below
 </commands>
 
 <critical>
-You MUST verify the shell type from "Available hosts" and use matching commands.
+Verify the shell type from "Available hosts" before sending — a PowerShell command into `windows/cmd` won't run, and vice versa.
 </critical>
 
 <examples>

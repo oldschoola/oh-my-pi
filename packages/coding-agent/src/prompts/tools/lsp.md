@@ -29,14 +29,14 @@ Interacts with Language Server Protocol servers for code intelligence.
 </parameters>
 
 <caution>
-- Requires running LSP server for target language
-- Some operations require file to be saved to disk
+- Requires a running LSP server for the target language
+- Some operations require the file to be saved to disk
 - Glob expansion samples up to 20 files per request; use `file: "*"` for broader coverage
-- When `symbol` is provided for position-based actions, missing symbols or out-of-bounds `#N` occurrence selectors return an explicit error instead of silently falling back
+- When `symbol` is provided for position-based actions, missing symbols or out-of-bounds `#N` occurrence selectors return an explicit error rather than silently falling back
 </caution>
 
 <critical>
-- You MUST use `lsp` for symbol-aware operations (rename, find references, go to definition/implementation, code actions) whenever a language server is available — it is safer and more accurate than text-based alternatives.
-- You NEVER perform cross-file renames with `ast_edit`, `sed`, `rsed`, or manual edits when `lsp` `rename` can do it. Text-based renames miss shadowing, re-exports, and usages in other files.
-- Prefer `lsp` `code_actions` for imports, quick-fixes, and refactors the language server already knows how to apply.
+- For symbol-aware operations (rename, find references, go to definition/implementation, code actions), `lsp` is the safer path whenever a language server is available — it understands scope, shadowing, and re-exports in a way text search doesn't.
+- Cross-file renames via `ast_edit`, `sed`, `rsed`, or manual edits tend to miss shadowing, re-exports, and usages in other files. When `lsp rename` is available, lean on it.
+- For imports, quick-fixes, and refactors the language server already knows how to apply, prefer `lsp code_actions` over hand-rolling the change.
 </critical>

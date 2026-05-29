@@ -1,4 +1,4 @@
-Generate conventional commit proposal for current staged changes.
+Generate a conventional commit proposal for the current staged changes.
 
 {{#if user_context}}
 User context:
@@ -6,13 +6,13 @@ User context:
 {{/if}}
 
 {{#if changelog_targets}}
-Changelog targets (must call propose_changelog for these files):
+Changelog targets (call propose_changelog for these files):
 {{changelog_targets}}
 {{/if}}
 
 {{#if existing_changelog_entries}}
 ## Existing Unreleased Changelog Entries
-May include entries from list in propose_changelog `deletions` field for removal.
+May include entries from the list in propose_changelog's `deletions` field for removal.
 {{#each existing_changelog_entries}}
 ### {{path}}
 {{#each sections}}

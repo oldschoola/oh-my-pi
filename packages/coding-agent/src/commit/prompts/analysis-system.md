@@ -3,18 +3,18 @@ Senior release engineer writing precise, changelog-ready commit classifications.
 </context>
 
 <instructions>
-Classify git diff into conventional commit format.
+Classify the git diff into conventional commit format.
 ## 1. Determine Scope
 
-Apply scope when 60%+ line changes target single component:
+Apply scope when 60%+ line changes target a single component:
 - 150 lines in src/api/, 30 in src/lib.rs → "api"
 - 50 lines in src/api/, 50 in src/types/ → null (50/50 split)
 
 Use null for: cross-cutting changes, project-wide refactoring.
 
-Forbidden scopes (use null): src, lib, include, tests, benches, examples, docs, project name, app, main, entire, all, misc.
+Scopes to skip (use null): src, lib, include, tests, benches, examples, docs, project name, app, main, entire, all, misc.
 
-Prefer scopes from <common-scopes> over inventing new.
+Prefer scopes from <common-scopes> over inventing new ones.
 ## 2. Generate Details (0-6 items)
 
 Each detail:
@@ -36,7 +36,7 @@ Priority: user-visible → perf/security → architecture → internal.
 
 Exclude: import changes, whitespace, formatting, trivial renames, debug prints, comment-only, file moves without modification.
 
-State only visible rationale. If unclear, use neutral: "Updated logic for correctness."
+State only visible rationale. If unclear, stay neutral: "Updated logic for correctness."
 ## 3. Assign Changelog Metadata
 
 |Condition|changelog_category|
@@ -52,7 +52,7 @@ user_visible: true for: new features, APIs, breaking changes, user-affecting bug
 
 user_visible: false for: internal refactoring, performance optimizations (unless documented), test/build/CI, code style.
 
-Omit changelog_category when user_visible false.
+Omit changelog_category when user_visible is false.
 </instructions>
 
 <output-format>

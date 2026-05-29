@@ -1,13 +1,13 @@
 Asks user when you need clarification or input during task execution.
 
 <conditions>
-- Multiple approaches exist with significantly different tradeoffs user should weigh
+- Multiple approaches exist with significantly different tradeoffs the user should weigh
 </conditions>
 
 <instruction>
-- Use `recommended: <index>` to mark default (0-indexed); " (Recommended)" added automatically
+- Use `recommended: <index>` to mark default (0-indexed); " (Recommended)" is added automatically
 - Use `questions` for multiple related questions instead of asking one at a time
-- Set `multi: true` on question to allow multiple selections
+- Set `multi: true` on a question to allow multiple selections
 </instruction>
 
 <caution>
@@ -15,9 +15,9 @@ Asks user when you need clarification or input during task execution.
 </caution>
 
 <critical>
-- **Default to action.** Resolve ambiguity yourself using repo conventions, existing patterns, and reasonable defaults. Exhaust existing sources (code, configs, docs, history) before asking. Only ask when options have materially different tradeoffs the user must decide.
+- **The default is to act.** When ambiguity shows up, look at repo conventions, existing patterns, and reasonable defaults first — code, configs, docs, and history usually carry the answer. Save `ask` for the cases where options have materially different tradeoffs the user has to decide.
 - **If multiple choices are acceptable**, pick the most conservative/standard option and proceed; state the choice.
-- **Do NOT include "Other" option** — UI automatically adds "Other (type your own)" to every question.
+- **Don't include an "Other" option** — the UI automatically adds "Other (type your own)" to every question.
 </critical>
 
 <examples>

@@ -9,14 +9,14 @@ Cell fields:
 - `code` — cell body, verbatim. Newlines, quotes, and indentation are JSON-encoded; no fences, no headers.
 - `title` (optional) — short label shown in the transcript (e.g. `"imports"`, `"load config"`).
 - `timeout` (optional) — per-cell timeout in seconds (1-600). Default 30.
-- `reset` (optional) — wipe this cell's language kernel before running.{{#ifAll py js}} Reset is per-language: a `py` cell's reset does not touch the JavaScript VM and vice versa.{{/ifAll}}
+- `reset` (optional) — wipe this cell's language kernel before running.{{#ifAll py js}} Reset is per-language: a `py` cell's reset doesn't touch the JavaScript VM and vice versa.{{/ifAll}}
 
 **Work incrementally:**
 
 - One logical step per cell (imports, define, test, use).
 - Pass multiple small cells in one call.
 - Define small reusable functions for individual debugging.
-- Put workflow explanations in the assistant message or `title` — never inside cell code.
+- Put workflow explanations in the assistant message or `title` rather than inside cell code.
 {{#if py}}- Python cells run inside an IPython kernel with a live event loop. Use top-level `await` directly (e.g. `await main()`); `asyncio.run(…)` raises "cannot be called from a running event loop".{{/if}}
 **On failure:** errors identify the failing cell (e.g., "Cell 3 failed"). Resubmit only the fixed cell (or fixed cell + remaining cells).
 </instruction>

@@ -1,7 +1,7 @@
 Executes bash command in shell session for terminal operations like git, bun, cargo, python.
 
 <instruction>
-- Use `cwd` to set working directory, not `cd dir && …`
+- Use `cwd` to set working directory rather than `cd dir && …`
 - Prefer `env: { NAME: "…" }` for multiline, quote-heavy, or untrusted values; reference as `$NAME`
 - Quote variable expansions like `"$NAME"` to preserve exact content
 - PTY mode is opt-in: set `pty: true` only when the command needs a real terminal (e.g. `sudo`, `ssh` requiring user input); default is `false`
@@ -13,9 +13,9 @@ Executes bash command in shell session for terminal operations like git, bun, ca
 </instruction>
 
 <critical>
-- NEVER use Linux coreutils (`cat`, `head`, `tail`, `less`, `more`, `ls`, `grep`, `rg`, `awk`, `sed`, `find`, `fd`, etc.) when a dedicated tool suffices — ALWAYS prefer `read`, `search`, `find`, `edit`, `write`.
-- NEVER pipe through `| head -n N` or `| tail -n N` — output is already truncated with the full result available via `artifact://<id>`.
-- NEVER redirect with `2>&1` or `2>/dev/null` — stdout and stderr are already merged.
+- When a dedicated tool fits (`read`, `search`, `find`, `edit`, `write`), reach for it instead of shelling out to coreutils (`cat`, `head`, `tail`, `less`, `more`, `ls`, `grep`, `rg`, `awk`, `sed`, `find`, `fd`, …). The dedicated tools keep gitignore semantics, paginate predictably, and emit the headers other tools depend on.
+- No need to pipe through `| head -n N` or `| tail -n N` — output is already truncated, and the full result is available via `artifact://<id>`.
+- Skip `2>&1` or `2>/dev/null` — stdout and stderr are already merged here.
 </critical>
 
 <output>

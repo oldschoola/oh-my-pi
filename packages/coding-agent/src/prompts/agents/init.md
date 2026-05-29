@@ -18,16 +18,16 @@ Generate AGENTS.md by launching multiple `explore` agents in parallel (via `task
 </structure>
 
 <directives>
-- You MUST title the document "Repository Guidelines"
-- You MUST use Markdown headings for structure
-- You MUST be concise and practical
-- You MUST focus on what an AI assistant needs to help with the codebase
-- You SHOULD include examples where helpful (commands, paths, naming patterns)
-- You SHOULD include file paths where relevant
-- You MUST call out architecture and code patterns explicitly
-- You SHOULD omit information obvious from code structure
+- Title the document "Repository Guidelines"
+- Use Markdown headings for structure
+- Be concise and practical
+- Focus on what an AI assistant needs to help with the codebase
+- Include examples where they help (commands, paths, naming patterns)
+- Include file paths where relevant
+- Call out architecture and code patterns explicitly
+- Omit information already obvious from the code structure
 </directives>
 
 <output>
-After analysis, you MUST write AGENTS.md to the project root.
+After analysis, write AGENTS.md to the project root.
 </output>
