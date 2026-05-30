@@ -478,7 +478,11 @@ async function runLoopBody(
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 	let harmonyRetryAttempt = 0;
 	let harmonyTruncateResumeCount = 0;
-
+	// Per-attempt content-char accumulator: shared across every `streamAssistantResponse`
+	// call in this loop body so `maxResponseContentChars` is enforced over the entire
+	// agent invocation, not per-individual-response. Without this kimi-class rambling
+	// across many cheap turns never trips a per-response cap.
+	const contentCharCounter = { count: 0 };
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
 		let hasMoreToolCalls = true;
@@ -524,6 +528,7 @@ async function runLoopBody(
 					stepCounter,
 					streamFn,
 					harmonyRetryAttempt,
+					contentCharCounter,
 				);
 				harmonyRetryAttempt = 0;
 				harmonyTruncateResumeCount = 0;
@@ -692,6 +697,7 @@ async function streamAssistantResponse(
 	stepCounter: StepCounter,
 	streamFn?: StreamFn,
 	harmonyRetryAttempt = 0,
+	contentCharCounter: { count: number } = { count: 0 },
 ): Promise<AssistantMessage> {
 	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
 	let messages = context.messages;
@@ -735,10 +741,16 @@ async function streamAssistantResponse(
 	const harmonyAbortController = harmonyMitigationEnabled ? new AbortController() : undefined;
 	const maxToolCallsPerTurn = normalizeMaxToolCallsPerTurn(config.maxToolCallsPerTurn);
 	const toolCallCapAbortController = maxToolCallsPerTurn === undefined ? undefined : new AbortController();
+	const maxResponseContentChars =
+		typeof config.maxResponseContentChars === "number" && config.maxResponseContentChars > 0
+			? config.maxResponseContentChars
+			: undefined;
+	const contentCharCapAbortController = maxResponseContentChars === undefined ? undefined : new AbortController();
 	const requestSignals: AbortSignal[] = [];
 	if (signal) requestSignals.push(signal);
 	if (harmonyAbortController) requestSignals.push(harmonyAbortController.signal);
 	if (toolCallCapAbortController) requestSignals.push(toolCallCapAbortController.signal);
+	if (contentCharCapAbortController) requestSignals.push(contentCharCapAbortController.signal);
 	const requestSignal =
 		requestSignals.length === 0
 			? undefined
@@ -807,6 +819,7 @@ async function streamAssistantResponse(
 
 			const responseIterator = response[Symbol.asyncIterator]();
 			let completedToolCalls = 0;
+			// no per-response counter — we use the per-attempt `contentCharCounter` passed in
 			let cappedMessage: AssistantMessage | undefined;
 			let capFinalized = false;
 
@@ -851,7 +864,7 @@ async function streamAssistantResponse(
 					if (abortRacePromise) {
 						const result = await Promise.race([responseIterator.next(), abortRacePromise]);
 						if (result === ABORTED) {
-							if (toolCallCapAbortController?.signal.aborted) {
+							if (toolCallCapAbortController?.signal.aborted || contentCharCapAbortController?.signal.aborted) {
 								const capped = await finishCappedAssistantMessage();
 								if (capped) return capped;
 							}
@@ -865,7 +878,7 @@ async function streamAssistantResponse(
 						next = await responseIterator.next();
 					}
 					if (requestSignal?.aborted) {
-						if (toolCallCapAbortController?.signal.aborted) {
+						if (toolCallCapAbortController?.signal.aborted || contentCharCapAbortController?.signal.aborted) {
 							const capped = await finishCappedAssistantMessage();
 							if (capped) return capped;
 						}
@@ -909,6 +922,14 @@ async function streamAssistantResponse(
 									assistantMessageEvent: event,
 									message: { ...partialMessage },
 								});
+								if (
+									(event.type === "text_delta" ||
+										event.type === "thinking_delta" ||
+										event.type === "toolcall_delta") &&
+									maxResponseContentChars !== undefined
+								) {
+									contentCharCounter.count += event.delta.length;
+								}
 								if (event.type === "toolcall_end" && maxToolCallsPerTurn !== undefined) {
 									completedToolCalls++;
 									if (completedToolCalls >= maxToolCallsPerTurn) {
@@ -917,6 +938,17 @@ async function streamAssistantResponse(
 										const capped = await finishCappedAssistantMessage();
 										if (capped) return capped;
 									}
+								}
+								if (
+									event.type === "toolcall_end" &&
+									maxResponseContentChars !== undefined &&
+									contentCharCounter.count >= maxResponseContentChars &&
+									!toolCallCapAbortController?.signal.aborted
+								) {
+									cappedMessage = cloneAssistantMessageForToolCallCap(partialMessage);
+									contentCharCapAbortController?.abort();
+									const capped = await finishCappedAssistantMessage();
+									if (capped) return capped;
 								}
 							}
 							break;

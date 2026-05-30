@@ -88,6 +88,7 @@ import { LSP_STARTUP_EVENT_CHANNEL, type LspStartupEvent } from "./lsp/startup-e
 import { discoverAndLoadMCPTools, MCPManager, type MCPToolsLoadResult } from "./mcp";
 import { resolveMemoryBackend } from "./memory-backend";
 import { getMnemosyneSessionState, type MnemosyneSessionState } from "./mnemosyne/state";
+import { isKimiClassModel } from "./model-families";
 import asyncResultTemplate from "./prompts/tools/async-result.md" with { type: "text" };
 import { AgentRegistry, MAIN_AGENT_ID } from "./registry/agent-registry";
 import {
@@ -616,6 +617,29 @@ function resolveAppendOnlyMode(setting: "auto" | "on" | "off" | undefined, provi
 		default:
 			return provider === "deepseek";
 	}
+}
+
+/**
+ * Build a small model-conditional behavioral addendum appended to the system
+ * prompt for model families that embed inline `<thinking>...</thinking>` text
+ * in their assistant output instead of using a provider-side thinking channel.
+ *
+ * Kimi K2.x, GLM-5.x, and Qwen models are trained to emit verbose inline
+ * `<thinking>` blocks even when the API-level reasoning toggle is off. On
+ * tool-calling loops these blocks (a) blow past per-attempt wall-clock budgets
+ * via 20k+ token monologues and (b) bloat subsequent-turn context. We can't
+ * suppress them via the API, but explicit instruction often does.
+ *
+ * Returns `null` for Anthropic/OpenAI/Gemini — those use a provider-side
+ * reasoning channel and don't need (and should not get) this instruction.
+ */
+function buildModelBehavioralAddendum(m: Model | undefined): string | null {
+	if (!isKimiClassModel(m)) return null;
+	return [
+		"## Output discipline",
+		"",
+		"- Do NOT emit `<thinking>` or `</thinking>` tags in your output. Plan internally; state only conclusions, decisions, and tool calls. Long inline `<thinking>` monologues blow past per-turn budgets.",
+	].join("\n");
 }
 
 function customToolToDefinition(tool: CustomTool): ToolDefinition {
@@ -1617,6 +1641,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				}
 				appendPrompt = parts.join("\n\n");
 			}
+
+			// Append a small, narrow behavioral hint for model families that
+			// embed inline <thinking> text in their output (kimi/glm/qwen). For
+			// other families this is a no-op.
+			const modelAddendum = buildModelBehavioralAddendum(model);
+			if (modelAddendum) {
+				appendPrompt = appendPrompt ? `${appendPrompt}\n\n${modelAddendum}` : modelAddendum;
+			}
 			const defaultPrompt = await buildSystemPromptInternal({
 				cwd,
 				skills,
@@ -1809,9 +1841,35 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			});
 		};
 
-		// Final convertToLlm: chain block-images filter with secret obfuscation
+		// For model families that emit verbose inline <thinking>...</thinking>
+		// blocks (kimi/glm/qwen), strip those blocks from past assistant text
+		// before replay. They don't help the next turn reason and they bloat
+		// the prompt cache linearly across turns. Current turn is unaffected
+		// (it's the live stream, not the replay).
+		const shouldStripThinking = isKimiClassModel(model);
+		const stripInlineThinking = (text: string): string =>
+			text.replace(/<thinking>[\s\S]*?<\/thinking>\n*/gi, "").replace(/<thinking>[\s\S]*$/i, "");
+		const stripThinkingFromMessages = (messages: Message[]): Message[] => {
+			if (!shouldStripThinking) return messages;
+			return messages.map(msg => {
+				if (msg.role !== "assistant") return msg;
+				const content = msg.content;
+				if (!Array.isArray(content)) return msg;
+				let mutated = false;
+				const nextContent = content.map(block => {
+					if (block.type !== "text") return block;
+					const next = stripInlineThinking(block.text);
+					if (next === block.text) return block;
+					mutated = true;
+					return { ...block, text: next };
+				});
+				return mutated ? { ...msg, content: nextContent } : msg;
+			});
+		};
+
+		// Final convertToLlm: chain block-images filter with <thinking> strip and secret obfuscation
 		const convertToLlmFinal = (messages: AgentMessage[]): Message[] => {
-			const converted = convertToLlmWithBlockImages(messages);
+			const converted = stripThinkingFromMessages(convertToLlmWithBlockImages(messages));
 			if (!obfuscator?.hasSecrets()) return converted;
 			return obfuscateMessages(obfuscator, converted);
 		};

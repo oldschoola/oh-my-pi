@@ -148,6 +148,7 @@ import type { HindsightSessionState } from "../hindsight/state";
 import { type LocalProtocolOptions, resolveLocalUrlToPath } from "../internal-urls";
 import { resolveMemoryBackend } from "../memory-backend";
 import { getMnemosyneSessionState, type MnemosyneSessionState, setMnemosyneSessionState } from "../mnemosyne/state";
+import { isKimiClassModel } from "../model-families";
 import { containsOrchestrate, ORCHESTRATE_NOTICE } from "../modes/orchestrate";
 import { getCurrentThemeName, theme } from "../modes/theme/theme";
 import { containsUltrathink, ULTRATHINK_NOTICE } from "../modes/ultrathink";
@@ -480,6 +481,20 @@ export function resolveToolCallBatchCapForModel(model: Model | undefined): numbe
 	return model.provider === "anthropic" && CLAUDE_OPUS_4_8_MODEL_ID.test(model.id)
 		? ANTHROPIC_TOOL_CALL_BATCH_CAP
 		: undefined;
+}
+
+/**
+ * Per-response content-char cap for kimi/glm/qwen models that emit verbose inline
+ * `<thinking>` monologues. Forces the loop to advance to the next turn after the
+ * model has done some work but before per-attempt wall-clock budgets expire.
+ * Cap chosen so a typical edit-tool response (≤2 K tokens of text + DSL ≤ ~8 KB
+ * chars) fits comfortably, while runaway monologues (~80 KB chars at peak) trip
+ * the abort. Tunable via the new `Agent.maxResponseContentChars` setter.
+ */
+export const KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS = 12000;
+
+export function resolveMaxResponseContentCharsForModel(model: Model | undefined): number | undefined {
+	return isKimiClassModel(model) ? KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS : undefined;
 }
 
 /**
@@ -1023,6 +1038,7 @@ export class AgentSession {
 
 	#syncToolCallBatchCap(model: Model | undefined = this.model): void {
 		this.agent.maxToolCallsPerTurn = resolveToolCallBatchCapForModel(model);
+		this.agent.maxResponseContentChars = resolveMaxResponseContentCharsForModel(model);
 	}
 
 	#flushPendingAgentEnd(): void {
