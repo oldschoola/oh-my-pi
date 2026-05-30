@@ -20,7 +20,7 @@
     "connectionTimeout": 30000,
     "inProcess": true,
     "earlyStopOnMatch": true,
-    "conversationDumpDir": ".autoresearch-out\\report.2026-05-30T13-01-33-036Z.dump"
+    "conversationDumpDir": ".autoresearch-out\\report.2026-05-30T13-09-25-004Z.dump"
   },
   "tasks": [
     {
@@ -39,27 +39,27 @@
           "mutationCategory": "access",
           "difficultyScore": 2,
           "tokens": {
-            "input": 7718,
-            "output": 146,
-            "total": 7864
+            "input": 3291,
+            "output": 126,
+            "total": 3417
           },
-          "duration": 4130,
+          "duration": 3382,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "Line 89 is missing `?.` on `gem.dependencies.runtime` — `dependencies` is optional per the interface, so accessing `.runtime` on it without optional chaining can crash. Line 98 already uses `?.` correctly for comparison.",
+          "agentResponse": "Line 89 accesses `gem.dependencies.runtime` without optional chaining, but `gem.dependencies` itself could be undefined (as evidenced by the `?.` on line 98 for the same property). The fix is to restore the `?.` on `dependencies`.",
           "toolCalls": {
-            "read": 2,
+            "read": 1,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 152
+            "totalInputChars": 127
           },
           "editFailures": [],
           "editWarnings": [],
@@ -77,21 +77,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 7718,
-        "output": 146,
-        "total": 7864
+        "input": 3291,
+        "output": 126,
+        "total": 3417
       },
-      "duration": 4130,
+      "duration": 3382,
       "indentScore": 0,
       "toolCalls": {
-        "read": 2,
+        "read": 1,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 152
+        "totalInputChars": 127
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -113,27 +113,27 @@
           "mutationCategory": "duplicate",
           "difficultyScore": 8,
           "tokens": {
-            "input": 10974,
-            "output": 336,
-            "total": 11310
+            "input": 10829,
+            "output": 264,
+            "total": 11093
           },
-          "duration": 7480,
+          "duration": 5083,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "Found it. Line 229 has `if (pid.killed) return true` but should be `return false` — when a process is already killed, it's **not** running.",
+          "agentResponse": "The bug is on line 229. When `pid` is a `Subprocess` and `pid.killed` is `true`, the function incorrectly returns `true` (claiming it's still running). It should return `false`.",
           "toolCalls": {
-            "read": 8,
+            "read": 6,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 303
+            "totalInputChars": 248
           },
           "editFailures": [],
           "editWarnings": [],
@@ -151,21 +151,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 10974,
-        "output": 336,
-        "total": 11310
+        "input": 10829,
+        "output": 264,
+        "total": 11093
       },
-      "duration": 7480,
+      "duration": 5083,
       "indentScore": 0,
       "toolCalls": {
-        "read": 8,
+        "read": 6,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 303
+        "totalInputChars": 248
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -187,18 +187,17 @@
           "mutationCategory": "literal",
           "difficultyScore": 4,
           "tokens": {
-            "input": 3416,
-            "output": 82,
-            "total": 3498
+            "input": 3415,
+            "output": 64,
+            "total": 3479
           },
-          "duration": 3344,
+          "duration": 2848,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "The boolean literal on line 16 is `required: true`. The intended value is `false`.",
           "toolCalls": {
             "read": 1,
             "edit": 1,
@@ -207,7 +206,7 @@
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 87
+            "totalInputChars": 89
           },
           "editFailures": [],
           "editWarnings": [],
@@ -225,11 +224,11 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 3416,
-        "output": 82,
-        "total": 3498
+        "input": 3415,
+        "output": 64,
+        "total": 3479
       },
-      "duration": 3344,
+      "duration": 2848,
       "indentScore": 0,
       "toolCalls": {
         "read": 1,
@@ -239,7 +238,7 @@
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 87
+        "totalInputChars": 89
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -261,27 +260,27 @@
           "mutationCategory": "operator",
           "difficultyScore": 6,
           "tokens": {
-            "input": 10251,
-            "output": 176,
-            "total": 10427
+            "input": 9486,
+            "output": 158,
+            "total": 9644
           },
-          "duration": 4040,
+          "duration": 3887,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "Line 109: `if (firstTokenTime) firstTokenTime = Date.now();` — this should guard that we only set `firstTokenTime` when it hasn't been set yet. The condition is missing the negation operator.",
+          "agentResponse": "Line 109 has a clear bug. `firstTokenTime` is set when it's already truthy, but it should be set when it's `undefined` (falsy) — i.e., `!firstTokenTime`. The negation was accidentally removed.",
           "toolCalls": {
-            "read": 3,
+            "read": 2,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 187
+            "totalInputChars": 159
           },
           "editFailures": [],
           "editWarnings": [],
@@ -299,21 +298,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 10251,
-        "output": 176,
-        "total": 10427
+        "input": 9486,
+        "output": 158,
+        "total": 9644
       },
-      "duration": 4040,
+      "duration": 3887,
       "indentScore": 0,
       "toolCalls": {
-        "read": 3,
+        "read": 2,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 187
+        "totalInputChars": 159
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -336,18 +335,18 @@
           "difficultyScore": 4,
           "error": "File mismatch for json-parse.ts",
           "tokens": {
-            "input": 9963,
-            "output": 161,
-            "total": 10124
+            "input": 10521,
+            "output": 182,
+            "total": 10703
           },
-          "duration": 5158,
+          "duration": 4815,
           "indentScore": 0,
           "formattedEquivalent": false,
           "diffStats": {
             "linesChanged": 2,
             "charsChanged": 118
           },
-          "agentResponse": "The fix: `||` → `&&` on line 37. The guard was meant to return early for **non-null, non-undefined** values. With `||`, it would incorrectly return any non-null value (including `undefined` was unreachable since `null !== undefined` is true). With `&&`, it correctly skips coercion only when the value is neither `null` nor `undefined`.",
+          "agentResponse": "Fix applied: changed `||` to `&&` on line 37. The original `value !== null || value === undefined` was always `true` (anything not null makes the left side true), causing an early return for all inputs. The corrected `value !== null && value !== undefined` properly skips values that are neither null nor undefined.",
           "diff": "@@ -34 @@\n  * downstream code sees as a truthy non-empty string.\n  */\n export function coerceNullStrings<T>(value: T): T {\n-  if (value === null || value === undefined) return value;\n+  if (value !== null && value !== undefined) return value;\n   if (typeof value === 'string') {\n     return (value === 'null' ? null : value) as T;\n   }",
           "toolCalls": {
             "read": 1,
@@ -357,7 +356,7 @@
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 139
+            "totalInputChars": 135
           },
           "editFailures": [],
           "editWarnings": [],
@@ -374,11 +373,11 @@
       "bestRunIndex": 0,
       "success": false,
       "tokens": {
-        "input": 9963,
-        "output": 161,
-        "total": 10124
+        "input": 10521,
+        "output": 182,
+        "total": 10703
       },
-      "duration": 5158,
+      "duration": 4815,
       "indentScore": 0,
       "toolCalls": {
         "read": 1,
@@ -388,7 +387,7 @@
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 139
+        "totalInputChars": 135
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": false,
@@ -410,27 +409,27 @@
           "mutationCategory": "operator",
           "difficultyScore": 8,
           "tokens": {
-            "input": 14393,
-            "output": 192,
-            "total": 14585
+            "input": 9700,
+            "output": 170,
+            "total": 9870
           },
-          "duration": 5213,
+          "duration": 4420,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "The bug is on line 107. The `||` operator means the second operand (`Number.isFinite(candidate)`) is only evaluated when `candidate` is NOT a number — which is the wrong case. It should be `&&` to ensure the candidate is both a number AND finite.",
+          "agentResponse": "The bug is on line 107. The `||` should be `&&`: a value must satisfy both `typeof candidate === 'number'` and `Number.isFinite(candidate)` to be returned.",
           "toolCalls": {
-            "read": 3,
+            "read": 2,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 234
+            "totalInputChars": 212
           },
           "editFailures": [],
           "editWarnings": [],
@@ -448,21 +447,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 14393,
-        "output": 192,
-        "total": 14585
+        "input": 9700,
+        "output": 170,
+        "total": 9870
       },
-      "duration": 5213,
+      "duration": 4420,
       "indentScore": 0,
       "toolCalls": {
-        "read": 3,
+        "read": 2,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 234
+        "totalInputChars": 212
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -485,28 +484,28 @@
           "difficultyScore": 4,
           "error": "File mismatch for chat-simple.ts",
           "tokens": {
-            "input": 20263,
-            "output": 212,
-            "total": 20475
+            "input": 25614,
+            "output": 344,
+            "total": 25958
           },
-          "duration": 8203,
+          "duration": 8022,
           "indentScore": 0,
           "formattedEquivalent": false,
           "diffStats": {
             "linesChanged": 3,
-            "charsChanged": 123
+            "charsChanged": 117
           },
-          "agentResponse": "The missing `const userMessage = new Text(trimmed, 1, 1);` has been restored on line 84, right before its first and only usage on line 87.",
-          "diff": "@@ -81 @@\n   if (trimmed) {\n     isResponding = true;\n     editor.disableSubmit = true;\n+    const userMessage = new Text(trimmed, 1, 1);\n \n \n-    const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);\n-\n     const children = tui.children;\n     children.splice(children.length - 1, 0, userMessage);\n ",
+          "agentResponse": "The fix is correct. The missing statement `const userMessage = new Text(trimmed);` has been restored on line 86, right after `const children = tui.children;` and before its first use on the splice call. This declares the `userMessage` variable that was being used but never created, following the same `new Text(...)` pattern used elsewhere in the file.",
+          "diff": "@@ -82 @@\n     isResponding = true;\n     editor.disableSubmit = true;\n \n-    const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);\n-\n     const children = tui.children;\n     const children = tui.children;\n+    const userMessage = new Text(trimmed);\n     children.splice(children.length - 1, 0, userMessage);\n \n     const loader = new Loader(",
           "toolCalls": {
-            "read": 3,
+            "read": 4,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 228
+            "totalInputChars": 215
           },
           "editFailures": [],
           "editWarnings": [],
@@ -523,21 +522,21 @@
       "bestRunIndex": 0,
       "success": false,
       "tokens": {
-        "input": 20263,
-        "output": 212,
-        "total": 20475
+        "input": 25614,
+        "output": 344,
+        "total": 25958
       },
-      "duration": 8203,
+      "duration": 8022,
       "indentScore": 0,
       "toolCalls": {
-        "read": 3,
+        "read": 4,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 228
+        "totalInputChars": 215
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": false,
@@ -553,31 +552,41 @@
         {
           "runIndex": 0,
           "success": false,
-          "patchApplied": false,
+          "patchApplied": true,
           "verificationPassed": false,
           "mutationType": "swap-adjacent-lines",
           "mutationCategory": "structural",
           "difficultyScore": 12,
-          "error": "Max turn limit exceeded: observed 13 turn_start events (limit 12).",
+          "error": "File mismatch for index.ts",
           "tokens": {
-            "input": 0,
-            "output": 0,
-            "total": 0
+            "input": 74227,
+            "output": 1084,
+            "total": 75311
           },
-          "duration": 22159,
+          "duration": 18792,
+          "indentScore": 0,
+          "formattedEquivalent": false,
+          "diffStats": {
+            "linesChanged": 4,
+            "charsChanged": 181
+          },
+          "agentResponse": "The swap is correct. After the fix:\n\n- **Line 40**: `const ext = format === 'json' ? 'json' : 'md';` — correctly declares `ext` as a complete statement\n- **Line 41**: `.replace(/Z$/, '');` — correctly continues the `timestamp` chain from line 39, and now actually removes the trailing 'Z' (previously it was a no-op replacing 'Z' with 'Z')",
+          "diff": "@@ -37 @@\n     .toISOString()\n     .replace(/:/g, '-')\n     .replace(/\\..+$/, '')\n-    .replace(/Z$/, 'Z');\n   const ext = format === 'json' ? 'json' : 'md';\n   const ext = format === 'json' ? 'json' : 'md';\n+    .replace(/Z$/, '');\n   return `runs/${modelName}_${variant}_${timestamp}.${ext}`;\n }\n \n@@ -288 @@\n \n   let tasksToRun = allTasks;\n   if (values.tasks) {\n-    const taskIds = values.tasks.split(',').map((s) => s.trim());\n     tasksToRun = [];\n     tasksToRun = [];\n+    const taskIds = values.tasks.split(',').map((s) => s.trim());\n     for (const id of taskIds) {\n       const task = allTasks.find((t) => t.id === id);\n       if (!task) {",
           "toolCalls": {
-            "read": 0,
-            "edit": 0,
+            "read": 8,
+            "edit": 1,
             "write": 0,
-            "editSuccesses": 0,
+            "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 0
+            "totalInputChars": 322
           },
           "editFailures": [],
           "editWarnings": [],
           "editAutocorrectCount": 0,
+          "mutationIntentMatched": false,
+          "mutationIntentReason": "Target line mismatch at index.ts:291.",
           "retryStats": {
             "timeoutRetries": 0,
             "zeroToolRetries": 0,
@@ -588,21 +597,21 @@
       "bestRunIndex": 0,
       "success": false,
       "tokens": {
-        "input": 0,
-        "output": 0,
-        "total": 0
+        "input": 74227,
+        "output": 1084,
+        "total": 75311
       },
-      "duration": 22159,
+      "duration": 18792,
       "indentScore": 0,
       "toolCalls": {
-        "read": 0,
-        "edit": 0,
+        "read": 8,
+        "edit": 1,
         "write": 0,
-        "editSuccesses": 0,
+        "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 0
+        "totalInputChars": 322
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": false,
@@ -611,44 +620,44 @@
   ],
   "summary": {
     "totalTasks": 8,
-    "totalRuns": 7,
+    "totalRuns": 8,
     "successfulRuns": 5,
     "successfulTasks": 5,
     "taskSuccessRate": 0.625,
     "flakyTasks": 0,
     "consistentlyPassingTasks": 5,
     "totalTokens": {
-      "input": 76978,
-      "output": 1305,
-      "total": 78283
+      "input": 147083,
+      "output": 2392,
+      "total": 149475
     },
     "avgTokensPerTask": {
-      "input": 9622,
-      "output": 163,
-      "total": 9785
+      "input": 18385,
+      "output": 299,
+      "total": 18684
     },
-    "totalDuration": 59727,
-    "avgDurationPerTask": 7466,
+    "totalDuration": 51249,
+    "avgDurationPerTask": 6406,
     "avgIndentScore": 0,
     "totalToolCalls": {
-      "read": 21,
-      "edit": 7,
+      "read": 25,
+      "edit": 8,
       "write": 0,
-      "editSuccesses": 7,
+      "editSuccesses": 8,
       "editFailures": 0,
       "editWarnings": 0,
       "editAutocorrects": 0,
-      "totalInputChars": 1330
+      "totalInputChars": 1507
     },
     "avgToolCallsPerTask": {
-      "read": 2.625,
-      "edit": 0.875,
+      "read": 3.125,
+      "edit": 1,
       "write": 0,
-      "editSuccesses": 0.875,
+      "editSuccesses": 1,
       "editFailures": 0,
       "editWarnings": 0,
       "editAutocorrects": 0,
-      "totalInputChars": 166.25
+      "totalInputChars": 188.375
     },
     "editSuccessRate": 1,
     "autocorrectFreeSuccessfulTasks": 5,
@@ -659,9 +668,9 @@
     "totalTimeoutRetries": 0,
     "totalZeroToolRetries": 0,
     "totalProviderFailureRetries": 0,
-    "ghostRuns": 1,
+    "ghostRuns": 0,
     "transportFailureRuns": 0,
-    "mutationIntentMatchRate": 0.7142857142857143,
+    "mutationIntentMatchRate": 0.625,
     "editFailureCategories": {
       "range-continuation": 0,
       "unified-diff": 0,
@@ -670,6 +679,6 @@
       "other": 0
     }
   },
-  "startTime": "2026-05-30T13:01:33.036Z",
-  "endTime": "2026-05-30T13:01:58.747Z"
+  "startTime": "2026-05-30T13:09:25.005Z",
+  "endTime": "2026-05-30T13:09:43.989Z"
 }

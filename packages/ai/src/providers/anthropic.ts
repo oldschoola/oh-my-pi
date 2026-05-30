@@ -90,6 +90,30 @@ export type AnthropicHeaderOptions = {
 	isCloudflareAiGateway?: boolean;
 };
 
+/**
+ * Widened idle timeout floor for slow GLM-5 reasoning models served via the
+ * Anthropic-compatible endpoint (zai/glm-5*, zhipu's anthropic mount). The
+ * openai-completions transport already widens to 600s for the same family —
+ * see `getOpenAICompletionsStreamIdleTimeoutFallbackMs` in
+ * `openai-completions.ts`. Without this, z.ai's /v1/messages can stall past
+ * the 100s first-event default (cold start + reasoning), producing 0-token
+ * "ghost" runs that look like agent failures.
+ */
+const ANTHROPIC_GLM_STREAM_IDLE_TIMEOUT_MS = 600_000;
+const ANTHROPIC_GLM_MODEL_PATTERN = /^glm-5(?:[.-]|$)/i;
+
+export function getAnthropicStreamIdleTimeoutFallbackMs(model: Model<"anthropic-messages">): number | undefined {
+	if (!ANTHROPIC_GLM_MODEL_PATTERN.test(model.id)) return undefined;
+	if (model.provider === "zai" || model.provider === "zhipu-coding-plan") {
+		return ANTHROPIC_GLM_STREAM_IDLE_TIMEOUT_MS;
+	}
+	const baseUrl = model.baseUrl.toLowerCase();
+	if (baseUrl.includes("api.z.ai") || baseUrl.includes("open.bigmodel.cn")) {
+		return ANTHROPIC_GLM_STREAM_IDLE_TIMEOUT_MS;
+	}
+	return undefined;
+}
+
 export function normalizeAnthropicBaseUrl(baseUrl?: string): string | undefined {
 	const trimmed = baseUrl?.trim();
 	if (!trimmed) {
@@ -1205,7 +1229,8 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 				| TextContent
 				| (ToolCall & { partialJson: string })
 			) & { index: number };
-			const idleTimeoutMs = options?.streamIdleTimeoutMs ?? getStreamIdleTimeoutMs();
+			const idleTimeoutMs =
+				options?.streamIdleTimeoutMs ?? getStreamIdleTimeoutMs(getAnthropicStreamIdleTimeoutFallbackMs(model));
 			const firstEventTimeoutMs = options?.streamFirstEventTimeoutMs ?? getStreamFirstEventTimeoutMs(idleTimeoutMs);
 			const requestTimeoutMs =
 				firstEventTimeoutMs !== undefined && firstEventTimeoutMs > 0 ? firstEventTimeoutMs : undefined;
