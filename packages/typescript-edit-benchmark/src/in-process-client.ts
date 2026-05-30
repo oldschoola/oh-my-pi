@@ -45,6 +45,8 @@ export interface DiscoverSharedInfraOptions {
 	editVariant?: string;
 	editFuzzy?: boolean | "auto";
 	editFuzzyThreshold?: number | "auto";
+	/** Override the agent's promptStyle setting (default | gentle | caveman). */
+	promptStyle?: string;
 }
 
 /** Discover shared infrastructure once for the entire benchmark run. */
@@ -63,6 +65,9 @@ export async function discoverSharedInfra(options: DiscoverSharedInfraOptions = 
 		}
 		if (options.editFuzzyThreshold !== undefined && options.editFuzzyThreshold !== "auto") {
 			overrides["edit.fuzzyThreshold"] = options.editFuzzyThreshold;
+		}
+		if (options.promptStyle !== undefined) {
+			overrides.promptStyle = options.promptStyle;
 		}
 		await Settings.init({ cwd: options.cwd, overrides });
 

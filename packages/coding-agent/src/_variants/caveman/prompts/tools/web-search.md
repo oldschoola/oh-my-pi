@@ -1,10 +1,6 @@
-Searches web for up-to-date information beyond knowledge cutoff.
-
+Searches the web for up-to-date information beyond knowledge cutoff.
 <instruction>
-- SHOULD prefer primary sources (papers, official docs) and corroborate key claims with multiple sources
-- MUST include links for cited sources in final response
-</instruction>
-
+Prefer primary sources (papers, official docs) & corroborate key claims with multiple sources
+Include links for cited sources in the final response — readers need a path back to the source
 <caution>
-Searches performed automatically within single API call—no pagination or follow-up requests needed.
-</caution>
+Searches are performed automatically within a single API call-no pagination or follow-up requests needed.

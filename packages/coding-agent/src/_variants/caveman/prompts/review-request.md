@@ -1,11 +1,7 @@
-## Code Review Request
-
-### Mode
-
+Code Review Request
+Mode
 {{mode}}
-
-### Changed Files ({{len files}} files, +{{totalAdded}}/-{{totalRemoved}} lines)
-
+Changed Files ({{len files}} files, +{{totalAdded}}/-{{totalRemoved}} lines)
 {{#if files.length}}
 {{#table files headers="File|+/-|Type"}}
 {{path}} | +{{linesAdded}}/-{{linesRemoved}} | {{ext}}
@@ -14,56 +10,41 @@
 _No files to review._
 {{/if}}
 {{#if excluded.length}}
-### Excluded Files ({{len excluded}})
-
+Excluded Files ({{len excluded}})
 {{#list excluded prefix="- " join="\n"}}
 `{{path}}` (+{{linesAdded}}/-{{linesRemoved}}) — {{reason}}
 {{/list}}
 {{/if}}
-
-### Distribution Guidelines
-
-Use `task` tool with `agent: "reviewer"` and `tasks` array.
-{{#when agentCount "==" 1}}Make exactly **1 reviewer task**.{{else}}Spawn **{{agentCount}} reviewer agents** in parallel.{{/when}}
+Distribution Guidelines
+Use the `task` tool with `agent: "reviewer"` & a `tasks` array.
+{{#when agentCount "==" 1}}Create exactly 1 reviewer task.{{else}}Spawn {{agentCount}} reviewer agents in parallel.{{/when}}
 {{#if multiAgent}}
 Group files by locality, e.g.:
-- Same directory/module → same agent
-- Related functionality → same agent
-- Tests with their implementation files → same agent
+Same directory/module → same agent
+Related functionality → same agent
+Tests with their implementation files → same agent
 {{/if}}
-
-### Reviewer Instructions
-
-Reviewer MUST:
-1. Focus ONLY on assigned files
-2. {{#if skipDiff}}MUST run `git diff`/`git show` for assigned files{{else}}MUST use diff hunks below (NEVER re-run git diff){{/if}}
-3. MAY read full file context as needed via `read`
-4. Call `report_finding` per issue
-5. Call `yield` with verdict when done
-
+Reviewer Instructions
+Each reviewer:
+Focuses only on assigned files
+{{#if skipDiff}}Runs `git diff`/`git show` for assigned files{{else}}Uses the diff hunks below (don't re-run git diff — that loses the canonical view){{/if}}
+May read full file context as needed via `read`
+Calls `report_finding` per issue
+Calls `yield` with the verdict when done
 {{#if skipDiff}}
-### Diff Previews
-
+Diff Previews
 _Full diff too large ({{len files}} files). Showing first ~{{linesPerFile}} lines per file._
-
 {{#list files join="\n\n"}}
-#### {{path}}
-
+{{path}}
 {{#codeblock lang="diff"}}
 {{hunksPreview}}
 {{/codeblock}}
 {{/list}}
 {{else}}
-
-### Diff
-
-<diff>
+Diff
 {{rawDiff}}
-</diff>
 {{/if}}
-
 {{#if additionalInstructions}}
-### Additional Instructions
-
+more Instructions
 {{additionalInstructions}}
 {{/if}}

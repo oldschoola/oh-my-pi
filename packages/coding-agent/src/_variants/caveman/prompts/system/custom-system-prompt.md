@@ -8,36 +8,33 @@
 {{#ifAny contextFiles.length git.isRepo}}
 <project>
 {{#if contextFiles.length}}
-## Context
+Context
 <instructions>
 {{#list contextFiles join="\n"}}
 <file path="{{path}}">
 {{content}}
 </file>
 {{/list}}
-</instructions>
 {{/if}}
 {{#if git.isRepo}}
-## Version Control
+Version Control
 Snapshot; does not update during conversation.
 Current branch: {{git.currentBranch}}
 Main branch: {{git.mainBranch}}
 {{git.status}}
-### History
+History
 {{git.commits}}
 {{/if}}
-</project>
 {{/ifAny}}
 {{#if skills.length}}
 Skills are specialized knowledge. Scan descriptions for your task domain.
-If a skill applies, MUST read `skill://<name>` before proceeding.
+If a skill applies, read `skill://<name>` before proceeding.
 <skills>
 {{#list skills join="\n"}}
 <skill name="{{name}}">
 {{description}}
 </skill>
 {{/list}}
-</skills>
 {{/if}}
 {{#if alwaysApplyRules.length}}
 {{#each alwaysApplyRules}}
@@ -45,7 +42,7 @@ If a skill applies, MUST read `skill://<name>` before proceeding.
 {{/each}}
 {{/if}}
 {{#if rules.length}}
-Rules are local constraints. MUST read `rule://<name>` when working in that domain.
+Rules are local constraints. Read `rule://<name>` when working in that domain.
 <rules>
 {{#list rules join="\n"}}
 <rule name="{{name}}">
@@ -55,10 +52,8 @@ Rules are local constraints. MUST read `rule://<name>` when working in that doma
 {{/if}}
 </rule>
 {{/list}}
-</rules>
 {{/if}}
 {{#if secretsEnabled}}
 <redacted-content>
-Some values in tool output redacted for security. They appear as `#XXXX#` tokens (4 uppercase-alphanumeric characters wrapped in `#`). These **not errors** — intentional placeholders for sensitive values (API keys, passwords, tokens). Treat as opaque strings. Do not attempt to decode, fix, or report them as problems.
-</redacted-content>
+Some values in tool output are redacted for security. They appear as `#XXXX#` tokens (4 uppercase-alphanumeric characters wrapped in `#`). These are not errors — they're intentional placeholders for sensitive values (API keys, passwords, tokens). Treat them as opaque strings. Don't attempt to decode, fix, or report them as problems.
 {{/if}}

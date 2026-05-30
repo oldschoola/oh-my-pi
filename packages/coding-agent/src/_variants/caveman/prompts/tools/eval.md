@@ -1,28 +1,21 @@
-Run code in persistent kernel using list of cells.
-
+Run code in a persistent kernel using a list of cells.
 <instruction>
-Each call submits one or more cells. Cells run in array order. State persists within each language across cells, tool calls, and subagents spawned with `task`; variables parent or subagent declares visible to other on same shared executor.
-
+Each call submits one or more cells. Cells run in array order. State persists within each language across cells, tool calls, & subagents spawned with `task`; variables a parent or subagent declares are visible to the other on the same shared executor.
 Cell fields:
-
-- `language` — {{#if py}}`"py"` for IPython kernel{{/if}}{{#ifAll py js}}, {{/ifAll}}{{#if js}}`"js"` for persistent JavaScript VM{{/if}}.
-- `code` — cell body, verbatim. Newlines, quotes, and indentation JSON-encoded; no fences, no headers.
-- `title` (optional) — short label shown in transcript (e.g. `"imports"`, `"load config"`).
-- `timeout` (optional) — per-cell timeout in seconds (1-600). Default 30.
-- `reset` (optional) — wipe this cell's language kernel before running.{{#ifAll py js}} Reset is per-language: `py` cell's reset does not touch JavaScript VM and vice versa.{{/ifAll}}
-
-**Work incrementally:**
-
-- One logical step per cell (imports, define, test, use).
-- Pass multiple small cells in one call.
-- Define small reusable functions for individual debugging.
-- Put workflow explanations in assistant message or `title` — never inside cell code.
-{{#if py}}- Python cells run inside IPython kernel with live event loop. Use top-level `await` directly (e.g. `await main()`); `asyncio.run(…)` raises "cannot be called from a running event loop".{{/if}}
-**On failure:** errors identify failing cell (e.g., "Cell 3 failed"). Resubmit only fixed cell (or fixed cell + remaining cells).
-</instruction>
-
+`language` — {{#if py}}`"py"` for the IPython kernel{{/if}}{{#ifAll py js}}, {{/ifAll}}{{#if js}}`"js"` for the persistent JavaScript VM{{/if}}.
+`code` — cell body, verbatim. Newlines, quotes, & indentation are JSON-encoded; no fences, no headers.
+`title` (optional) — short label shown in the transcript (e.g. `"imports"`, `"load config"`).
+`timeout` (optional) — per-cell timeout in seconds (1-600). Default 30.
+`reset` (optional) — wipe this cell's language kernel before running.{{#ifAll py js}} Reset is per-language: a `py` cell's reset doesn't touch the JavaScript VM & vice versa.{{/ifAll}}
+Work incrementally:
+One logical step per cell (imports, define, test, use).
+Pass multiple small cells in one call.
+Define small reusable functions for individual debugging.
+Put workflow explanations in the assistant message or `title` rather than inside cell code.
+{{#if py}}- Python cells run inside an IPython kernel with a live event loop. Use top-level `await` directly (e.g. `await main()`); `asyncio.run(…)` raises "cannot be called from a running event loop".{{/if}}
+On failure: errors identify the failing cell (e.g. "Cell 3 failed"). Resubmit only the fixed cell (or fixed cell + remaining cells).
 <prelude>
-{{#ifAll py js}}Same helpers in both runtimes with same positional argument order. Python: trailing options as keyword args. JavaScript: trailing options as trailing object literal. JavaScript helpers are async and `await`able; Python helpers run synchronously.{{else}}{{#if py}}Helpers run synchronously. Trailing options are keyword arguments.{{/if}}{{#if js}}Helpers are async and `await`able. Trailing options are final object literal.{{/if}}{{/ifAll}}
+{{#ifAll py js}}Same helpers in both runtimes with the same positional argument order. Python: trailing options as keyword args. JavaScript: trailing options as a trailing object literal. JavaScript helpers are async & `await`able; Python helpers run synchronously.{{else}}{{#if py}}Helpers run synchronously. Trailing options are keyword arguments.{{/if}}{{#if js}}Helpers are async & `await`able. Trailing options are a final object literal.{{/if}}{{/ifAll}}
 ```
 display(value) → None
     Render a value in the current cell output.
@@ -45,16 +38,11 @@ output(*ids, format?="raw", query?=None, offset?=None, limit?=None) → str | di
 tool.<name>(args) → unknown
     Invoke any session tool by name. `args` is the tool's parameter object.
 ```
-</prelude>
-
 <output>
-Cells render like Jupyter notebook. `display(value)` renders non-presentable data as interactive JSON tree. Presentable values (figures, images, dataframes, etc.) use native representation.
-</output>
-
+Cells render like a Jupyter notebook. `display(value)` renders non-presentable data as an interactive JSON tree. Presentable values (figures, images, dataframes, etc.) use their native representation.
 <caution>
-{{#if js}}- **js**: VM exposes selective `process` subset, Web APIs, `Buffer`, `fs/promises`, and `Bun` global.
+{{#if js}}- js: the VM exposes a selective `process` subset, Web APIs, `Buffer`, `fs/promises`, & the `Bun` global.
 {{/if}}</caution>
-
 <example>
 {{#if py}}```json
 {
@@ -64,7 +52,6 @@ Cells render like Jupyter notebook. `display(value)` renders non-presentable dat
   ]
 }
 ```{{/if}}{{#ifAll py js}}
-
 {{/ifAll}}{{#if js}}```json
 {
   "cells": [
@@ -72,4 +59,3 @@ Cells render like Jupyter notebook. `display(value)` renders non-presentable dat
   ]
 }
 ```{{/if}}
-</example>

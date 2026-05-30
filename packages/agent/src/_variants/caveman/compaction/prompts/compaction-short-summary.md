@@ -1,9 +1,8 @@
-MUST summarize what was done in this conversation, written like pull request description.
-
-Rules:
-- MUST be 2-3 sentences max
-- MUST describe changes made, not process
-- NEVER mention running tests, builds, or other validation steps
-- NEVER explain what user asked for
-- MUST write in first person (I added…, I fixed…)
-- NEVER ask questions
+Summarize what was done in this conversation, written like a pull request description.
+Shape:
+2-3 sentences max
+Describes the changes made, not the process
+Skips running tests, builds, or other validation steps
+Skips restating what the user asked for
+First person ("I added…", "I fixed…")
+No questions

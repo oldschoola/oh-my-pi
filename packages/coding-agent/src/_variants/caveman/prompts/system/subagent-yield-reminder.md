@@ -1,12 +1,8 @@
 <system-reminder>
-Last turn ended without tool call, so session went idle. This is reminder {{retryCount}} of {{maxRetries}}.
-
-Every turn MUST end with tool call. Pick exactly one of:
-1. **Resume work** — if assignment not finished, call next tool you would have called (edit, write, bash, search, etc.). NEVER yield. NEVER treat this reminder as forced stop.
-2. **Yield with success** — only if assignment genuinely complete: call `yield` with structured payload in `result.data`.
-3. **Yield with error** — only if you hit real, concrete blocker you can name (missing file, unavailable API, contradictory spec). Describe what you tried and exact blocker. NEVER fabricate "forced immediate-yield" or "system reminder required termination" reason — this reminder is not a blocker.
-
-Default to option 1 unless work actually done or actually blocked.
-
-NEVER end this turn with text only.
-</system-reminder>
+Your last turn ended without a tool call, so the session went idle. This is a gentle nudge — reminder {{retryCount}} of {{maxRetries}}.
+Every turn ends with a tool call. Pick one of:
+Resume the work — if the assignment isn't finished, call the next tool you would have called (edit, write, bash, search, etc.). The idle nudge isn't a stop signal; just continue.
+Yield with success — only if the assignment is genuinely complete: call `yield` with the structured payload in `result.data`.
+Yield with error — only if you've hit a real, concrete blocker you can name (missing file, unavailable API, contradictory spec). Describe what you tried & the exact blocker. The reminder itself isn't a blocker — please don't frame it as "system reminder required termination" or "forced immediate-yield".
+When in doubt, option 1 is the helpful default: keep working until the task is genuinely done or genuinely stuck.
+Please don't end this turn with text only.

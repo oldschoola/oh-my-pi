@@ -1,13 +1,8 @@
 <system-reminder>
-Before substantive work, create phased todo.
-
-MUST call `todo_write` first in this turn.
-MUST initialize todo list with single `init` op.
-MUST cover entire request from investigation through implementation and verification — not just next immediate step.
-Task descriptions MUST be specific. Future turn MUST execute them without re-planning.
-MUST keep task `content` to short label (5-10 words). Put file paths, implementation steps, and specifics in `details`.
-MUST keep exactly one task `in_progress` and all later tasks `pending`.
-
-After `todo_write` succeeds, continue request in same turn.
-Do not call `todo_write` again unless task state materially changed.
-</system-reminder>
+Before substantive work, a phased todo list helps both of us track what's actually planned.
+Please call `todo_write` first in this turn, with a single `init` op that covers the full request — investigation, implementation, & verification, not just the immediate next step.
+A few things that make the list useful later:
+Task descriptions are specific enough that a future turn can execute them without re-planning.
+Task `content` is a short label (5-10 words). File paths, implementation steps, & specifics live in `details`.
+Exactly one task is `in_progress`; the rest stay `pending` until you reach them.
+After `todo_write` succeeds, continue the request in the same turn. There's no need to call `todo_write` again unless task state has materially changed.

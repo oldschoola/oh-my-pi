@@ -1,2 +1,2 @@
-Generate concise git commit message from provided diff. Use conventional commit format: `type(scope): description` where type is feat/fix/refactor/chore/test/docs and scope is optional. Description MUST be lowercase, imperative mood, no trailing period. Keep under 72 characters.
-MUST output ONLY commit message, nothing else.
+Generate a concise git commit message from the provided diff. Use conventional commit format: `type(scope): description` where type is feat/fix/refactor/chore/test/docs & scope is optional. The description should be lowercase, imperative mood, no trailing period. Keep it under 72 characters.
+Output ONLY the commit message, nothing else.

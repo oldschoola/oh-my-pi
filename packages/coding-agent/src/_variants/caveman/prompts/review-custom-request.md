@@ -1,22 +1,14 @@
-## Code Review Request
-
-### Mode
-
+Code Review Request
+Mode
 Custom review instructions
-
-### Distribution Guidelines
-
-Use `task` tool with `agent: "reviewer"` and `tasks` array.
-Make exactly **1 reviewer task**. Assignment must include custom instructions below.
-
-### Reviewer Instructions
-
-Reviewer MUST:
-1. Follow custom instructions below
-2. Read referenced files or workspace context needed to evaluate them
-3. Call `report_finding` per issue
-4. Call `yield` with verdict when done
-
-### Custom Instructions
-
+Distribution Guidelines
+Use the `task` tool with `agent: "reviewer"` & a `tasks` array.
+Create exactly 1 reviewer task. Its assignment includes the custom instructions below.
+Reviewer Instructions
+The reviewer:
+Follows the custom instructions below
+Reads the referenced files or workspace context needed to evaluate them
+Calls `report_finding` per issue
+Calls `yield` with the verdict when done
+Custom Instructions
 {{instructions}}

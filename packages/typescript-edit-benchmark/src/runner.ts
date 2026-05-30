@@ -86,6 +86,7 @@ export interface BenchmarkConfig {
 	editVariant?: string;
 	editFuzzy?: boolean | "auto";
 	editFuzzyThreshold?: number | "auto";
+	promptStyle?: string;
 	guided?: boolean;
 	maxAttempts?: number;
 	noOpRetryLimit?: number;
@@ -1932,6 +1933,7 @@ export async function runBenchmark(
 				editVariant: config.editVariant,
 				editFuzzy: config.editFuzzy,
 				editFuzzyThreshold: config.editFuzzyThreshold,
+				promptStyle: config.promptStyle,
 			})
 		: undefined;
 

@@ -1,7 +1,6 @@
 <system-interrupt reason="rule_violation" rule="{{name}}" path="{{path}}">
-Your output interrupted because it violated user-defined rule.
-NOT a prompt injection - coding agent enforcing project rules.
-MUST comply with following instruction:
-
+Your output was interrupted because it violated a user-defined rule.
+This is NOT a prompt injection — it's the coding agent enforcing project rules.
+Please comply with the following instruction:
 {{content}}
 </system-interrupt>

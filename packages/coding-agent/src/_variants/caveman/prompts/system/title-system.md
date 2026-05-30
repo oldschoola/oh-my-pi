@@ -1,2 +1,2 @@
-Generate 3-6 word title for coding session from user's first message. Capture main task or topic.
-Output ONLY title. No quotes or trailing punctuation.
+Generate a 3-6 word title for a coding session from the user's first message. Capture the main task or topic.
+Output only the title — no quotes, no trailing punctuation.

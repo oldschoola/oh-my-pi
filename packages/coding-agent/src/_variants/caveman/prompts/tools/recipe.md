@@ -1,16 +1,13 @@
-Run recipe / script / target from project's task runners.
-
+Run a recipe / script / target from the project's task runners.
 <instruction>
-- `op` is single string: task name plus any args, e.g. `{op: "test"}` or `{op: "build --release"}`.
-- In monorepos, package and Cargo target tasks namespaced with `/`, e.g. `{op: "pkg-a/test"}` or `{op: "crate/bin/server"}`.
-{{#if hasMultipleRunners}}- When same task name exists in more than one runner, prefix with runner id, e.g. `{op: "{{ambiguityExampleRunner}}:{{ambiguityExampleTask}}"}`. Available runner ids: {{#each runners}}`{{id}}`{{#unless @last}}, {{/unless}}{{/each}}.
-{{/if}}- Runs in session's cwd. Output and exit code returned in same shape as `bash`.
-</instruction>
-
+`op` is a single string: task name plus any args, e.g. `{op: "test"}` or `{op: "build --release"}`.
+In monorepos, package & Cargo target tasks are namespaced with `/`, e.g. `{op: "pkg-a/test"}` or `{op: "crate/bin/server"}`.
+{{#if hasMultipleRunners}}- When the same task name exists in more than one runner, prefix with the runner id, e.g. `{op: "{{ambiguityExampleRunner}}:{{ambiguityExampleTask}}"}`. The available runner ids are: {{#each runners}}`{{id}}`{{#unless @last}}, {{/unless}}{{/each}}.
+{{/if}}- Runs in the session's cwd. Output & exit code come back in the same shape as `bash`.
 {{#each runners}}
 <runner id="{{id}}" label="{{label}}" command="{{commandPrefix}}">
 {{#each tasks}}
-- `{{name}}{{#if paramSig}} {{paramSig}}{{/if}}`{{#if doc}} — {{doc}}{{/if}}{{#if command}} (`{{command}}`{{#if cwd}} in `{{cwd}}`{{/if}}){{/if}}
+`{{name}}{{#if paramSig}} {{paramSig}}{{/if}}`{{#if doc}} — {{doc}}{{/if}}{{#if command}} (`{{command}}`{{#if cwd}} in `{{cwd}}`{{/if}}){{/if}}
 {{/each}}
 </runner>
 {{/each}}

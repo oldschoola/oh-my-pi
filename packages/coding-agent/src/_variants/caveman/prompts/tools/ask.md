@@ -1,29 +1,18 @@
-Ask user when needing clarification or input during task execution.
-
+Asks user when you need clarification or input during task execution.
 <conditions>
-- Multiple approaches exist with materially different tradeoffs user must weigh
-</conditions>
-
+Multiple approaches exist with significantly different tradeoffs the user should weigh
 <instruction>
-- Use `recommended: <index>` to mark default (0-indexed); " (Recommended)" added automatically
-- Use `questions` for multiple related questions instead of asking one at a time
-- Set `multi: true` on question to allow multiple selections
-</instruction>
-
+Use `recommended: <index>` to mark default (0-indexed); " (Recommended)" is added automatically
+Use `questions` for multiple related questions instead of asking one at a time
+Set `multi: true` on a question to allow multiple selections
 <caution>
-- Provide 2-5 concise, distinct options
-</caution>
-
+Provide 2-5 concise, distinct options
 <critical>
-- **Default to action.** Resolve ambiguity yourself using repo conventions, existing patterns, and reasonable defaults. Exhaust existing sources (code, configs, docs, history) before asking. Only ask when options have materially different tradeoffs user must decide.
-- **If multiple choices acceptable**, pick most conservative/standard option and proceed; state choice.
-- **Do NOT include "Other" option** — UI automatically adds "Other (type your own)" to every question.
-</critical>
-
+The default is to act. When ambiguity shows up, look at repo conventions, existing patterns, & reasonable defaults first — code, configs, docs, & history usually carry the answer. Save `ask` for the cases where options have materially different tradeoffs the user has to decide.
+If multiple choices are acceptable, pick the most conservative/standard option & proceed; state the choice.
+Don't include an "Other" option — the UI automatically adds "Other (type your own)" to every question.
 <examples>
-# Single question
+Single question
 questions: [{"id": "auth_method", "question": "Which authentication method should this API use?", "options": [{"label": "JWT"}, {"label": "OAuth2"}, {"label": "Session cookies"}], "recommended": 0}]
-
-# Multiple questions
+Multiple questions
 questions: [{"id": "storage_type", "question": "Which storage backend?", "options": [{"label": "SQLite"}, {"label": "PostgreSQL"}]}, {"id": "auth_method", "question": "Which auth method?", "options": [{"label": "JWT"}, {"label": "Session cookies"}]}]
-</examples>

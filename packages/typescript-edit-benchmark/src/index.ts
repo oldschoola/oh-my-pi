@@ -131,6 +131,7 @@ Options:
   --no-guided               Disable guided mode
   --max-attempts <n>        Max prompt attempts per run (default: 1)
   --no-op-retry-limit <n>   Stop after repeated preventable no-op failures (default: 2)
+  --prompt-style <s>        System prompt style: default, gentle, caveman (default: agent setting)
   --mutation-scope-window <n> Allowed line-distance from mutation target for hashline refs (default: 20)
   --max-turns <n>           Max turn_start events per attempt before failing (default: 30)
   --output <file>           Output file (default: run_<model>_<variant>_<fuzzy>_<threshold>_<timestamp>.md)
@@ -240,6 +241,7 @@ async function main(): Promise<void> {
 			"edit-variant": { type: "string" },
 			"edit-fuzzy": { type: "string" },
 			"edit-fuzzy-threshold": { type: "string" },
+			"prompt-style": { type: "string" },
 			"no-in-process": { type: "boolean", default: false },
 			"no-early-stop-on-match": { type: "boolean", default: false },
 			"max-tasks": { type: "string", default: "80" },
@@ -248,6 +250,12 @@ async function main(): Promise<void> {
 		},
 		allowPositionals: true,
 	});
+
+	const promptStyle = values["prompt-style"];
+	if (promptStyle !== undefined && promptStyle !== "default" && promptStyle !== "gentle" && promptStyle !== "caveman") {
+		console.error(`Invalid --prompt-style: ${promptStyle}. Must be one of: default, gentle, caveman.`);
+		process.exit(1);
+	}
 
 	// Extract provider for display/config purposes only.
 	// The full model string (e.g. "openrouter/google/gemini-2.5-flash-lite") is passed
@@ -409,6 +417,7 @@ async function main(): Promise<void> {
 		editVariant,
 		editFuzzy,
 		editFuzzyThreshold,
+		promptStyle,
 		noOpRetryLimit,
 		maxTimeoutRetries,
 		maxProviderFailureRetries: maxProviderRetries,

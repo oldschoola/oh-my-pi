@@ -1,6 +1,3 @@
-Design custom agent for this request:
-
+Design a custom agent for this request:
 {{request}}
-
-MUST return only JSON object required by system instructions.
-NEVER include markdown fences.
+Return only the JSON object required by your system instructions — no markdown fences.

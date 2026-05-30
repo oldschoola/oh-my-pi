@@ -1,16 +1,12 @@
-Creates context checkpoint before exploratory work so you can later rewind and keep only concise report.
-
-Use this when investigating with many intermediate tool calls (read/search/find/lsp/etc.) and wanting to minimize context cost afterward.
-
-Rules:
-- MUST call `rewind` before yielding after starting checkpoint.
-- MUST provide clear `goal` explaining what investigating.
-- NEVER call `checkpoint` while another checkpoint active.
-- Not available in subagents.
-
+Creates a context checkpoint before exploratory work so you can later rewind & keep only a concise report.
+Use this when you need to investigate with many intermediate tool calls (read/search/find/lsp/etc.) & want to minimize context cost afterward.
+How it works:
+Call `rewind` before yielding once a checkpoint is active — that's how the report gets persisted.
+Provide a clear `goal` explaining what you're investigating.
+Only one checkpoint can be active at a time; opening a second one over the first isn't supported.
+Not available in subagents.
 Typical flow:
-1. `checkpoint(goal: …)`
-2. Perform exploratory work
-3. `rewind(report: …)` with concise findings
-
-After rewind, intermediate checkpoint messages removed from active context and replaced by report.
+`checkpoint(goal: …)`
+Perform exploratory work
+`rewind(report: …)` with concise findings
+After rewind, intermediate checkpoint messages are removed from active context & replaced by the report.

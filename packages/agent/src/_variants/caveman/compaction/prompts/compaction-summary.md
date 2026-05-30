@@ -1,38 +1,24 @@
-MUST summarize conversation above into structured context checkpoint handoff summary for another LLM to resume task.
-
-IMPORTANT: If conversation ends with unanswered question to user or imperative/request awaiting user response (e.g., "Please run command and paste output"), MUST preserve that exact question/request.
-
-MUST use this format (sections may be omitted if not applicable):
-
-## Goal
-[User goals; list multiple if session covers different tasks.]
-
-## Constraints & Preferences
-- [Constraints or requirements mentioned]
-
-## Progress
-
-### Done
-- [x] [Completed tasks/changes]
-
-### In Progress
-- [ ] [Current work]
-
-### Blocked
-- [Issues preventing progress]
-
-## Key Decisions
-- **[Decision]**: [Brief rationale]
-
-## Next Steps
-1. [Ordered list of next actions]
-
-## Critical Context
-- [Important data, pending questions, references]
-
-## Additional Notes
+Summarize the conversation above into a structured context checkpoint handoff so another LLM can resume the task.
+Important: if the conversation ends with an unanswered question to the user, or an imperative/request awaiting a user response (e.g. "Please run command & paste output"), preserve that exact question/request — the next turn won't have the bytes to reconstruct it.
+Use this format (sections can be omitted if not applicable):
+Goal
+[User goals; list multiple if the session covers different tasks.]
+Constraints & Preferences
+[Constraints or requirements mentioned]
+Progress
+Done
+[x] [Completed tasks/changes]
+In Progress
+[ ] [Current work]
+Blocked
+[Issues preventing progress]
+Key Decisions
+[Decision]: [Brief rationale]
+Next Steps
+[Ordered list of next actions]
+Critical Context
+[Important data, pending questions, references]
+more Notes
 [Anything else important not covered above]
-
-MUST output only structured summary; NEVER include extra text.
-
-Sections MUST stay concise. MUST preserve exact file paths, function names, error messages, and relevant tool outputs or command results. MUST include repository state changes (branch, uncommitted changes) if mentioned.
+Output only the structured summary — no extra text around it.
+Keep sections concise. Preserve exact file paths, function names, error messages, & relevant tool outputs or command results. Include repository state changes (branch, uncommitted changes) when they were mentioned.

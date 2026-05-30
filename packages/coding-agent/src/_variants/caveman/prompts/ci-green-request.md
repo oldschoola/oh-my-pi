@@ -1,36 +1,22 @@
 <critical>
-Keep going until current branch CI green.
-Do not stop after single fix attempt.
-</critical>
-
+Keep going until the current branch CI is green. A single fix attempt usually isn't enough — iterate.
 <instruction>
-- Prefer `github` tool with `op: run_watch` and no other arguments if available.
-- Otherwise use `gh` cli.
-- Use workflow runs for current HEAD as source of truth after each push.
-</instruction>
-
+Prefer the `github` tool with `op: run_watch` & no other arguments when available.
+Otherwise use the `gh` CLI.
+Use workflow runs for current HEAD as the source of truth after each push.
 <procedure>
-1. Watch workflow runs for current HEAD commit.
-2. If any run fails, inspect failing job output and logs.
-3. Identify root cause and make minimal correct fix.
-4. Run local verification if reduces chance of another failing push.
-5. Push branch.
-6. Watch workflow runs for new HEAD commit again.
-7. Repeat until workflow runs for latest HEAD commit succeed.
-</procedure>
-
+Watch workflow runs for the current HEAD commit.
+If any run fails, inspect the failing job output & logs.
+Identify the root cause & make the minimal correct fix.
+Run local verification when it would reduce the chance of another failing push.
+Push the branch.
+Watch workflow runs for the new HEAD commit again.
+Repeat until workflow runs for the latest HEAD commit succeed.
 <caution>
-- Treat each push as fresh CI attempt. Re-watch new HEAD immediately.
-- If watcher output insufficient, inspect underlying workflow or job context before changing code.
-</caution>
-
+Treat each push as a fresh CI attempt. Re-watch new HEAD immediately.
+If watcher output is insufficient, inspect the underlying workflow or job context before changing code.
 {{#if headTag}}
-<instruction>
-Once CI green, ensure final commit tagged `{{headTag}}` and push that tag.
-</instruction>
+Once CI is green, ensure the final commit is tagged `{{headTag}}` & push that tag.
 {{/if}}
-
-<critical>
-Task complete only when workflow runs for latest HEAD commit succeed.
-{{#if headTag}}Final green commit must be tagged `{{headTag}}` and that tag must be pushed.{{/if}}
-</critical>
+The task is complete only when the workflow runs for the latest HEAD commit succeed.
+{{#if headTag}}The final green commit needs to be tagged `{{headTag}}` & that tag pushed.{{/if}}
