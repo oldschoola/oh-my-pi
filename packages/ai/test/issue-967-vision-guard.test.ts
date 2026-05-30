@@ -42,6 +42,7 @@ const compat: Required<OpenAICompat> = {
 	openRouterRouting: {},
 	vercelGatewayRouting: {},
 	extraBody: {},
+	nativeReasoningDisable: "none",
 	supportsStrictMode: true,
 	toolStrictMode: "none",
 };

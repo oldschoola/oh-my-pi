@@ -95,6 +95,7 @@ describe("openai-completions compatibility", () => {
 			openRouterRouting: {},
 			vercelGatewayRouting: {},
 			extraBody: {},
+			nativeReasoningDisable: "none",
 			supportsStrictMode: true,
 			toolStrictMode: "none",
 		} satisfies Required<OpenAICompat>;

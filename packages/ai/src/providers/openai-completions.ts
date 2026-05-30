@@ -1266,14 +1266,30 @@ function buildParams(
 		model.reasoning &&
 		compat.supportsReasoningEffort
 	) {
-		// Generic OpenAI-compatible effort endpoints do not expose a true off
-		// switch. Use the model's lowest supported effort as the closest
-		// transport-level approximation when callers request disabled reasoning.
-		const minEffort = getSupportedEfforts(model)[0];
-		if (minEffort === undefined) {
-			throw new Error(`Model ${model.provider}/${model.id} has no supported reasoning efforts`);
+		// Two DeepSeek-family hosts expose mutually-exclusive disable shapes.
+		// The generic "lowest-effort" fallback below still emits 100+ reasoning
+		// tokens per call on both, so detect first and emit the native shape.
+		// Verified live against api.deepseek.com and crof.ai (May 2026); see
+		// the `nativeReasoningDisable` docs on OpenAICompat for details.
+		if (compat.nativeReasoningDisable === "deepseek-thinking-disabled") {
+			// api.deepseek.com: `thinking: { type: "disabled" }` ALONE disables.
+			// Combining with `reasoning_effort` 400s ("thinking options type
+			// cannot be disabled when reasoning_effort is set").
+			params.thinking = { type: "disabled" };
+		} else if (compat.nativeReasoningDisable === "deepseek-effort-none") {
+			// crof.ai: literal `reasoning_effort: "none"` disables. The
+			// Anthropic-style toggle alone still leaks ~100 reasoning tokens.
+			params.reasoning_effort = "none" as Effort;
+		} else {
+			// Generic OpenAI-compatible effort endpoints do not expose a true off
+			// switch. Use the model's lowest supported effort as the closest
+			// transport-level approximation when callers request disabled reasoning.
+			const minEffort = getSupportedEfforts(model)[0];
+			if (minEffort === undefined) {
+				throw new Error(`Model ${model.provider}/${model.id} has no supported reasoning efforts`);
+			}
+			params.reasoning_effort = mapReasoningEffort(minEffort, compat.reasoningEffortMap) as Effort;
 		}
-		params.reasoning_effort = mapReasoningEffort(minEffort, compat.reasoningEffortMap) as Effort;
 	}
 
 	if (compat.disableReasoningOnToolChoice && params.tool_choice !== undefined) {
@@ -1312,7 +1328,15 @@ function buildParams(
 	}
 
 	if (compat.extraBody) {
-		Object.assign(params, compat.extraBody);
+		// Skip keys already set explicitly above so that, e.g., the DeepSeek
+		// `extraBody: { thinking: { type: "enabled" } }` default does not
+		// clobber an explicit `params.thinking = { type: "disabled" }` set by
+		// the nativeReasoningDisable branch.
+		for (const [key, value] of Object.entries(compat.extraBody)) {
+			if (!(key in params)) {
+				(params as unknown as Record<string, unknown>)[key] = value;
+			}
+		}
 	}
 
 	return { params, toolStrictMode };

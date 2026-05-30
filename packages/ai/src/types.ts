@@ -798,6 +798,29 @@ export interface OpenAICompat {
 	openRouterRouting?: OpenRouterRouting;
 	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
 	vercelGatewayRouting?: VercelGatewayRouting;
+	/**
+	 * Native disable-thinking wire shape for DeepSeek-family hosts.
+	 *
+	 * DeepSeek's thinking-capable models don't expose an OpenAI-style off switch
+	 * via the generic `reasoning_effort: minimal` fallback (api.deepseek.com 400s
+	 * on `reasoning_effort: "none"`; the lowest-mapped effort `"high"` still
+	 * generates ~170 reasoning tokens per request). Each host accepts a different
+	 * disable shape and the two shapes are mutually exclusive:
+	 *
+	 * - `"deepseek-thinking-disabled"` — emit `thinking: { type: "disabled" }` and
+	 *   omit `reasoning_effort`. Required for api.deepseek.com: combining
+	 *   `thinking: disabled` with any `reasoning_effort` 400s
+	 *   ("thinking options type cannot be disabled when reasoning_effort is set").
+	 * - `"deepseek-effort-none"` — emit literal `reasoning_effort: "none"` and
+	 *   omit `thinking`. Required for crof.ai: the Anthropic-style
+	 *   `thinking: { type: "disabled" }` alone leaks ~100 reasoning tokens.
+	 *
+	 * Default: undefined → callers fall back to the generic lowest-effort
+	 * approximation. Verified live against api.deepseek.com and crof.ai
+	 * (May 2026). Other DeepSeek hosts (OpenRouter, Deepinfra, …) keep the
+	 * generic path until probed.
+	 */
+	nativeReasoningDisable?: "none" | "deepseek-thinking-disabled" | "deepseek-effort-none";
 	/** Extra fields to include in request body (e.g. gateway routing hints for OpenClaw-style proxies). */
 	extraBody?: Record<string, unknown>;
 	/** Whether the provider supports the `strict` field in tool definitions. Default: auto-detected per provider/baseUrl (conservative for unknown providers). */

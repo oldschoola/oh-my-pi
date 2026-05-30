@@ -4,11 +4,15 @@ type OpenAIReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 type ResolvedToolStrictMode = NonNullable<OpenAICompat["toolStrictMode"]> | "mixed";
 
 export type ResolvedOpenAICompat = Required<
-	Omit<OpenAICompat, "openRouterRouting" | "vercelGatewayRouting" | "extraBody" | "toolStrictMode">
+	Omit<
+		OpenAICompat,
+		"openRouterRouting" | "vercelGatewayRouting" | "extraBody" | "nativeReasoningDisable" | "toolStrictMode"
+	>
 > & {
 	openRouterRouting?: OpenAICompat["openRouterRouting"];
 	vercelGatewayRouting?: OpenAICompat["vercelGatewayRouting"];
 	extraBody?: OpenAICompat["extraBody"];
+	nativeReasoningDisable?: OpenAICompat["nativeReasoningDisable"];
 	toolStrictMode: ResolvedToolStrictMode;
 };
 
@@ -87,6 +91,8 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 		isOpenCodeDeepseekAlias;
 	const isDirectDeepseekApi = provider === "deepseek" || baseUrl.includes("api.deepseek.com");
 	const isDirectDeepseekReasoning = isDirectDeepseekApi && isDeepseekFamily && Boolean(model.reasoning);
+	const isCrofHost = provider === "crof" || baseUrl.includes("crof.ai");
+	const isCrofDeepseekReasoning = isCrofHost && isDeepseekFamily && Boolean(model.reasoning);
 	const isNonStandard =
 		isCerebras ||
 		provider === "xai" ||
@@ -244,6 +250,11 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 		vercelGatewayRouting: undefined,
 		supportsStrictMode: detectStrictModeSupport(provider, baseUrl),
 		extraBody: isDirectDeepseekReasoning ? { thinking: { type: "enabled" } } : undefined,
+		nativeReasoningDisable: isDirectDeepseekReasoning
+			? "deepseek-thinking-disabled"
+			: isCrofDeepseekReasoning
+				? "deepseek-effort-none"
+				: "none",
 		toolStrictMode: isCerebras ? "all_strict" : "mixed",
 	};
 }
@@ -295,6 +306,7 @@ export function resolveOpenAICompat(
 		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
 		supportsStrictMode: model.compat.supportsStrictMode ?? detected.supportsStrictMode,
 		extraBody: model.compat.extraBody ?? detected.extraBody,
+		nativeReasoningDisable: model.compat.nativeReasoningDisable ?? detected.nativeReasoningDisable,
 		toolStrictMode: model.compat.toolStrictMode ?? detected.toolStrictMode,
 	};
 }

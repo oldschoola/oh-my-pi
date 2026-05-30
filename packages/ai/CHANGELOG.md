@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `disableReasoning: true` not actually disabling thinking on DeepSeek V4 reasoning models (verified against `deepseek-v4-pro` and `deepseek-v4-flash` on both `api.deepseek.com` and `crof.ai`). The previous generic fallback emitted `reasoning_effort: "high"` (the DeepSeek-family effort map collapses lower levels to `"high"`), which still produced 100–170 reasoning tokens per request. Each host now emits its native disable shape: `crof.ai` sends literal `reasoning_effort: "none"`; `api.deepseek.com` sends `thinking: { type: "disabled" }` with no `reasoning_effort` (the two fields are mutually exclusive — `api.deepseek.com` 400s when combined). Other DeepSeek hosts (OpenRouter, Deepinfra, …) keep the generic fallback until probed.
+
 ## [15.5.15] - 2026-05-30
 
 ### Added
