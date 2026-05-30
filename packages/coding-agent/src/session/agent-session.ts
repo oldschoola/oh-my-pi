@@ -464,6 +464,22 @@ export function resolveToolCallBatchCapForModel(model: Model | undefined): numbe
 }
 
 /**
+ * Per-response content-char cap for kimi/glm/qwen models that emit verbose inline
+ * `<thinking>` monologues. Forces the loop to advance to the next turn after the
+ * model has done some work but before per-attempt wall-clock budgets expire.
+ * Cap chosen so a typical edit-tool response (≤2 K tokens of text + DSL ≤ ~8 KB
+ * chars) fits comfortably, while runaway monologues (~80 KB chars at peak) trip
+ * the abort. Tunable via the new `Agent.maxResponseContentChars` setter.
+ */
+export const KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS = 12000;
+const KIMI_CLASS_MODEL_ID = /(?:^|\/)(kimi|glm-|qwen)/i;
+
+export function resolveMaxResponseContentCharsForModel(model: Model | undefined): number | undefined {
+	if (!model) return undefined;
+	return KIMI_CLASS_MODEL_ID.test(model.id) ? KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS : undefined;
+}
+
+/**
  * Collapse degenerate IRC ephemeral replies before they hit the relay.
  * Models occasionally loop on a single line (~16 reports of N-times-repeated
  * replies); compress runs longer than 3 down to one instance + `[…N×]`, then
@@ -1004,6 +1020,7 @@ export class AgentSession {
 
 	#syncToolCallBatchCap(model: Model | undefined = this.model): void {
 		this.agent.maxToolCallsPerTurn = resolveToolCallBatchCapForModel(model);
+		this.agent.maxResponseContentChars = resolveMaxResponseContentCharsForModel(model);
 	}
 
 	#flushPendingAgentEnd(): void {
