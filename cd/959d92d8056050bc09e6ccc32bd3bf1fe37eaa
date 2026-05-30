@@ -1,0 +1,33 @@
+packages/pi-missions/src/mission-server-binding.ts
+  421a27c89ddccdf1 88-89
+packages/pi-missions/src/client/api.test.ts
+  421a27c89ddccdf1 17,26,28,286-343
+packages/pi-missions/test/mission-server-binding.test.ts
+  421a27c89ddccdf1 12,17,246-301
+packages/pi-missions/CHANGELOG.md
+  421a27c89ddccdf1 9-19
+packages/pi-missions/src/client/components/MissionStartForm.tsx
+  421a27c89ddccdf1 3-10,76-81,98-100,102-106,108-128,130-132,136-139,149-151,174-193
+packages/pi-missions/src/client/api.ts
+  421a27c89ddccdf1 304-342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "cd959d92d8056050bc09e6ccc32bd3bf1fe37eaa",
+  "prompts": {
+    "421a27c89ddccdf1": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "19546fdb-9c78-445d-b2af-eb6cb249ba57",
+        "model": "custom:claude-opus-4-7"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 286,
+      "total_deletions": 57,
+      "accepted_lines": 244,
+      "overriden_lines": 1
+    }
+  }
+}

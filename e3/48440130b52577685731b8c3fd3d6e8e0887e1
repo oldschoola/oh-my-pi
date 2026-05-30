@@ -1,0 +1,114 @@
+packages/pi-missions/src/client/components/PlanApprovalBanner.tsx
+  8176c49269c355db 1-84
+packages/pi-missions/src/client/components/MissionDetail.tsx
+  8176c49269c355db 2,6,8,10-15,17-20,23-24,28,32,38,77-89,123,128-140,143-156,159-175,188-190,193-197,206-247
+packages/pi-missions/src/client/components/MissionTerminal.tsx
+  8176c49269c355db 1-297
+packages/pi-missions/src/client/components/ConnectionDot.tsx
+  8176c49269c355db 1-31
+packages/pi-missions/src/client/components/CommandCenter.tsx
+  8176c49269c355db 1-68
+packages/pi-missions/src/client/components/RollupTelemetryPanel.tsx
+  8176c49269c355db 1-66
+packages/pi-missions/src/client/components/ActiveMissionPill.tsx
+  8176c49269c355db 1-35
+packages/pi-missions/src/client/components/KnowledgePanel.tsx
+  8176c49269c355db 1-62
+packages/pi-missions/src/client/components/TerminalViewer.tsx
+  8176c49269c355db 1,3-39,42,45,47-52,54,57-58,60-70,72,74-94,96-98,101-102,104-109,112-123,125,133,138-149,153,160-163,166-172,174-175,178,180-206,208-209,212-216,218-223,228-244
+packages/pi-missions/src/client/styles.css
+  8176c49269c355db 221-222,230-309,311-312,314-327,348-356,583-741,894-1563
+packages/pi-missions/src/client/components/MilestonePanel.tsx
+  8176c49269c355db 1-115
+packages/pi-missions/src/client/components/Header.tsx
+  8176c49269c355db 1-6,13-18,24-29,34-56,59,63-66,78
+packages/pi-missions/src/client/components/MissionSwitcher.tsx
+  8176c49269c355db 1-167
+packages/pi-missions/build.ts
+  8176c49269c355db 44-46,52,82-94
+packages/pi-missions/src/client/components/MissionControlBar.tsx
+  8176c49269c355db 1-126
+packages/pi-missions/src/client/components/SummaryBar.tsx
+  8176c49269c355db 63
+packages/pi-missions/src/client/components/MissionStartForm.tsx
+  3b44cd2f50ee8dc0 1-4,44-45,72-73,161,365-470,472,474-483,486-488,490-491,494-498
+  8176c49269c355db 62-70,85-101,109-113,117,168
+packages/pi-missions/src/client/components/StatusMdView.tsx
+  8176c49269c355db 1-77
+packages/pi-missions/src/client/api.ts
+  8176c49269c355db 4-5,8,11-13,18-19,73,162-168,189-197,200,208-415
+  3b44cd2f50ee8dc0 109-123
+packages/pi-missions/src/client/components/MilestoneDetailModal.tsx
+  8176c49269c355db 1-180
+packages/pi-missions/src/client/components/LaneGrid.tsx
+  8176c49269c355db 1-15,17-18,23-26,29-32,35,43,53,59,63-92,94-103,118-134,138-157,160-161,163-164,184-205,207-210,212-215,217-252,257-303,306-312,314,316-318
+packages/pi-missions/src/client/components/SkillsPanel.tsx
+  8176c49269c355db 1-62
+packages/pi-missions/src/client/components/MissionMetaEditor.tsx
+  8176c49269c355db 1-133
+packages/pi-missions/src/client/components/RoleModelSelector.tsx
+  8176c49269c355db 1-107
+package.json
+  8176c49269c355db 42-44,46
+packages/pi-missions/src/client/components/SupervisorPanel.tsx
+  8176c49269c355db 1,5,48-56,58,60-65,107,286-305
+packages/pi-missions/src/client/types.ts
+  8176c49269c355db 56-67,93-118,136-155,179-182,200-203,328-329,334-335,386-510
+packages/pi-missions/src/client/xterm-runtime.ts
+  8176c49269c355db 1-265
+packages/pi-missions/src/client/components/MailboxPanel.tsx
+  8176c49269c355db 1,6,26-34,36-57
+packages/pi-missions/src/client/components/ValidationContractView.tsx
+  8176c49269c355db 1-468
+packages/pi-missions/src/client/components/SegmentedBar.tsx
+  8176c49269c355db 2,15,22-23,65,71-72
+packages/pi-missions/src/client/components/WorkerTerminal.tsx
+  8176c49269c355db 1-216
+packages/pi-missions/src/client/components/MergePanel.tsx
+  8176c49269c355db 1-184
+packages/pi-missions/src/client/components/AgentsPanel.tsx
+  8176c49269c355db 3-4,7,12-14,16,27,56-59
+packages/pi-missions/src/client/components/LiveStatusMdPanel.tsx
+  8176c49269c355db 1-114
+packages/pi-missions/src/client/components/LaneSwitcher.tsx
+  8176c49269c355db 1-59
+packages/pi-missions/package.json
+  8176c49269c355db 40-43
+packages/pi-missions/src/client/format.ts
+  8176c49269c355db 65-283
+packages/pi-missions/src/client/components/BatchHeaderStats.tsx
+  8176c49269c355db 1-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "e348440130b52577685731b8c3fd3d6e8e0887e1",
+  "prompts": {
+    "3b44cd2f50ee8dc0": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "a4e73759-0026-4485-b680-97cf41ad34e1",
+        "model": "custom:claude-opus-4-7"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 208,
+      "overriden_lines": 0
+    },
+    "8176c49269c355db": {
+      "agent_id": {
+        "tool": "droid",
+        "id": "f3679b9a-f19b-4316-81ef-eec497b56745",
+        "model": "custom:claude-opus-4-7"
+      },
+      "human_author": "oldschoola",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 14222,
+      "overriden_lines": 0
+    }
+  }
+}
