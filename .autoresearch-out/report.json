@@ -20,7 +20,7 @@
     "connectionTimeout": 30000,
     "inProcess": true,
     "earlyStopOnMatch": true,
-    "conversationDumpDir": ".autoresearch-out\\report.2026-05-30T12-28-54-978Z.dump"
+    "conversationDumpDir": ".autoresearch-out\\report.2026-05-30T12-52-00-506Z.dump"
   },
   "tasks": [
     {
@@ -39,18 +39,18 @@
           "mutationCategory": "access",
           "difficultyScore": 2,
           "tokens": {
-            "input": 4012,
+            "input": 4015,
             "output": 111,
-            "total": 4123
+            "total": 4126
           },
-          "duration": 2692,
+          "duration": 2753,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "Line 89 uses `gem.dependencies.runtime` without optional chaining, while line 98 uses `gem.dependencies?.development` with it. The bug is the missing `?.` on line 89.",
+          "agentResponse": "Line 89 accesses `gem.dependencies.runtime` without optional chaining, while line 98 correctly uses `gem.dependencies?.development`. The missing `?.` on `dependencies` is the bug.",
           "toolCalls": {
             "read": 1,
             "edit": 1,
@@ -77,11 +77,11 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 4012,
+        "input": 4015,
         "output": 111,
-        "total": 4123
+        "total": 4126
       },
-      "duration": 2692,
+      "duration": 2753,
       "indentScore": 0,
       "toolCalls": {
         "read": 1,
@@ -106,32 +106,41 @@
       "runs": [
         {
           "runIndex": 0,
-          "success": false,
-          "patchApplied": false,
-          "verificationPassed": false,
+          "success": true,
+          "patchApplied": true,
+          "verificationPassed": true,
           "mutationType": "duplicate-line-flip",
           "mutationCategory": "duplicate",
           "difficultyScore": 8,
-          "error": "Max turn limit exceeded: observed 13 turn_start events (limit 12).",
           "tokens": {
-            "input": 0,
-            "output": 0,
-            "total": 0
+            "input": 62525,
+            "output": 902,
+            "total": 63427
           },
-          "duration": 14017,
+          "duration": 19173,
+          "indentScore": 0,
+          "formattedEquivalent": true,
+          "diffStats": {
+            "linesChanged": 0,
+            "charsChanged": 0
+          },
+          "agentResponse": "I've read the entire file raw and there are exactly 341 unique lines — no duplicates exist. The file appears to already be correct. However, the task says there's a bug. Let me look more carefully at the pairs of similar lines that could indicate where a duplicate was supposed to be or where a subtle operator difference is the bug.\n\nLooking at the `terminate` function, lines 298-303 and 307-311, and 328-332 are intentional similar-but-not-duplicate patterns for number vs Subprocess dispatch. All look correct.\n\nLooking at `isPidRunning` (line 229), `if (pid.killed) return true;` — this returns `true` when `killed` is set, but `killed` being `true` means the process was killed (not running). This seems like it should be `return false`. Let me check lines 302 and 229 together — line 302 uses `target.killed` to mean \"already dead\" (return true = already exited), while line 229 uses `pid.killed` to mean... let me reconsider.\n\nWait — in `terminate`, line 302: `if (target.killed) return true;` means \"already killed, nothing to do → success\". But in `isPidRunning` line 229: `if (pid.killed) return true;` means \"killed → running\". That's inconsistent. `pid.killed = true` means the process has been killed, so it should NOT be running.\n\nBut the task says \"A duplicated line contains a subtle literal/operator change.\" Let me look at line 229 vs line 302 more carefully:\n\n- Line 229: `if (pid.killed) return true;`\n- Line 302: `if (target.killed) return true;`\n\nThese are identical in structure but have different semantics. In `isPidRunning`, `return true` means \"is running\" — but if `killed` is true, the process is NOT running. The correct return should be `false`.\n\nLine 302 in `terminate` is correct: `if (target.killed) return true;` means \"already terminated → success (nothing to do)\".\n\nThe bug is on line 229: `return true` should be `return false`.",
           "toolCalls": {
-            "read": 0,
-            "edit": 0,
+            "read": 10,
+            "edit": 1,
             "write": 0,
-            "editSuccesses": 0,
+            "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 0
+            "totalInputChars": 357
           },
           "editFailures": [],
           "editWarnings": [],
           "editAutocorrectCount": 0,
+          "mutationIntentMatched": true,
+          "mutationIntentReason": "Target line exactly matches expected fixture.",
+          "earlyStopped": true,
           "retryStats": {
             "timeoutRetries": 0,
             "zeroToolRetries": 0,
@@ -140,27 +149,27 @@
         }
       ],
       "bestRunIndex": 0,
-      "success": false,
+      "success": true,
       "tokens": {
-        "input": 0,
-        "output": 0,
-        "total": 0
+        "input": 62525,
+        "output": 902,
+        "total": 63427
       },
-      "duration": 14017,
+      "duration": 19173,
       "indentScore": 0,
       "toolCalls": {
-        "read": 0,
-        "edit": 0,
+        "read": 10,
+        "edit": 1,
         "write": 0,
-        "editSuccesses": 0,
+        "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 0
+        "totalInputChars": 357
       },
       "editSuccessRate": 1,
-      "autocorrectFreeSuccess": false,
-      "flakeSuccessRate": 0
+      "autocorrectFreeSuccess": true,
+      "flakeSuccessRate": 1
     },
     {
       "id": "literal-flip-boolean-001",
@@ -178,18 +187,18 @@
           "mutationCategory": "literal",
           "difficultyScore": 4,
           "tokens": {
-            "input": 3416,
-            "output": 79,
-            "total": 3495
+            "input": 3413,
+            "output": 81,
+            "total": 3494
           },
-          "duration": 2244,
+          "duration": 2440,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "Line 16 is `required: true,` in the args definition. Flipping the boolean:",
+          "agentResponse": "Line 16 is `required: true`. The bug is the inverted boolean literal. Flipping it:",
           "toolCalls": {
             "read": 1,
             "edit": 1,
@@ -216,11 +225,11 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 3416,
-        "output": 79,
-        "total": 3495
+        "input": 3413,
+        "output": 81,
+        "total": 3494
       },
-      "duration": 2244,
+      "duration": 2440,
       "indentScore": 0,
       "toolCalls": {
         "read": 1,
@@ -252,18 +261,18 @@
           "mutationCategory": "operator",
           "difficultyScore": 6,
           "tokens": {
-            "input": 10567,
-            "output": 190,
-            "total": 10757
+            "input": 10358,
+            "output": 203,
+            "total": 10561
           },
-          "duration": 3981,
-          "indentScore": 0,
+          "duration": 3945,
+          "indentScore": 8,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "Line 109 is the bug. `firstTokenTime` is set unconditionally, but the intention is to set it only on the first token (i.e., when it's not yet set). The `!` was removed.",
+          "agentResponse": "Found the bug. Line 109 is missing a negation operator. The intent is to capture the first token time only when `firstTokenTime` is not yet set (i.e., `!firstTokenTime`), but the `!` was accidentally removed.",
           "toolCalls": {
             "read": 4,
             "edit": 1,
@@ -272,13 +281,13 @@
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 215
+            "totalInputChars": 207
           },
           "editFailures": [],
           "editWarnings": [],
           "editAutocorrectCount": 0,
-          "mutationIntentMatched": true,
-          "mutationIntentReason": "Target line exactly matches expected fixture.",
+          "mutationIntentMatched": false,
+          "mutationIntentReason": "Target line mismatch at google.ts:109.",
           "earlyStopped": true,
           "retryStats": {
             "timeoutRetries": 0,
@@ -290,12 +299,12 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 10567,
-        "output": 190,
-        "total": 10757
+        "input": 10358,
+        "output": 203,
+        "total": 10561
       },
-      "duration": 3981,
-      "indentScore": 0,
+      "duration": 3945,
+      "indentScore": 8,
       "toolCalls": {
         "read": 4,
         "edit": 1,
@@ -304,7 +313,7 @@
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 215
+        "totalInputChars": 207
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -327,28 +336,28 @@
           "difficultyScore": 4,
           "error": "File mismatch for json-parse.ts",
           "tokens": {
-            "input": 10544,
-            "output": 215,
-            "total": 10759
+            "input": 14551,
+            "output": 243,
+            "total": 14794
           },
-          "duration": 4652,
+          "duration": 5925,
           "indentScore": 0,
           "formattedEquivalent": false,
           "diffStats": {
             "linesChanged": 2,
             "charsChanged": 118
           },
-          "agentResponse": "The fix: `||` → `&&` on line 37. With `||`, the condition was always true when `value` was not `null` (including `undefined`), causing the function to return `undefined` immediately without recursing into the rest of the tree. The `&&` correctly gates the early return to only `undefined` values that are also not `null`.",
+          "agentResponse": "Fixed. The `||` (OR) on line 37 was changed to `&&` (AND). The guard now correctly returns early only when `value` is both not-null **and** undefined — i.e., when it's `undefined`. This allows non-null, non-undefined values (including strings, arrays, and objects) to proceed to the coercion logic below, which is the intended behavior.",
           "diff": "@@ -34 @@\n  * downstream code sees as a truthy non-empty string.\n  */\n export function coerceNullStrings<T>(value: T): T {\n-  if (value === null || value === undefined) return value;\n+  if (value !== null && value === undefined) return value;\n   if (typeof value === 'string') {\n     return (value === 'null' ? null : value) as T;\n   }",
           "toolCalls": {
-            "read": 1,
+            "read": 2,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 133
+            "totalInputChars": 165
           },
           "editFailures": [],
           "editWarnings": [],
@@ -365,21 +374,21 @@
       "bestRunIndex": 0,
       "success": false,
       "tokens": {
-        "input": 10544,
-        "output": 215,
-        "total": 10759
+        "input": 14551,
+        "output": 243,
+        "total": 14794
       },
-      "duration": 4652,
+      "duration": 5925,
       "indentScore": 0,
       "toolCalls": {
-        "read": 1,
+        "read": 2,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 133
+        "totalInputChars": 165
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": false,
@@ -401,27 +410,27 @@
           "mutationCategory": "operator",
           "difficultyScore": 8,
           "tokens": {
-            "input": 9044,
-            "output": 260,
-            "total": 9304
+            "input": 12670,
+            "output": 247,
+            "total": 12917
           },
-          "duration": 4715,
+          "duration": 5792,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "Found the bug. Line 107 in `getNumber`:\n\n```ts\ntypeof candidate === 'number' || Number.isFinite(candidate)\n```\n\n`||` (OR) is wrong — `Number.isFinite` will return `true` for non-number finite values (e.g., `'3'`). It should be `&&` (AND) to first confirm the value is a number, then check it's finite.",
+          "agentResponse": "Found the bug. Line 107 in `getNumber`:\n\n```typescript\nreturn typeof candidate === 'number' || Number.isFinite(candidate) ? candidate : undefined;\n```\n\nThis returns the candidate for any number (including `NaN`, `Infinity`) OR any finite value. But the logic is wrong due to operator precedence: `||` has lower precedence than `?`, so the expression evaluates as `(typeof candidate === 'number') || (Number.isFinite(candidate) ? candidate : undefined)`. It should use `&&` to check both conditions — that the value is a number AND is finite.",
           "toolCalls": {
-            "read": 4,
+            "read": 3,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 255
+            "totalInputChars": 222
           },
           "editFailures": [],
           "editWarnings": [],
@@ -439,21 +448,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 9044,
-        "output": 260,
-        "total": 9304
+        "input": 12670,
+        "output": 247,
+        "total": 12917
       },
-      "duration": 4715,
+      "duration": 5792,
       "indentScore": 0,
       "toolCalls": {
-        "read": 4,
+        "read": 3,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 255
+        "totalInputChars": 222
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -476,28 +485,28 @@
           "difficultyScore": 4,
           "error": "File mismatch for chat-simple.ts",
           "tokens": {
-            "input": 20188,
-            "output": 283,
-            "total": 20471
+            "input": 20594,
+            "output": 292,
+            "total": 20886
           },
-          "duration": 6227,
+          "duration": 7075,
           "indentScore": 0,
           "formattedEquivalent": false,
           "diffStats": {
             "linesChanged": 3,
-            "charsChanged": 117
+            "charsChanged": 149
           },
-          "agentResponse": "The deleted statement `const userMessage = new Text(trimmed);` has been restored on line 86, immediately before its use on line 87. This creates the user message component with the trimmed input text, matching the pattern used for the bot message on line 116 (`new Markdown(randomResponse, ...)`) and using `Text` (already imported on line 8).",
-          "diff": "@@ -82 @@\n     isResponding = true;\n     editor.disableSubmit = true;\n \n-    const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);\n-\n     const children = tui.children;\n     const children = tui.children;\n+    const userMessage = new Text(trimmed);\n     children.splice(children.length - 1, 0, userMessage);\n \n     const loader = new Loader(",
+          "agentResponse": "The fix is applied. The deleted statement `const userMessage = new Markdown(trimmed, 1, 1, defaultMarkdownTheme);` has been restored on line 86, between getting the children array (line 85) and splicing the user message into it (line 87). This mirrors the pattern used for `botMessage` on line 116.",
+          "diff": "@@ -82 @@\n     isResponding = true;\n     editor.disableSubmit = true;\n \n-    const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);\n-\n     const children = tui.children;\n     const children = tui.children;\n+    const userMessage = new Markdown(trimmed, 1, 1, defaultMarkdownTheme);\n     children.splice(children.length - 1, 0, userMessage);\n \n     const loader = new Loader(",
           "toolCalls": {
-            "read": 3,
+            "read": 4,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 221
+            "totalInputChars": 248
           },
           "editFailures": [],
           "editWarnings": [],
@@ -514,21 +523,21 @@
       "bestRunIndex": 0,
       "success": false,
       "tokens": {
-        "input": 20188,
-        "output": 283,
-        "total": 20471
+        "input": 20594,
+        "output": 292,
+        "total": 20886
       },
-      "duration": 6227,
+      "duration": 7075,
       "indentScore": 0,
       "toolCalls": {
-        "read": 3,
+        "read": 4,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 221
+        "totalInputChars": 248
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": false,
@@ -555,7 +564,7 @@
             "output": 0,
             "total": 0
           },
-          "duration": 17919,
+          "duration": 19594,
           "toolCalls": {
             "read": 0,
             "edit": 0,
@@ -583,7 +592,7 @@
         "output": 0,
         "total": 0
       },
-      "duration": 17919,
+      "duration": 19594,
       "indentScore": 0,
       "toolCalls": {
         "read": 0,
@@ -602,57 +611,57 @@
   ],
   "summary": {
     "totalTasks": 8,
-    "totalRuns": 6,
-    "successfulRuns": 4,
-    "successfulTasks": 4,
-    "taskSuccessRate": 0.5,
+    "totalRuns": 7,
+    "successfulRuns": 5,
+    "successfulTasks": 5,
+    "taskSuccessRate": 0.625,
     "flakyTasks": 0,
-    "consistentlyPassingTasks": 4,
+    "consistentlyPassingTasks": 5,
     "totalTokens": {
-      "input": 57771,
-      "output": 1138,
-      "total": 58909
+      "input": 128126,
+      "output": 2079,
+      "total": 130205
     },
     "avgTokensPerTask": {
-      "input": 7221,
-      "output": 142,
-      "total": 7364
+      "input": 16016,
+      "output": 260,
+      "total": 16276
     },
-    "totalDuration": 56447,
-    "avgDurationPerTask": 7056,
-    "avgIndentScore": 0,
+    "totalDuration": 66697,
+    "avgDurationPerTask": 8337,
+    "avgIndentScore": 1.1428571428571428,
     "totalToolCalls": {
-      "read": 14,
-      "edit": 6,
+      "read": 25,
+      "edit": 7,
       "write": 0,
-      "editSuccesses": 6,
+      "editSuccesses": 7,
       "editFailures": 0,
       "editWarnings": 0,
       "editAutocorrects": 0,
-      "totalInputChars": 1032
+      "totalInputChars": 1407
     },
     "avgToolCallsPerTask": {
-      "read": 1.75,
-      "edit": 0.75,
+      "read": 3.125,
+      "edit": 0.875,
       "write": 0,
-      "editSuccesses": 0.75,
+      "editSuccesses": 0.875,
       "editFailures": 0,
       "editWarnings": 0,
       "editAutocorrects": 0,
-      "totalInputChars": 129
+      "totalInputChars": 175.875
     },
     "editSuccessRate": 1,
-    "autocorrectFreeSuccessfulTasks": 4,
-    "autocorrectFreeSuccessRate": 0.5,
+    "autocorrectFreeSuccessfulTasks": 5,
+    "autocorrectFreeSuccessRate": 0.625,
     "autocorrectedBestRuns": 0,
     "editAutocorrectRate": 0,
     "timeoutRuns": 0,
     "totalTimeoutRetries": 0,
     "totalZeroToolRetries": 0,
     "totalProviderFailureRetries": 0,
-    "ghostRuns": 2,
+    "ghostRuns": 1,
     "transportFailureRuns": 0,
-    "mutationIntentMatchRate": 0.6666666666666666,
+    "mutationIntentMatchRate": 0.5714285714285714,
     "editFailureCategories": {
       "range-continuation": 0,
       "unified-diff": 0,
@@ -661,6 +670,6 @@
       "other": 0
     }
   },
-  "startTime": "2026-05-30T12:28:54.980Z",
-  "endTime": "2026-05-30T12:29:13.088Z"
+  "startTime": "2026-05-30T12:52:00.507Z",
+  "endTime": "2026-05-30T12:52:20.321Z"
 }
