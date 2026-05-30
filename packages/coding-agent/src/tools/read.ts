@@ -248,6 +248,7 @@ function formatSummaryElisionFooter(
 	readPath: string,
 	elidedRanges: ReadonlyArray<ElidedRange>,
 	elidedLines: number,
+	options: { kimiClass?: boolean } = {},
 ): string {
 	if (elidedRanges.length === 0) return "";
 	const lineWord = elidedLines === 1 ? "line" : "lines";
@@ -258,6 +259,12 @@ function formatSummaryElisionFooter(
 		.join(",");
 	const example = `${readPath}:${selector}`;
 	const tail = elidedRanges.length > sampleCount ? `, e.g. ${example}` : ` with ${example}`;
+	// Kimi-class models otherwise compulsively re-read every elided range. The
+	// summary above is usually sufficient context to act; reserve `re-read`
+	// suggestion for cases where the agent truly needs the hidden body.
+	if (options.kimiClass) {
+		return `[${elidedLines} ${lineWord} elided. The visible structural summary usually has enough context to act. Only re-read elided ranges${tail.startsWith(",") ? "" : ""} if your fix truly depends on hidden content${tail}]`;
+	}
 	return `[${elidedLines} ${lineWord} elided; re-read needed ranges${tail}]`;
 }
 const READ_CHUNK_SIZE = 8 * 1024;
@@ -1741,10 +1748,13 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				const summary = await this.#trySummarize(absolutePath, fileSize, signal);
 				if (summary?.parsed && summary.elided) {
 					const renderedSummary = this.#renderSummary(summary);
+					const activeModel = this.session.getActiveModelString?.() ?? "";
+					const isKimiClass = /(?:^|\/)(kimi|glm-|qwen)/i.test(activeModel);
 					const footer = formatSummaryElisionFooter(
 						localReadPath,
 						renderedSummary.elidedRanges,
 						renderedSummary.elidedLines,
+						{ kimiClass: isKimiClass },
 					);
 					const summaryHashContext = displayMode.hashLines
 						? await readHashlineHeaderContext(this.session, absolutePath, this.session.cwd)
