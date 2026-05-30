@@ -192,6 +192,8 @@
 
 - Added `read.summarize.minTotalLines` setting (default 100) to set the minimum file length that triggers read summarization
 - Added `<file>:<lines>` support to `search` `paths`, allowing file-scoped constraints such as `:N-M`, `:N+K`, and comma-separated ranges
+- Added an `adaptive` thinking level — when selected via `/model` (or `defaultThinkingLevel`), the agent gets a built-in `set_thinking_level` tool and adaptive guidance in its system prompt, so it can dial reasoning effort up or down per turn. `persist:false` applies for the current turn only; `persist:true` updates the session baseline. Inspired by [pi-adaptive-thinking](https://github.com/ian-pascoe/pi-adaptive-thinking).
+- Added Crof.ai as a login provider (`/login crof`) with API-key prompt flow and validation against `https://crof.ai/v1/models`
 
 ### Changed
 

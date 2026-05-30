@@ -857,6 +857,58 @@ export function deepseekModelManagerOptions(
 ): ModelManagerOptions<"openai-completions"> {
 	return createSimpleOpenAICompletionsOptions("deepseek", "https://api.deepseek.com", config);
 }
+
+// ---------------------------------------------------------------------------
+// 6.6 Crof.ai
+// ---------------------------------------------------------------------------
+
+export interface CrofModelManagerConfig {
+	apiKey?: string;
+	baseUrl?: string;
+}
+
+/**
+ * Crof.ai exposes an OpenAI-compatible catalog at `/v1/models` whose entries
+ * already report pricing as **dollars per million tokens** (e.g. `prompt: "0.28"`
+ * for $0.28/M input) — unlike OpenRouter/models.dev, which use per-token rates.
+ * The mapper parses those decimal strings directly without multiplying. Models
+ * tagged with `custom_reasoning` or `reasoning_effort: true` are surfaced as
+ * reasoning-capable so the runtime emits OpenAI-style `reasoning_effort`.
+ */
+export function crofModelManagerOptions(config?: CrofModelManagerConfig): ModelManagerOptions<"openai-completions"> {
+	const apiKey = config?.apiKey;
+	const baseUrl = config?.baseUrl ?? "https://crof.ai/v1";
+	return {
+		providerId: "crof",
+		...(apiKey && {
+			fetchDynamicModels: () =>
+				fetchOpenAICompatibleModels({
+					api: "openai-completions",
+					provider: "crof",
+					baseUrl,
+					apiKey,
+					mapModel: (entry, defaults) => {
+						const pricing = isRecord(entry.pricing) ? entry.pricing : undefined;
+						const reasoning =
+							toBoolean(entry.custom_reasoning) === true || toBoolean(entry.reasoning_effort) === true;
+						return {
+							...defaults,
+							name: toModelName(entry.name, defaults.name),
+							reasoning,
+							cost: {
+								input: parseFloat(String(pricing?.prompt ?? "0")) || 0,
+								output: parseFloat(String(pricing?.completion ?? "0")) || 0,
+								cacheRead: parseFloat(String(pricing?.cache_prompt ?? "0")) || 0,
+								cacheWrite: 0,
+							},
+							contextWindow: toPositiveNumber(entry.context_length, defaults.contextWindow),
+							maxTokens: toPositiveNumber(entry.max_completion_tokens, defaults.maxTokens),
+						};
+					},
+				}),
+		}),
+	};
+}
 // ---------------------------------------------------------------------------
 // 6.7 Zhipu Coding Plan
 // ---------------------------------------------------------------------------

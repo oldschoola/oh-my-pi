@@ -123,6 +123,9 @@
 ### Fixed
 
 - Fixed Synthetic model discovery to treat the provider `/models` response as authoritative so deprecated bundled IDs are pruned from the runtime cache, and changed Synthetic login validation to avoid probing a specific model ([#1417](https://github.com/can1357/oh-my-pi/issues/1417)).
+### Added
+
+- Added Crof.ai provider (`https://crof.ai/v1`, OpenAI-compatible) with API-key login flow (`CROF_API_KEY`), dynamic catalog discovery via `/v1/models`, reasoning surfacing for entries flagged `custom_reasoning` or `reasoning_effort`, and dollars-per-million pricing parsing distinct from OpenRouter's per-token format.
 
 ## [15.5.0] - 2026-05-26
 ### Added

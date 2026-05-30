@@ -1709,6 +1709,12 @@ export class AuthStorage {
 				await saveApiKeyCredential(apiKey);
 				return;
 			}
+			case "crof": {
+				const { loginCrof } = await import("./utils/oauth/crof");
+				const apiKey = await loginCrof(ctrl);
+				await saveApiKeyCredential(apiKey);
+				return;
+			}
 			case "together": {
 				const { loginTogether } = await import("./utils/oauth/together");
 				const apiKey = await loginTogether(ctrl);

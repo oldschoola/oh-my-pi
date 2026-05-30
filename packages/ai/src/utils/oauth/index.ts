@@ -181,6 +181,11 @@ const builtInOAuthProviders: OAuthProviderInfo[] = [
 		available: true,
 	},
 	{
+		id: "crof",
+		name: "Crof.ai",
+		available: true,
+	},
+	{
 		id: "parallel",
 		name: "Parallel",
 		available: true,
@@ -351,6 +356,7 @@ export async function refreshOAuthToken(
 		case "firepass":
 		case "nvidia":
 		case "nanogpt":
+		case "crof":
 		case "synthetic":
 		case "together":
 		case "litellm":

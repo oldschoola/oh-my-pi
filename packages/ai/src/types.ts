@@ -113,6 +113,7 @@ export type KnownProvider =
 	| "firepass"
 	| "gitlab-duo"
 	| "cursor"
+	| "crof"
 	| "deepseek"
 	| "xai"
 	| "xai-oauth"
