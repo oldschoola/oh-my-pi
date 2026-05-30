@@ -630,10 +630,21 @@ function resolveAppendOnlyMode(setting: "auto" | "on" | "off" | undefined, provi
  * Returns `null` for Anthropic/OpenAI/Gemini — those use a provider-side
  * reasoning channel and don't need (and should not get) this instruction.
  */
+const KIMI_CLASS_MODEL_REGEX = /(^|\/)(kimi|glm-|qwen)/;
+
+/**
+ * Whether the given model belongs to a family that embeds inline
+ * `<thinking>...</thinking>` text in its message content rather than using a
+ * provider-side reasoning channel. Kimi K2.x, GLM-5.x, and Qwen are trained
+ * to emit these blocks even when the API reasoning toggle is off.
+ */
+function isKimiClassModel(m: Model | undefined): boolean {
+	if (!m) return false;
+	return KIMI_CLASS_MODEL_REGEX.test(m.id.toLowerCase());
+}
+
 function buildModelBehavioralAddendum(m: Model | undefined): string | null {
-	if (!m) return null;
-	const id = m.id.toLowerCase();
-	if (!/(^|\/)(kimi|glm-|qwen)/.test(id)) return null;
+	if (!isKimiClassModel(m)) return null;
 	return [
 		"## Output discipline",
 		"",
@@ -1841,9 +1852,36 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			});
 		};
 
-		// Final convertToLlm: chain block-images filter with secret obfuscation
+
+		// For model families that emit verbose inline <thinking>...</thinking>
+		// blocks (kimi/glm/qwen), strip those blocks from past assistant text
+		// before replay. They don't help the next turn reason and they bloat
+		// the prompt cache linearly across turns. Current turn is unaffected
+		// (it's the live stream, not the replay).
+		const shouldStripThinking = isKimiClassModel(model);
+		const stripInlineThinking = (text: string): string =>
+			text.replace(/<thinking>[\s\S]*?<\/thinking>\n*/gi, "").replace(/<thinking>[\s\S]*$/i, "");
+		const stripThinkingFromMessages = (messages: Message[]): Message[] => {
+			if (!shouldStripThinking) return messages;
+			return messages.map(msg => {
+				if (msg.role !== "assistant") return msg;
+				const content = msg.content;
+				if (!Array.isArray(content)) return msg;
+				let mutated = false;
+				const nextContent = content.map(block => {
+					if (block.type !== "text") return block;
+					const next = stripInlineThinking(block.text);
+					if (next === block.text) return block;
+					mutated = true;
+					return { ...block, text: next };
+				});
+				return mutated ? { ...msg, content: nextContent } : msg;
+			});
+		};
+
+		// Final convertToLlm: chain block-images filter with <thinking> strip and secret obfuscation
 		const convertToLlmFinal = (messages: AgentMessage[]): Message[] => {
-			const converted = convertToLlmWithBlockImages(messages);
+			const converted = stripThinkingFromMessages(convertToLlmWithBlockImages(messages));
 			if (!obfuscator?.hasSecrets()) return converted;
 			return obfuscateMessages(obfuscator, converted);
 		};
