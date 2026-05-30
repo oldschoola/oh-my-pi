@@ -2,12 +2,13 @@
 # Autoresearch benchmark harness for the coding agent.
 #
 # Runs a deterministic subset of the TypeScript edit benchmark against
-# zai/glm-5-turbo (Z.AI's GLM-5-Turbo via the Anthropic-compatible endpoint),
-# then prints the summary as `METRIC name=value` lines.
+# firepass/kimi-k2.6-turbo (Fireworks Fire Pass subscription). Credentials
+# come from `~/.omp/agent/agent.db` via the in-process bench client's
+# `discoverAuthStorage()`; no env-var plumbing required.
 #
 # Primary metric: task_success_rate (higher is better).
 # Tunables via env:
-#   AR_MODEL          (default: zai/glm-5-turbo)
+#   AR_MODEL          (default: firepass/kimi-k2.6-turbo)
 #   AR_THINKING       (default: off)
 #   AR_MAX_TASKS      (default: 8)
 #   AR_RUNS           (default: 1)
@@ -18,27 +19,12 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-# --- Credential ---------------------------------------------------------------
-# Accept either ZAI_API_KEY (what the agent reads) or Z_AI_API_KEY (the shell
-# convention this workstation uses); normalize to ZAI_API_KEY so the inner
-# benchmark, which spawns the coding-agent CLI, sees the expected variable.
-if [ -z "${ZAI_API_KEY:-}" ]; then
-  if [ -n "${Z_AI_API_KEY:-}" ]; then
-    export ZAI_API_KEY="$Z_AI_API_KEY"
-  else
-    echo "ERROR: ZAI_API_KEY (or Z_AI_API_KEY) must be set" >&2
-    exit 2
-  fi
-fi
-
 # --- Dependencies -------------------------------------------------------------
 if [ ! -d node_modules ]; then
   echo "[harness] bun install (cold cache)" >&2
   bun install --frozen-lockfile >&2
 fi
-# Native addon must be built for in-process AgentSession to load. Build is
-# idempotent; the `cargo` step is incremental and re-builds nothing when up to
-# date.
+# Native addon must be built for in-process AgentSession to load.
 if [ ! -f "packages/natives/native/pi_natives.win32-x64-baseline.node" ] \
    && [ ! -f "packages/natives/native/pi_natives.win32-x64.node" ] \
    && [ ! -f "packages/natives/native/pi_natives.linux-x64-gnu.node" ] \
@@ -49,7 +35,7 @@ if [ ! -f "packages/natives/native/pi_natives.win32-x64-baseline.node" ] \
 fi
 
 # --- Config -------------------------------------------------------------------
-AR_MODEL="${AR_MODEL:-zai/glm-5-turbo}"
+AR_MODEL="${AR_MODEL:-firepass/kimi-k2.6-turbo}"
 AR_THINKING="${AR_THINKING:-off}"
 AR_MAX_TASKS="${AR_MAX_TASKS:-8}"
 AR_RUNS="${AR_RUNS:-1}"
