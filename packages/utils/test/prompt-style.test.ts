@@ -31,14 +31,14 @@ afterEach(() => {
 });
 
 describe("prompt style resolver", () => {
-	it("defaults to gentle and round-trips style changes", () => {
-		expect(getPromptStyle()).toBe("gentle");
-		setPromptStyle("default");
+	it("defaults to default and round-trips style changes", () => {
 		expect(getPromptStyle()).toBe("default");
-		setPromptStyle("caveman");
-		expect(getPromptStyle()).toBe("caveman");
 		setPromptStyle("gentle");
 		expect(getPromptStyle()).toBe("gentle");
+		setPromptStyle("caveman");
+		expect(getPromptStyle()).toBe("caveman");
+		setPromptStyle("default");
+		expect(getPromptStyle()).toBe("default");
 	});
 
 	it("renders the variant for the active style when the template is registered", () => {

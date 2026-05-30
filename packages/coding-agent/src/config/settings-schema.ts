@@ -1022,7 +1022,7 @@ export const SETTINGS_SCHEMA = {
 	promptStyle: {
 		type: "enum",
 		values: ["default", "gentle", "caveman"] as const,
-		default: "gentle",
+		default: "default",
 		ui: {
 			tab: "interaction",
 			label: "System Prompt Style",

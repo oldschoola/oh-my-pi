@@ -38,7 +38,7 @@ import "@oh-my-pi/pi-agent-core/compaction-variants.generated";
 import writeDescription from "../src/prompts/tools/write.md" with { type: "text" };
 
 afterEach(() => {
-	prompt.setPromptStyle("gentle");
+	prompt.setPromptStyle("default");
 });
 
 describe("System Prompt Style integration", () => {

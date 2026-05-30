@@ -469,7 +469,7 @@ export type PromptStyle = "default" | "gentle" | "caveman";
 /** Variants for one gentle template, keyed by the destination style. */
 export type PromptVariantSet = Partial<Record<PromptStyle, string>>;
 
-let activePromptStyle: PromptStyle = "gentle";
+let activePromptStyle: PromptStyle = "default";
 
 /**
  * Map of `gentle template text` → variant set. The key is always the gentle
@@ -521,7 +521,7 @@ export function registerPromptVariants(entries: Iterable<readonly [string, Promp
 /** Test-only: drop every registered variant. Not exported from index. */
 export function _resetPromptVariantsForTesting(): void {
 	promptVariantMap.clear();
-	activePromptStyle = "gentle";
+	activePromptStyle = "default";
 }
 
 function resolvePromptStyle(template: string): string {
