@@ -109,6 +109,13 @@ export interface AgentOptions {
 	maxToolCallsPerTurn?: number;
 
 	/**
+	 * Maximum cumulative content characters per single streamed assistant response
+	 * before the provider stream is force-aborted at the next `toolcall_end`. Bounds
+	 * wall-clock for chatty model families. Undefined disables the cap.
+	 */
+	maxResponseContentChars?: number;
+
+	/**
 	 * API format for Kimi Code provider: "openai" or "anthropic" (default: "anthropic")
 	 */
 	kimiApiFormat?: "openai" | "anthropic";
@@ -276,6 +283,7 @@ export class Agent {
 	#followUpMode: "all" | "one-at-a-time";
 	#interruptMode: "immediate" | "wait";
 	#maxToolCallsPerTurn?: number;
+	#maxResponseContentChars?: number;
 	#sessionId?: string;
 	#metadata?: Record<string, unknown>;
 	#metadataResolver?: (provider: string) => Record<string, unknown> | undefined;
@@ -336,6 +344,7 @@ export class Agent {
 		this.#followUpMode = opts.followUpMode || "one-at-a-time";
 		this.#interruptMode = opts.interruptMode || "immediate";
 		this.#maxToolCallsPerTurn = opts.maxToolCallsPerTurn;
+		this.#maxResponseContentChars = opts.maxResponseContentChars;
 		this.streamFn = opts.streamFn || streamSimple;
 		this.#sessionId = opts.sessionId;
 		this.#providerSessionState = opts.providerSessionState;
@@ -564,6 +573,14 @@ export class Agent {
 
 	set maxToolCallsPerTurn(value: number | undefined) {
 		this.#maxToolCallsPerTurn = value;
+	}
+
+	get maxResponseContentChars(): number | undefined {
+		return this.#maxResponseContentChars;
+	}
+
+	set maxResponseContentChars(value: number | undefined) {
+		this.#maxResponseContentChars = value;
 	}
 
 	get state(): AgentState {
@@ -929,6 +946,7 @@ export class Agent {
 			hideThinkingSummary: this.#hideThinkingSummary,
 			interruptMode: this.#interruptMode,
 			maxToolCallsPerTurn: this.#maxToolCallsPerTurn,
+			maxResponseContentChars: this.#maxResponseContentChars,
 			sessionId: this.#sessionId,
 			metadata: this.#metadataResolver ? undefined : this.#metadata,
 			metadataResolver: this.#metadataResolver,
