@@ -616,6 +616,31 @@ function resolveAppendOnlyMode(setting: "auto" | "on" | "off" | undefined, provi
 	}
 }
 
+/**
+ * Build a small model-conditional behavioral addendum appended to the system
+ * prompt for model families that embed inline `<thinking>...</thinking>` text
+ * in their assistant output instead of using a provider-side thinking channel.
+ *
+ * Kimi K2.x, GLM-5.x, and Qwen models are trained to emit verbose inline
+ * `<thinking>` blocks even when the API-level reasoning toggle is off. On
+ * tool-calling loops these blocks (a) blow past per-attempt wall-clock budgets
+ * via 20k+ token monologues and (b) bloat subsequent-turn context. We can't
+ * suppress them via the API, but explicit instruction often does.
+ *
+ * Returns `null` for Anthropic/OpenAI/Gemini — those use a provider-side
+ * reasoning channel and don't need (and should not get) this instruction.
+ */
+function buildModelBehavioralAddendum(m: Model | undefined): string | null {
+	if (!m) return null;
+	const id = m.id.toLowerCase();
+	if (!/(^|\/)(kimi|glm-|qwen)/.test(id)) return null;
+	return [
+		"## Output discipline",
+		"",
+		"- Do NOT emit `<thinking>` or `</thinking>` tags in your output. Plan internally; state only conclusions, decisions, and tool calls. Long inline `<thinking>` monologues blow past per-turn budgets.",
+	].join("\n");
+}
+
 function customToolToDefinition(tool: CustomTool): ToolDefinition {
 	const definition: ToolDefinition & { [TOOL_DEFINITION_MARKER]: true } = {
 		name: tool.name,
@@ -1616,6 +1641,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					parts.push(`### ${srvName}\n${truncated}`);
 				}
 				appendPrompt = parts.join("\n\n");
+			}
+
+			// Append a small, narrow behavioral hint for model families that
+			// embed inline <thinking> text in their output (kimi/glm/qwen). For
+			// other families this is a no-op.
+			const modelAddendum = buildModelBehavioralAddendum(model);
+			if (modelAddendum) {
+				appendPrompt = appendPrompt ? `${appendPrompt}\n\n${modelAddendum}` : modelAddendum;
 			}
 			const defaultPrompt = await buildSystemPromptInternal({
 				cwd,
