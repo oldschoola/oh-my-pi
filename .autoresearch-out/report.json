@@ -20,7 +20,7 @@
     "connectionTimeout": 30000,
     "inProcess": true,
     "earlyStopOnMatch": true,
-    "conversationDumpDir": ".autoresearch-out\\report.2026-05-30T15-06-24-925Z.dump"
+    "conversationDumpDir": ".autoresearch-out\\report.2026-05-30T15-45-31-720Z.dump"
   },
   "tasks": [
     {
@@ -39,30 +39,31 @@
           "mutationCategory": "access",
           "difficultyScore": 2,
           "tokens": {
-            "input": 6595,
-            "output": 237,
-            "total": 6832
+            "input": 2588,
+            "output": 203,
+            "total": 2791
           },
-          "duration": 3805,
+          "duration": 2347,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": ".",
           "toolCalls": {
-            "read": 2,
+            "read": 1,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
-            "editWarnings": 0,
+            "editWarnings": 1,
             "editAutocorrects": 0,
-            "totalInputChars": 150
+            "totalInputChars": 128
           },
           "editFailures": [],
-          "editWarnings": [],
+          "editWarnings": [
+            "Auto-prefixed bare body row(s) with `+`. Body rows must be `+TEXT` literal lines; pasting raw code as payload is not a portable shape."
+          ],
           "editAutocorrectCount": 0,
           "mutationIntentMatched": true,
           "mutationIntentReason": "Target line exactly matches expected fixture.",
@@ -77,21 +78,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 6595,
-        "output": 237,
-        "total": 6832
+        "input": 2588,
+        "output": 203,
+        "total": 2791
       },
-      "duration": 3805,
+      "duration": 2347,
       "indentScore": 0,
       "toolCalls": {
-        "read": 2,
+        "read": 1,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
-        "editWarnings": 0,
+        "editWarnings": 1,
         "editAutocorrects": 0,
-        "totalInputChars": 150
+        "totalInputChars": 128
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -113,31 +114,30 @@
           "mutationCategory": "duplicate",
           "difficultyScore": 8,
           "tokens": {
-            "input": 28304,
-            "output": 1727,
-            "total": 30031
+            "input": 40471,
+            "output": 2233,
+            "total": 42704
           },
-          "duration": 12515,
+          "duration": 16541,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
+          "agentResponse": "I found the bug. In `isPidRunning`, line 229 returns `true` when `pid.killed` is set, but a killed process is not running. The duplicated pattern from `terminate` (line 302) has the wrong literal here.",
           "toolCalls": {
-            "read": 9,
+            "read": 11,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
-            "editWarnings": 1,
+            "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 332
+            "totalInputChars": 391
           },
           "editFailures": [],
-          "editWarnings": [
-            "Auto-prefixed bare body row(s) with `+`. Body rows must be `+TEXT` literal lines; pasting raw code as payload is not a portable shape."
-          ],
+          "editWarnings": [],
           "editAutocorrectCount": 0,
           "mutationIntentMatched": true,
           "mutationIntentReason": "Target line exactly matches expected fixture.",
@@ -152,21 +152,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 28304,
-        "output": 1727,
-        "total": 30031
+        "input": 40471,
+        "output": 2233,
+        "total": 42704
       },
-      "duration": 12515,
+      "duration": 16541,
       "indentScore": 0,
       "toolCalls": {
-        "read": 9,
+        "read": 11,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
-        "editWarnings": 1,
+        "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 332
+        "totalInputChars": 391
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -188,11 +188,11 @@
           "mutationCategory": "literal",
           "difficultyScore": 4,
           "tokens": {
-            "input": 14432,
-            "output": 1203,
-            "total": 15635
+            "input": 2602,
+            "output": 396,
+            "total": 2998
           },
-          "duration": 9824,
+          "duration": 4562,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
@@ -200,14 +200,14 @@
             "charsChanged": 0
           },
           "toolCalls": {
-            "read": 4,
+            "read": 1,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 165
+            "totalInputChars": 87
           },
           "editFailures": [],
           "editWarnings": [],
@@ -225,21 +225,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 14432,
-        "output": 1203,
-        "total": 15635
+        "input": 2602,
+        "output": 396,
+        "total": 2998
       },
-      "duration": 9824,
+      "duration": 4562,
       "indentScore": 0,
       "toolCalls": {
-        "read": 4,
+        "read": 1,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 165
+        "totalInputChars": 87
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -261,11 +261,11 @@
           "mutationCategory": "operator",
           "difficultyScore": 6,
           "tokens": {
-            "input": 15110,
-            "output": 613,
-            "total": 15723
+            "input": 9198,
+            "output": 564,
+            "total": 9762
           },
-          "duration": 6443,
+          "duration": 5505,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
@@ -299,11 +299,11 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 15110,
-        "output": 613,
-        "total": 15723
+        "input": 9198,
+        "output": 564,
+        "total": 9762
       },
-      "duration": 6443,
+      "duration": 5505,
       "indentScore": 0,
       "toolCalls": {
         "read": 3,
@@ -335,17 +335,18 @@
           "mutationCategory": "operator",
           "difficultyScore": 4,
           "tokens": {
-            "input": 2773,
-            "output": 566,
-            "total": 3339
+            "input": 2779,
+            "output": 561,
+            "total": 3340
           },
-          "duration": 4357,
+          "duration": 5314,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
+          "agentResponse": "The condition on line 37 is inverted. It currently bails out for everything except `null`, which means `null` falls through to the object branch and crashes. The guard should fire *when* the value is `null` or `undefined`, not when it isn't.",
           "toolCalls": {
             "read": 1,
             "edit": 1,
@@ -354,7 +355,7 @@
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 135
+            "totalInputChars": 137
           },
           "editFailures": [],
           "editWarnings": [],
@@ -372,11 +373,11 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 2773,
-        "output": 566,
-        "total": 3339
+        "input": 2779,
+        "output": 561,
+        "total": 3340
       },
-      "duration": 4357,
+      "duration": 5314,
       "indentScore": 0,
       "toolCalls": {
         "read": 1,
@@ -386,7 +387,7 @@
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 135
+        "totalInputChars": 137
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -408,27 +409,27 @@
           "mutationCategory": "operator",
           "difficultyScore": 8,
           "tokens": {
-            "input": 10424,
-            "output": 1744,
-            "total": 12168
+            "input": 9296,
+            "output": 647,
+            "total": 9943
           },
-          "duration": 9355,
+          "duration": 6870,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "Found it. In `getNumber`, line 107: `||` should be `&&` so `Number.isFinite` actually filters out `NaN` and `Infinity`.",
+          "agentResponse": ".",
           "toolCalls": {
-            "read": 9,
+            "read": 4,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 408
+            "totalInputChars": 260
           },
           "editFailures": [],
           "editWarnings": [],
@@ -446,21 +447,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 10424,
-        "output": 1744,
-        "total": 12168
+        "input": 9296,
+        "output": 647,
+        "total": 9943
       },
-      "duration": 9355,
+      "duration": 6870,
       "indentScore": 0,
       "toolCalls": {
-        "read": 9,
+        "read": 4,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 408
+        "totalInputChars": 260
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -483,19 +484,19 @@
           "difficultyScore": 4,
           "error": "File mismatch for chat-simple.ts",
           "tokens": {
-            "input": 26706,
-            "output": 2349,
-            "total": 29055
+            "input": 35712,
+            "output": 6586,
+            "total": 42298
           },
-          "duration": 16001,
+          "duration": 40215,
           "indentScore": 0,
           "formattedEquivalent": false,
           "diffStats": {
-            "linesChanged": 2,
-            "charsChanged": 148
+            "linesChanged": 3,
+            "charsChanged": 117
           },
-          "agentResponse": "The deleted statement `const userMessage = new Markdown(trimmed, 1, 1, defaultMarkdownTheme);` has been restored on line 85. This fixes the undefined `userMessage` reference that was being inserted into the TUI children on the next line.",
-          "diff": "@@ -82 @@\n     isResponding = true;\n     editor.disableSubmit = true;\n \n-    const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);\n+    const userMessage = new Markdown(trimmed, 1, 1, defaultMarkdownTheme);\n \n     const children = tui.children;\n     children.splice(children.length - 1, 0, userMessage);",
+          "agentResponse": "The deleted statement `const userMessage = new Text(trimmed);` has been restored at line 84. The `userMessage` variable was being referenced on line 87 but had no declaration, so it was a critical missing statement.",
+          "diff": "@@ -81 @@\n   if (trimmed) {\n     isResponding = true;\n     editor.disableSubmit = true;\n+    const userMessage = new Text(trimmed);\n \n \n-    const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);\n-\n     const children = tui.children;\n     children.splice(children.length - 1, 0, userMessage);\n ",
           "toolCalls": {
             "read": 4,
             "edit": 1,
@@ -504,7 +505,7 @@
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 251
+            "totalInputChars": 217
           },
           "editFailures": [],
           "editWarnings": [],
@@ -521,11 +522,11 @@
       "bestRunIndex": 0,
       "success": false,
       "tokens": {
-        "input": 26706,
-        "output": 2349,
-        "total": 29055
+        "input": 35712,
+        "output": 6586,
+        "total": 42298
       },
-      "duration": 16001,
+      "duration": 40215,
       "indentScore": 0,
       "toolCalls": {
         "read": 4,
@@ -535,7 +536,7 @@
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 251
+        "totalInputChars": 217
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": false,
@@ -556,13 +557,13 @@
           "mutationType": "swap-adjacent-lines",
           "mutationCategory": "structural",
           "difficultyScore": 12,
-          "error": "Timeout exhausted after 3 retries (last: 120006ms, events=25011, last_event=message_update)",
+          "error": "Timeout exhausted after 3 retries (last: 120013ms, events=26689, last_event=message_update)",
           "tokens": {
             "input": 0,
             "output": 0,
             "total": 0
           },
-          "duration": 360067,
+          "duration": 360068,
           "toolCalls": {
             "read": 0,
             "edit": 0,
@@ -577,11 +578,11 @@
           "editWarnings": [],
           "editAutocorrectCount": 0,
           "timeoutTelemetry": {
-            "elapsedMs": 120006,
-            "eventCount": 25011,
-            "toolExecutionStarts": 2,
-            "toolExecutionEnds": 2,
-            "messageEnds": 5,
+            "elapsedMs": 120013,
+            "eventCount": 26689,
+            "toolExecutionStarts": 0,
+            "toolExecutionEnds": 0,
+            "messageEnds": 1,
             "lastEventType": "message_update",
             "recentEventTypes": [
               "message_update",
@@ -609,7 +610,7 @@
         "output": 0,
         "total": 0
       },
-      "duration": 360067,
+      "duration": 360068,
       "indentScore": 0,
       "toolCalls": {
         "read": 0,
@@ -635,37 +636,37 @@
     "flakyTasks": 0,
     "consistentlyPassingTasks": 6,
     "totalTokens": {
-      "input": 104344,
-      "output": 8439,
-      "total": 112783
+      "input": 102646,
+      "output": 11190,
+      "total": 113836
     },
     "avgTokensPerTask": {
-      "input": 13043,
-      "output": 1055,
-      "total": 14098
+      "input": 12831,
+      "output": 1399,
+      "total": 14230
     },
-    "totalDuration": 422367,
-    "avgDurationPerTask": 52796,
+    "totalDuration": 441422,
+    "avgDurationPerTask": 55178,
     "avgIndentScore": 0,
     "totalToolCalls": {
-      "read": 32,
+      "read": 25,
       "edit": 7,
       "write": 0,
       "editSuccesses": 7,
       "editFailures": 0,
       "editWarnings": 1,
       "editAutocorrects": 0,
-      "totalInputChars": 1628
+      "totalInputChars": 1407
     },
     "avgToolCallsPerTask": {
-      "read": 4,
+      "read": 3.125,
       "edit": 0.875,
       "write": 0,
       "editSuccesses": 0.875,
       "editFailures": 0,
       "editWarnings": 0.125,
       "editAutocorrects": 0,
-      "totalInputChars": 203.5
+      "totalInputChars": 175.875
     },
     "editSuccessRate": 1,
     "autocorrectFreeSuccessfulTasks": 6,
@@ -687,6 +688,6 @@
       "other": 0
     }
   },
-  "startTime": "2026-05-30T15:06:24.926Z",
-  "endTime": "2026-05-30T15:12:29.044Z"
+  "startTime": "2026-05-30T15:45:31.721Z",
+  "endTime": "2026-05-30T15:51:36.575Z"
 }
