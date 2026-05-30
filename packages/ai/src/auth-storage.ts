@@ -1586,6 +1586,12 @@ export class AuthStorage {
 				await saveApiKeyCredential(apiKey);
 				return;
 			}
+			case "cliproxy": {
+				const { loginCliproxy } = await import("./utils/oauth/cliproxy");
+				const apiKey = await loginCliproxy(ctrl);
+				await saveApiKeyCredential(apiKey);
+				return;
+			}
 			case "together": {
 				const { loginTogether } = await import("./utils/oauth/together");
 				const apiKey = await loginTogether(ctrl);

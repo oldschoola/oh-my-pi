@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added CLIProxyAPI (`router-for-me/CLIProxyAPI`) as a provider (`CLIPROXY_API_KEY`, default base URL `http://127.0.0.1:8317/v1`, override via `CLIPROXY_BASE_URL`). Treated as OpenAI Chat Completions upstream; reasoning flag is inferred from the upstream model id family (`claude-*`, `gpt-5.*`, `codex-*`) since the proxy's `/v1/models` only surfaces id/object/created/owned_by. Login flow added via `/login cliproxy`. Default model: `claude-opus-4-7`.
+
 ## [15.5.0] - 2026-05-26
 ### Added
 

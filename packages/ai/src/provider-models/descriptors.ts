@@ -12,6 +12,7 @@ import {
 	alibabaCodingPlanModelManagerOptions,
 	anthropicModelManagerOptions,
 	cerebrasModelManagerOptions,
+	cliproxyModelManagerOptions,
 	cloudflareAiGatewayModelManagerOptions,
 	deepseekModelManagerOptions,
 	firepassModelManagerOptions,
@@ -172,6 +173,12 @@ export const PROVIDER_DESCRIPTORS: readonly ProviderDescriptor[] = [
 		"deepseek-v4-pro",
 		config => deepseekModelManagerOptions(config),
 		catalog("DeepSeek", ["DEEPSEEK_API_KEY"]),
+	),
+	catalogDescriptor(
+		"cliproxy",
+		"claude-opus-4-7",
+		config => cliproxyModelManagerOptions(config),
+		catalog("CLIProxy", ["CLIPROXY_API_KEY"]),
 	),
 	descriptor("mistral", "devstral-medium-latest", config => mistralModelManagerOptions(config)),
 	catalogDescriptor(
