@@ -455,6 +455,13 @@ function formatRetryFallbackBaseSelector(selector: RetryFallbackSelector): strin
 const IRC_REPLY_MAX_BYTES = 4096;
 
 /**
+ * Consecutive failed todo_write calls after which we stop the "fix and retry"
+ * nudge and instead tell the model (and surface to the user) that the model is
+ * emitting malformed tool_use JSON — rather than re-prompting forever.
+ */
+const MAX_TODO_WRITE_RETRY_NUDGES = 3;
+
+/**
  * Collapse degenerate IRC ephemeral replies before they hit the relay.
  * Models occasionally loop on a single line (~16 reports of N-times-repeated
  * replies); compress runs longer than 3 down to one instance + `[…N×]`, then
@@ -808,6 +815,10 @@ export class AgentSession {
 	// Todo completion reminder state
 	#todoReminderCount = 0;
 	#todoPhases: TodoPhase[] = [];
+	// Consecutive todo_write failures (malformed args). Caps the auto-retry
+	// nudge so a model that keeps emitting bad tool_use JSON (e.g. Opus 4.8)
+	// is not re-prompted forever. Reset on any successful todo_write.
+	#todoWriteFailureStreak = 0;
 	#toolChoiceQueue = new ToolChoiceQueue();
 
 	// Bash execution state
@@ -1718,27 +1729,49 @@ export class AgentSession {
 				if (toolName === "edit" && details?.path) {
 					this.#invalidateFileCacheForPath(details.path);
 				}
-				if (toolName === "todo_write" && !isError && Array.isArray(details?.phases)) {
-					this.setTodoPhases(details.phases);
+				if (toolName === "todo_write" && !isError) {
+					this.#todoWriteFailureStreak = 0;
+					if (Array.isArray(details?.phases)) {
+						this.setTodoPhases(details.phases);
+					}
 				}
 				if (toolName === "todo_write" && isError) {
+					this.#todoWriteFailureStreak++;
 					const errorText = content?.find(part => part.type === "text")?.text;
-					const reminderText = [
-						"<system-reminder>",
-						"todo_write failed, so todo progress is not visible to the user.",
-						errorText ? `Failure: ${errorText}` : "Failure: todo_write returned an error.",
-						"Fix the todo payload and call todo_write again before continuing.",
-						"</system-reminder>",
-					].join("\n");
-					await this.sendCustomMessage(
-						{
-							customType: "todo-write-error-reminder",
-							content: reminderText,
-							display: false,
-							details: { toolName, errorText },
-						},
-						{ deliverAs: "nextTurn" },
-					);
+					const failureLine = errorText ? `Failure: ${errorText}` : "Failure: todo_write returned an error.";
+					// Up to MAX_TODO_WRITE_RETRY_NUDGES failures: nudge to fix and retry.
+					// On the Nth failure: switch to a terminal explanation (likely
+					// malformed tool_use JSON) so we stop looping silently. Past that:
+					// no further nudges — the model has been told to move on.
+					let reminderText: string | undefined;
+					if (this.#todoWriteFailureStreak < MAX_TODO_WRITE_RETRY_NUDGES) {
+						reminderText = [
+							"<system-reminder>",
+							"todo_write failed, so todo progress is not visible to the user.",
+							failureLine,
+							"Fix the todo payload and call todo_write again before continuing.",
+							"</system-reminder>",
+						].join("\n");
+					} else if (this.#todoWriteFailureStreak === MAX_TODO_WRITE_RETRY_NUDGES) {
+						reminderText = [
+							"<system-reminder>",
+							`todo_write has now failed ${this.#todoWriteFailureStreak} times in a row.`,
+							failureLine,
+							"This is a known issue where some models (notably Claude Opus 4.8) emit malformed or truncated tool_use JSON. Stop retrying todo_write; continue the task without it and tell the user the todo list could not be updated.",
+							"</system-reminder>",
+						].join("\n");
+					}
+					if (reminderText) {
+						await this.sendCustomMessage(
+							{
+								customType: "todo-write-error-reminder",
+								content: reminderText,
+								display: false,
+								details: { toolName, errorText },
+							},
+							{ deliverAs: "nextTurn" },
+						);
+					}
 				}
 				if (toolName === "checkpoint" && !isError) {
 					const checkpointEntryId = this.sessionManager.getEntries().at(-1)?.id ?? null;

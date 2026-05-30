@@ -441,6 +441,17 @@ interface StepCounter {
 	count: number;
 }
 
+/**
+ * Maximum consecutive tool turns where *every* tool call errored (zero
+ * successful tool calls). Past this, the model is stuck spamming invalid
+ * calls — most often malformed tool_use JSON (e.g. Claude Opus 4.8 truncated
+ * arguments) that fails arg validation — rather than making progress, so we
+ * break the loop instead of re-prompting unbounded. A streak of all-error
+ * turns is pathological; any successful tool call resets the counter, so
+ * legitimate mixed success/error work is never affected.
+ */
+const MAX_CONSECUTIVE_ALL_ERROR_TOOL_TURNS = 6;
+
 async function runLoopBody(
 	currentContext: AgentContext,
 	newMessages: AgentMessage[],
@@ -457,6 +468,7 @@ async function runLoopBody(
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 	let harmonyRetryAttempt = 0;
 	let harmonyTruncateResumeCount = 0;
+	let consecutiveAllErrorToolTurns = 0;
 
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
@@ -587,7 +599,22 @@ async function runLoopBody(
 				}
 			}
 
+			// Anti-spam brake: a turn where the model issued tool calls but every
+			// one errored makes no progress. Track consecutive all-error turns; any
+			// successful tool call (or a turn with no tool calls) resets the streak.
+			if (hasMoreToolCalls && toolResults.length > 0 && toolResults.every(result => result.isError)) {
+				consecutiveAllErrorToolTurns++;
+			} else {
+				consecutiveAllErrorToolTurns = 0;
+			}
+
 			stream.push({ type: "turn_end", message, toolResults });
+
+			if (consecutiveAllErrorToolTurns >= MAX_CONSECUTIVE_ALL_ERROR_TOOL_TURNS) {
+				throw new Error(
+					`Aborting after ${MAX_CONSECUTIVE_ALL_ERROR_TOOL_TURNS} consecutive turns where every tool call failed (no successful tool call). This usually means the model emitted malformed tool-call arguments, e.g. Claude Opus 4.8 truncated tool_use JSON.`,
+				);
+			}
 
 			pendingMessages = steeringMessagesFromExecution ?? ((await config.getSteeringMessages?.()) || []);
 		}

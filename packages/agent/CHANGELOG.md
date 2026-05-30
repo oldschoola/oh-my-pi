@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the agent loop re-prompting unbounded when a model repeatedly issues tool calls that all error (e.g. malformed `tool_use` JSON failing argument validation, seen with Claude Opus 4.8). After 6 consecutive tool turns where every tool call errors with zero successful tool calls, the loop now breaks with a terminal error instead of spamming further parallel calls. Any successful tool call (or a turn with no tool calls) resets the streak, so legitimate mixed success/error turns are unaffected.
+
 ## [15.5.10] - 2026-05-28
 
 ### Fixed

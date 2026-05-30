@@ -379,6 +379,21 @@ export function supportsMidConversationSystemMessages(modelId: string): boolean 
 	return parsed.kind === "opus" && semverGte(parsed.version, "4.8");
 }
 
+/**
+ * Claude Opus 4.8 frequently emits malformed / truncated `tool_use` JSON
+ * (unterminated strings, missing braces) when tool input is streamed without
+ * server-side buffering. Sending neither `eager_input_streaming` nor the
+ * `fine-grained-tool-streaming` beta restores Anthropic's default buffered
+ * tool-JSON validation, so only complete, valid tool input streams back.
+ * Scoped to Opus 4.8+; earlier Claude models stream tool input fine.
+ * @see https://github.com/anthropics/claude-code/issues/63604
+ */
+export function anthropicModelNeedsBufferedToolInput(modelId: string): boolean {
+	const parsed = parseAnthropicModel(getCanonicalModelId(modelId));
+	if (!parsed) return false;
+	return parsed.kind === "opus" && semverGte(parsed.version, "4.8");
+}
+
 function anthropicModelHasRealXHighEffort<TApi extends Api>(model: ApiModel<TApi>): boolean {
 	if (model.api !== "anthropic-messages") return false;
 	const parsedModel = parseKnownModel(model.id);
