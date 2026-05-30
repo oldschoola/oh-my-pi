@@ -182,4 +182,15 @@ export function serializeConversation(messages: Message[]): string {
 // Summarization System Prompt
 // ============================================================================
 
-export const SUMMARIZATION_SYSTEM_PROMPT = prompt.render(summarizationSystemPrompt);
+/**
+ * Render the compaction summarization system prompt against the currently
+ * active prompt style. Called each time the prompt is needed — the underlying
+ * Handlebars compile is cached per template text, so re-rendering is cheap and
+ * the active style is always reflected.
+ *
+ * Was an eagerly-rendered `const` until the System Prompt Style mechanism
+ * landed; eager rendering froze whichever style was active at import time.
+ */
+export function getSummarizationSystemPrompt(): string {
+	return prompt.render(summarizationSystemPrompt);
+}

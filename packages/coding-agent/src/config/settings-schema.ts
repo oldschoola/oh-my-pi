@@ -1014,6 +1014,39 @@ export const SETTINGS_SCHEMA = {
 		ui: { tab: "interaction", label: "Completion Notification", description: "Notify when the agent completes" },
 	},
 
+	// Prompt style — chooses which set of system / tool / agent / compaction
+	// prompts the agent is built from. `default` and `caveman` are bundled
+	// alongside the live (gentle) text; the resolver inside `prompt.render`
+	// swaps them in based on this setting. Style switches take effect on the
+	// next turn (system prompt and tool descriptions are rebuilt per turn).
+	promptStyle: {
+		type: "enum",
+		values: ["default", "gentle", "caveman"] as const,
+		default: "gentle",
+		ui: {
+			tab: "interaction",
+			label: "System Prompt Style",
+			description: "Voice and tone used across the agent's bundled prompts",
+			options: [
+				{
+					value: "default",
+					label: "Default (authoritative)",
+					description: "Original RFC 2119 voice — MUST / NEVER / SHOULD, terse and directive.",
+				},
+				{
+					value: "gentle",
+					label: "Gentle (collaborative)",
+					description: "Softer, conversational rewrite — same facts, less imperative phrasing.",
+				},
+				{
+					value: "caveman",
+					label: "Caveman (compressed)",
+					description: "Caveman voice — short words, no filler. Same facts, ~75% fewer tokens.",
+				},
+			],
+		},
+	},
+
 	"ask.timeout": {
 		type: "number",
 		default: 0,

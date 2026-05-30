@@ -21,8 +21,16 @@ import {
 	isEnoent,
 	logger,
 	procmgr,
+	prompt,
 	setDefaultTabWidth,
 } from "@oh-my-pi/pi-utils";
+
+// Side-effect: register the bundled default/caveman variants with the prompt
+// resolver. Importing here means every entry point that initializes Settings
+// — which is every CLI / SDK consumer — gets variant registration "for free"
+// before any prompt is rendered, without each entry having to remember.
+import "../prompts-variants.generated";
+import "@oh-my-pi/pi-agent-core/compaction-variants.generated";
 import { YAML } from "bun";
 import { type Settings as SettingsCapabilityItem, settingsCapability } from "../capability/settings";
 import type { ModelRole } from "../config/model-registry";
@@ -860,6 +868,14 @@ const SETTING_HOOKS: Partial<Record<SettingPath, SettingHook<any>>> = {
 	"provider.appendOnlyContext": value => {
 		if (typeof value === "string") {
 			for (const cb of appendOnlyModeCallbacks) cb(value);
+		}
+	},
+	promptStyle: value => {
+		// Push the new style into the prompt resolver. Subsequent render() calls
+		// pick it up — system prompt and tool descriptions are rebuilt per turn,
+		// so the change is visible to the model on the next assistant turn.
+		if (typeof value === "string" && (value === "default" || value === "gentle" || value === "caveman")) {
+			prompt.setPromptStyle(value);
 		}
 	},
 };

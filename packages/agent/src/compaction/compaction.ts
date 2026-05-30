@@ -41,7 +41,7 @@ import {
 	createFileOps,
 	extractFileOpsFromMessage,
 	type FileOperations,
-	SUMMARIZATION_SYSTEM_PROMPT,
+	getSummarizationSystemPrompt,
 	serializeConversation,
 	upsertFileOperations,
 } from "./utils";
@@ -488,14 +488,13 @@ export function findCutPoint(
 // Summarization
 // ============================================================================
 
-const SUMMARIZATION_PROMPT = prompt.render(compactionSummaryPrompt);
-
-const UPDATE_SUMMARIZATION_PROMPT = prompt.render(compactionUpdateSummaryPrompt);
-
-const SHORT_SUMMARY_PROMPT = prompt.render(compactionShortSummaryPrompt);
-
-const HANDOFF_DOCUMENT_PROMPT = prompt.render(handoffDocumentPrompt);
-
+// The four summary/handoff prompts below intentionally render lazily — eager
+// `prompt.render(...)` at module load would freeze whichever System Prompt
+// Style was active at import time, defeating the runtime switcher. The
+// Handlebars compile cache makes re-rendering effectively free.
+//
+// `AUTO_HANDOFF_THRESHOLD_FOCUS` stays eager: its source markdown is not
+// gentle-touched, so no variant exists and the render is style-independent.
 export const AUTO_HANDOFF_THRESHOLD_FOCUS = prompt.render(autoHandoffThresholdFocusPrompt);
 
 function formatAdditionalContext(context: string[] | undefined): string {
@@ -610,7 +609,9 @@ export async function generateSummary(
 	const maxTokens = Math.floor(0.8 * reserveTokens);
 
 	// Use update prompt if we have a previous summary, otherwise initial prompt
-	let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
+	let basePrompt = previousSummary
+		? prompt.render(compactionUpdateSummaryPrompt)
+		: prompt.render(compactionSummaryPrompt);
 	if (options?.promptOverride) {
 		basePrompt = options.promptOverride;
 	}
@@ -643,7 +644,7 @@ export async function generateSummary(
 		const remote = await requestRemoteCompaction(
 			options.remoteEndpoint,
 			{
-				systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
+				systemPrompt: getSummarizationSystemPrompt(),
 				prompt: promptText,
 			},
 			signal,
@@ -653,7 +654,7 @@ export async function generateSummary(
 
 	const response = await instrumentedCompleteSimple(
 		model,
-		{ systemPrompt: [SUMMARIZATION_SYSTEM_PROMPT], messages: summarizationMessages },
+		{ systemPrompt: [getSummarizationSystemPrompt()], messages: summarizationMessages },
 		{
 			maxTokens,
 			signal,
@@ -705,7 +706,7 @@ export interface HandoffOptions {
 }
 
 export function renderHandoffPrompt(customInstructions?: string): string {
-	if (!customInstructions) return HANDOFF_DOCUMENT_PROMPT;
+	if (!customInstructions) return prompt.render(handoffDocumentPrompt);
 	return prompt.render(handoffDocumentPrompt, {
 		additionalFocus: customInstructions,
 	});
@@ -775,13 +776,13 @@ async function generateShortSummary(
 		promptText += `<previous-summary>\n${historySummary}\n</previous-summary>\n\n`;
 	}
 	promptText += formatAdditionalContext(options?.extraContext);
-	promptText += SHORT_SUMMARY_PROMPT;
+	promptText += prompt.render(compactionShortSummaryPrompt);
 
 	if (options?.remoteEndpoint) {
 		const remote = await requestRemoteCompaction(
 			options.remoteEndpoint,
 			{
-				systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
+				systemPrompt: getSummarizationSystemPrompt(),
 				prompt: promptText,
 			},
 			signal,
@@ -792,7 +793,7 @@ async function generateShortSummary(
 	const response = await instrumentedCompleteSimple(
 		model,
 		{
-			systemPrompt: [SUMMARIZATION_SYSTEM_PROMPT],
+			systemPrompt: [getSummarizationSystemPrompt()],
 			messages: [{ role: "user", content: [{ type: "text", text: promptText }], timestamp: Date.now() }],
 		},
 		{
@@ -946,8 +947,11 @@ export function prepareCompaction(
 // ============================================================================
 // Main compaction function
 // ============================================================================
-
-const TURN_PREFIX_SUMMARIZATION_PROMPT = prompt.render(compactionTurnPrefixPrompt);
+//
+// `prompt.render(compactionTurnPrefixPrompt)` is called lazily inside
+// `summarizeTurnPrefix` below — the prompt source is gentle-touched, so
+// freezing it at module load would lock in whichever style was active at
+// import time, defeating the runtime System Prompt Style switcher.
 
 /**
  * Generate summaries for compaction using prepared data.
@@ -1013,7 +1017,7 @@ export async function compact(
 					model,
 					apiKey,
 					remoteHistory,
-					summaryOptions.remoteInstructions ?? SUMMARIZATION_SYSTEM_PROMPT,
+					summaryOptions.remoteInstructions ?? getSummarizationSystemPrompt(),
 					signal,
 				);
 				preserveData = withOpenAiRemoteCompactionPreserveData(previousPreserveData, remote);
@@ -1121,7 +1125,7 @@ async function generateTurnPrefixSummary(
 
 	const llmMessages = (options?.convertToLlm ?? convertToLlm)(messages);
 	const conversationText = serializeConversation(llmMessages);
-	const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
+	const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${prompt.render(compactionTurnPrefixPrompt)}`;
 	const summarizationMessages = [
 		{
 			role: "user" as const,
@@ -1132,7 +1136,7 @@ async function generateTurnPrefixSummary(
 
 	const response = await instrumentedCompleteSimple(
 		model,
-		{ systemPrompt: [SUMMARIZATION_SYSTEM_PROMPT], messages: summarizationMessages },
+		{ systemPrompt: [getSummarizationSystemPrompt()], messages: summarizationMessages },
 		{
 			maxTokens,
 			signal,

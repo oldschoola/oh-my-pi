@@ -25,7 +25,7 @@ import {
 	createFileOps,
 	extractFileOpsFromMessage,
 	type FileOperations,
-	SUMMARIZATION_SYSTEM_PROMPT,
+	getSummarizationSystemPrompt,
 	serializeConversation,
 	upsertFileOperations,
 } from "./utils";
@@ -260,9 +260,11 @@ export function prepareBranchEntries(entries: SessionEntry[], tokenBudget: numbe
 // Summary Generation
 // ============================================================================
 
+// `BRANCH_SUMMARY_PREAMBLE`'s markdown source isn't gentle-touched, so its
+// rendered text is identical across styles — eager render is safe and avoids
+// an extra call per invocation. `BRANCH_SUMMARY_PROMPT` is gentle-touched and
+// is rendered lazily at each use site below (compile cache keeps it cheap).
 const BRANCH_SUMMARY_PREAMBLE = prompt.render(branchSummaryPreamble);
-
-const BRANCH_SUMMARY_PROMPT = prompt.render(branchSummaryPrompt);
 
 /**
  * Generate a summary of abandoned branch entries.
@@ -292,7 +294,7 @@ export async function generateBranchSummary(
 	const conversationText = serializeConversation(llmMessages);
 
 	// Build prompt
-	const instructions = customInstructions || BRANCH_SUMMARY_PROMPT;
+	const instructions = customInstructions || prompt.render(branchSummaryPrompt);
 	const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${instructions}`;
 
 	const summarizationMessages = [
@@ -306,7 +308,7 @@ export async function generateBranchSummary(
 	// Call LLM for summarization
 	const response = await instrumentedCompleteSimple(
 		model,
-		{ systemPrompt: [SUMMARIZATION_SYSTEM_PROMPT], messages: summarizationMessages },
+		{ systemPrompt: [getSummarizationSystemPrompt()], messages: summarizationMessages },
 		{ apiKey, signal, maxTokens: 2048, metadata },
 		{ telemetry: options.telemetry, oneshotKind: "branch_summary" },
 	);

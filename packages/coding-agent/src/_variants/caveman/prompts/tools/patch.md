@@ -1,0 +1,70 @@
+Patches files given diff hunks. Primary tool for existing-file edits.
+
+<instruction>
+**Hunk Headers:**
+- `@@` — bare header when context lines unique
+- `@@ $ANCHOR` — anchor copied verbatim from file (full line or unique substring)
+**Anchor Selection:**
+1. Otherwise choose highly specific anchor copied from file:
+   - full function signature
+   - class declaration
+   - unique string literal/error message
+   - config key with uncommon name
+2. On "Found multiple matches": add context lines, use multiple hunks with separate anchors, or use longer anchor substring
+**Context Lines:**
+Use enough ` `-prefixed lines to make match unique (usually 2–8)
+When editing structured blocks (nested braces, tags, indented regions), include opening and closing lines so edit stays inside block
+</instruction>
+
+<parameters>
+```ts
+// Input is { path: string, edits: Entry[] }. `path` is required and applies to every entry.
+type Entry =
+   // Diff is one or more hunks for the top-level path.
+   // - Each hunk begins with "@@" (anchor optional).
+   // - Each hunk body only has lines starting with ' ' | '+' | '-'.
+   // - Each hunk includes at least one change (+ or -).
+   | { op: "update", diff: string }
+   // Diff is full file content, no prefixes.
+   | { op: "create", diff: string }
+   // No diff for delete.
+   | { op: "delete" }
+   // New path for update+move from the top-level path.
+   | { op: "update", rename: string, diff: string }
+```
+</parameters>
+
+<output>
+Returns success/failure; on failure, error message indicates:
+- "Found multiple matches" — anchor/context not unique enough
+- "No match found" — context lines don't exist in file (wrong content or stale read)
+- Syntax errors in diff format
+</output>
+
+<critical>
+- MUST read target file before editing
+- MUST copy anchors and context lines verbatim (including whitespace)
+- NEVER use anchors as comments (no line numbers, location labels, placeholders like `@@ @@`)
+- NEVER place new lines outside intended block
+- If edit fails or breaks structure, MUST re-read file and produce new patch from current content — NEVER retry same diff
+- NEVER use edit to fix indentation, whitespace, or reformat code. Formatting is single command run once at end (`bun fmt`, `cargo fmt`, `prettier —write`, etc.)—not N individual edits. If you see inconsistent indentation after edit, leave it; formatter will fix all of it in one pass.
+</critical>
+
+<examples>
+# Create
+`edit {"path":"hello.txt","edits":[{"op":"create","diff":"Hello\n"}]}`
+# Update
+`edit {"path":"src/app.py","edits":[{"op":"update","diff":"@@ def greet():\n def greet():\n-print('Hi')\n+print('Hello')\n"}]}`
+# Rename
+`edit {"path":"src/app.py","edits":[{"op":"update","rename":"src/main.py","diff":"@@\n …\n"}]}`
+# Delete
+`edit {"path":"obsolete.txt","edits":[{"op":"delete"}]}`
+# Multiple entries
+All entries in one call apply to top-level `path`; use separate calls for different files.
+</examples>
+
+<avoid>
+- Generic anchors: `import`, `export`, `describe`, `function`, `const`
+- Repeating same addition in multiple hunks (duplicate blocks)
+- Full-file overwrites for minor changes (acceptable for major restructures or short files)
+</avoid>

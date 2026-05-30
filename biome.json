@@ -62,6 +62,8 @@
 			"!**/test-sessions.ts",
 			"!**/template.generated.ts",
 			"!**/docs-index.generated.ts",
+			"!**/prompts-variants.generated.ts",
+			"!**/compaction-variants.generated.ts",
 			"!**/gen/agent_pb.ts",
 			"!.worktrees/**/*",
 			"!.wt/**/*"

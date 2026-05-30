@@ -451,6 +451,83 @@ function disambiguateClosingBraces(template: string): string {
 	return template.replace(/\}\}(\}+)/g, "}}{{!---}}$1");
 }
 
+/**
+ * Prompt style controls which variant of a registered template is rendered.
+ *
+ * - `"gentle"`: the collaborative voice introduced in the gentle rewrite. This
+ *   is the literal text bundled with the source — every registered variant key
+ *   is the gentle text byte-for-byte. Unregistered templates pass through.
+ * - `"default"`: the pre-gentle, authoritative RFC-2119 voice.
+ * - `"caveman"`: the same factual content rendered in caveman voice.
+ *
+ * Selection happens inside `render()` before compile, so the same call sites
+ * automatically pick up the active style. Style switches affect the *next*
+ * render — already-rendered strings are not retroactively updated.
+ */
+export type PromptStyle = "default" | "gentle" | "caveman";
+
+/** Variants for one gentle template, keyed by the destination style. */
+export type PromptVariantSet = Partial<Record<PromptStyle, string>>;
+
+let activePromptStyle: PromptStyle = "gentle";
+
+/**
+ * Map of `gentle template text` → variant set. The key is always the gentle
+ * text (the literal bytes bundled in the source), because that is what call
+ * sites pass to `render()`. A variant set may legitimately omit `"gentle"`
+ * (it would be the identity).
+ */
+const promptVariantMap = new Map<string, PromptVariantSet>();
+
+export function getPromptStyle(): PromptStyle {
+	return activePromptStyle;
+}
+
+export function setPromptStyle(style: PromptStyle): void {
+	activePromptStyle = style;
+}
+
+/**
+ * Register variant sets for one or more gentle template strings.
+ *
+ * Each entry is `[gentleText, { default?, gentle?, caveman? }]`. Repeated
+ * registration for the same gentle key is allowed when the new variants agree
+ * with the previously registered ones; conflicting variants throw — this is
+ * how the generator catches accidental key collisions across packages.
+ */
+export function registerPromptVariants(entries: Iterable<readonly [string, PromptVariantSet]>): void {
+	for (const [key, variants] of entries) {
+		const existing = promptVariantMap.get(key);
+		if (!existing) {
+			promptVariantMap.set(key, { ...variants });
+			continue;
+		}
+		for (const styleKey of Object.keys(variants) as PromptStyle[]) {
+			const next = variants[styleKey];
+			if (next === undefined) continue;
+			const prev = existing[styleKey];
+			if (prev !== undefined && prev !== next) {
+				throw new Error(
+					`registerPromptVariants: collision for style "${styleKey}" on key starting with ${JSON.stringify(
+						key.slice(0, 60),
+					)}…`,
+				);
+			}
+			existing[styleKey] = next;
+		}
+	}
+}
+
+/** Test-only: drop every registered variant. Not exported from index. */
+export function _resetPromptVariantsForTesting(): void {
+	promptVariantMap.clear();
+	activePromptStyle = "gentle";
+}
+
+function resolvePromptStyle(template: string): string {
+	return promptVariantMap.get(template)?.[activePromptStyle] ?? template;
+}
+
 const compiledTemplateCache = new Map<string, (context: TemplateContext) => string>();
 
 export function compile(template: string): (context: TemplateContext) => string {
@@ -465,7 +542,8 @@ export function compile(template: string): (context: TemplateContext) => string 
 }
 
 export function render(template: string, context: TemplateContext = {}): string {
-	const compiled = compile(template);
+	const resolved = resolvePromptStyle(template);
+	const compiled = compile(resolved);
 	const rendered = compiled(context ?? {});
 	return format(rendered, { renderPhase: "post-render" });
 }
