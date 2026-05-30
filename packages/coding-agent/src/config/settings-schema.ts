@@ -1639,7 +1639,7 @@ export const SETTINGS_SCHEMA = {
 
 	"read.summarize.minBodyLines": {
 		type: "number",
-		default: 8,
+		default: 12,
 		ui: {
 			tab: "editing",
 			label: "Read Summary Body Lines",
