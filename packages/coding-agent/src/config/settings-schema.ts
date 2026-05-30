@@ -1,3 +1,4 @@
+import { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import { THINKING_EFFORTS } from "@oh-my-pi/pi-ai";
 import { TASK_SIMPLE_MODES } from "../task/simple-mode";
 import { getThinkingLevelMetadata } from "../thinking";
@@ -228,6 +229,14 @@ export const DEFAULT_BASH_INTERCEPTOR_RULES: BashInterceptorRule[] = [
 		message: "Use the `write` tool instead of echo/cat redirection. It handles encoding and provides confirmation.",
 	},
 ];
+
+/**
+ * `defaultThinkingLevel` accepts every concrete provider effort plus the
+ * agent-managed `"adaptive"` selector. The selector itself is not an Effort —
+ * adaptive mode lets the agent vary its underlying effort per turn via the
+ * `set_thinking_level` tool, with `Effort.Medium` as the bootstrap baseline.
+ */
+const DEFAULT_THINKING_LEVEL_VALUES = [...THINKING_EFFORTS, ThinkingLevel.Adaptive] as const;
 
 export const SETTINGS_SCHEMA = {
 	// ────────────────────────────────────────────────────────────────────────
@@ -651,13 +660,13 @@ export const SETTINGS_SCHEMA = {
 	// Reasoning and prompts
 	defaultThinkingLevel: {
 		type: "enum",
-		values: THINKING_EFFORTS,
+		values: DEFAULT_THINKING_LEVEL_VALUES,
 		default: "high",
 		ui: {
 			tab: "model",
 			label: "Thinking Level",
 			description: "Reasoning depth for thinking-capable models",
-			options: [...THINKING_EFFORTS.map(getThinkingLevelMetadata)],
+			options: [...THINKING_EFFORTS.map(getThinkingLevelMetadata), getThinkingLevelMetadata(ThinkingLevel.Adaptive)],
 		},
 	},
 

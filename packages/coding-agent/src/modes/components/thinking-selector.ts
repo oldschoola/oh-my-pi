@@ -1,4 +1,4 @@
-import type { Effort } from "@oh-my-pi/pi-ai";
+import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import { Container, type SelectItem, SelectList } from "@oh-my-pi/pi-tui";
 import { getSelectListTheme } from "../../modes/theme/theme";
 import { getThinkingLevelMetadata } from "../../thinking";
@@ -11,9 +11,9 @@ export class ThinkingSelectorComponent extends Container {
 	#selectList: SelectList;
 
 	constructor(
-		currentLevel: Effort,
-		availableLevels: Effort[],
-		onSelect: (level: Effort) => void,
+		currentLevel: ThinkingLevel | undefined,
+		availableLevels: ThinkingLevel[],
+		onSelect: (level: ThinkingLevel) => void,
 		onCancel: () => void,
 	) {
 		super();
@@ -27,13 +27,15 @@ export class ThinkingSelectorComponent extends Container {
 		this.#selectList = new SelectList(thinkingLevels, thinkingLevels.length, getSelectListTheme());
 
 		// Preselect current level
-		const currentIndex = thinkingLevels.findIndex(item => item.value === currentLevel);
-		if (currentIndex !== -1) {
-			this.#selectList.setSelectedIndex(currentIndex);
+		if (currentLevel !== undefined) {
+			const currentIndex = thinkingLevels.findIndex(item => item.value === currentLevel);
+			if (currentIndex !== -1) {
+				this.#selectList.setSelectedIndex(currentIndex);
+			}
 		}
 
 		this.#selectList.onSelect = item => {
-			onSelect(item.value as Effort);
+			onSelect(item.value as ThinkingLevel);
 		};
 
 		this.#selectList.onCancel = () => {

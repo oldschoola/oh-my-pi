@@ -10,6 +10,7 @@ import {
 	IrcTool,
 	JobTool,
 	RecipeTool,
+	SetThinkingLevelTool,
 	SshTool,
 } from "../../src/tools/index";
 
@@ -54,6 +55,7 @@ async function getToolMetadata(): Promise<Map<string, { loadMode?: string; summa
 		new JobTool(toolSession),
 		new RecipeTool(toolSession, []),
 		new IrcTool(toolSession),
+		new SetThinkingLevelTool(toolSession),
 	]) {
 		metadata.set(tool.name, { loadMode: tool.loadMode, summary: tool.summary });
 	}

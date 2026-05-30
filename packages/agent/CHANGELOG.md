@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `ThinkingLevel.Adaptive = "adaptive"` to the `ThinkingLevel` selector union, signalling that the agent should dynamically adjust its reasoning effort per turn. Consumers handle the actual effort selection; this package only widens the type so downstream code can recognize the selector.
+
 ## [15.5.0] - 2026-05-26
 ### Added
 

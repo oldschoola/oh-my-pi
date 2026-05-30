@@ -377,6 +377,9 @@ export class SettingsSelectorComponent extends Container {
 				const baseOpt = options.find(o => o.value === level);
 				return baseOpt || { value: level, label: level };
 			});
+			if (this.context.availableThinkingLevels.length > 0) {
+				options = [...options, { value: "adaptive", label: "adaptive" }];
+			}
 		} else if (def.path === "theme.dark" || def.path === "theme.light") {
 			options = this.context.availableThemes.map(t => ({ value: t, label: t }));
 		}

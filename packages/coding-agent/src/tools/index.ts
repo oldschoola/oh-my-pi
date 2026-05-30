@@ -1,6 +1,6 @@
 import type { InMemorySnapshotStore } from "@oh-my-pi/hashline";
 import type { AgentTelemetryConfig, AgentTool } from "@oh-my-pi/pi-agent-core";
-import type { ToolChoice } from "@oh-my-pi/pi-ai";
+import type { Effort, ToolChoice } from "@oh-my-pi/pi-ai";
 import { $env, $flag, logger } from "@oh-my-pi/pi-utils";
 import type { PromptTemplate } from "../config/prompt-templates";
 import type { Settings } from "../config/settings";
@@ -49,6 +49,7 @@ import { ResolveTool } from "./resolve";
 import { reportFindingTool } from "./review";
 import { SearchTool } from "./search";
 import { SearchToolBm25Tool } from "./search-tool-bm25";
+import { SetThinkingLevelTool } from "./set-thinking-level";
 import { loadSshTool } from "./ssh";
 import { type TodoPhase, TodoWriteTool } from "./todo-write";
 import { WriteTool } from "./write";
@@ -90,6 +91,7 @@ export * from "./resolve";
 export * from "./review";
 export * from "./search";
 export * from "./search-tool-bm25";
+export * from "./set-thinking-level";
 export * from "./ssh";
 export * from "./todo-write";
 export * from "./write";
@@ -171,6 +173,16 @@ export interface ToolSession {
 	getModelString?: () => string | undefined;
 	/** Get the current session model string, regardless of how it was chosen */
 	getActiveModelString?: () => string | undefined;
+	/** True when the session's thinking selector is "adaptive". */
+	isAdaptiveThinking?: () => boolean;
+	/** Underlying effort the agent is currently using under adaptive mode; undefined otherwise. */
+	getAdaptiveEffort?: () => Effort | undefined;
+	/** Supported efforts for the current model (used to validate `set_thinking_level` input). */
+	getSupportedThinkingEfforts?: () => readonly Effort[];
+	/** Mutate the underlying effort while adaptive is active. `persist=false` is temporary
+	 *  (restored at agent_end); `persist=true` becomes the session baseline. Returns false
+	 *  when adaptive is inactive or the model does not support the effort. */
+	setAdaptiveEffort?: (effort: Effort, persist: boolean) => boolean;
 	/** Auth storage for passing to subagents (avoids re-discovery) */
 	authStorage?: import("../session/auth-storage").AuthStorage;
 	/** Model registry for passing to subagents (avoids re-discovery) */
@@ -300,6 +312,7 @@ export const BUILTIN_TOOLS: Record<string, ToolFactory> = {
 	recipe: RecipeTool.createIf,
 	irc: IrcTool.createIf,
 	todo_write: s => new TodoWriteTool(s),
+	set_thinking_level: SetThinkingLevelTool.createIf,
 	web_search: s => new WebSearchTool(s),
 	search_tool_bm25: SearchToolBm25Tool.createIf,
 	write: s => new WriteTool(s),

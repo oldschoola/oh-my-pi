@@ -1172,7 +1172,7 @@ export async function findInitialModel(options: {
 	isContinuing: boolean;
 	defaultProvider?: string;
 	defaultModelId?: string;
-	defaultThinkingSelector?: Effort;
+	defaultThinkingSelector?: Effort | typeof ThinkingLevel.Adaptive;
 	modelRegistry: InitialModelRegistry;
 }): Promise<InitialModelResult> {
 	const {
@@ -1187,7 +1187,7 @@ export async function findInitialModel(options: {
 	} = options;
 
 	let model: Model<Api> | undefined;
-	let thinkingLevel: Effort | undefined;
+	let thinkingLevel: ThinkingLevel | undefined;
 
 	// 1. CLI args take priority
 	if (cliProvider && cliModel) {
@@ -1211,7 +1211,9 @@ export async function findInitialModel(options: {
 			thinkingLevel:
 				scopedThinkingSelector === ThinkingLevel.Off
 					? ThinkingLevel.Off
-					: clampThinkingLevelForModel(scoped.model, scopedThinkingSelector),
+					: scopedThinkingSelector === ThinkingLevel.Adaptive
+						? ThinkingLevel.Adaptive
+						: clampThinkingLevelForModel(scoped.model, scopedThinkingSelector),
 			fallbackMessage: undefined,
 		};
 	}
@@ -1221,7 +1223,10 @@ export async function findInitialModel(options: {
 		const found = modelRegistry.find(defaultProvider, defaultModelId);
 		if (found) {
 			model = found;
-			thinkingLevel = clampThinkingLevelForModel(found, defaultThinkingSelector);
+			thinkingLevel =
+				defaultThinkingSelector === ThinkingLevel.Adaptive
+					? ThinkingLevel.Adaptive
+					: clampThinkingLevelForModel(found, defaultThinkingSelector);
 			return { model, thinkingLevel, fallbackMessage: undefined };
 		}
 	}

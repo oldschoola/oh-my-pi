@@ -8,6 +8,7 @@ import { Effort } from "@oh-my-pi/pi-ai";
 export const ThinkingLevel = {
 	Inherit: "inherit",
 	Off: "off",
+	Adaptive: "adaptive",
 	Minimal: Effort.Minimal,
 	Low: Effort.Low,
 	Medium: Effort.Medium,

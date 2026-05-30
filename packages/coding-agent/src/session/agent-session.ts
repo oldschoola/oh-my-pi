@@ -50,7 +50,6 @@ import { DEFAULT_PRUNE_CONFIG, pruneToolOutputs } from "@oh-my-pi/pi-agent-core/
 import type {
 	AssistantMessage,
 	Context,
-	Effort,
 	ImageContent,
 	Message,
 	MessageAttribution,
@@ -66,7 +65,9 @@ import type {
 } from "@oh-my-pi/pi-ai";
 import {
 	calculateRateLimitBackoffMs,
+	clampThinkingLevelForModel,
 	clearAnthropicFastModeFallback,
+	Effort,
 	getSupportedEfforts,
 	isContextOverflow,
 	isUsageLimitError,
@@ -744,6 +745,8 @@ export class AgentSession {
 
 	#scopedModels: Array<{ model: Model; thinkingLevel?: ThinkingLevel }>;
 	#thinkingLevel: ThinkingLevel | undefined;
+	#adaptiveEffort: Effort | undefined;
+	#adaptiveTempEffort: Effort | undefined;
 	#promptTemplates: PromptTemplate[];
 	#slashCommands: FileSlashCommand[];
 
@@ -1736,6 +1739,15 @@ export class AgentSession {
 
 		// Check auto-retry and auto-compaction after agent completes
 		if (event.type === "agent_end") {
+			// Restore the adaptive baseline before any other handler runs so a
+			// throw downstream still leaves the agent's effort at the persisted
+			// baseline rather than stuck on a per-turn override.
+			if (this.isAdaptiveThinking && this.#adaptiveTempEffort !== undefined) {
+				this.#adaptiveTempEffort = undefined;
+				if (this.#adaptiveEffort !== undefined) {
+					this.agent.setThinkingLevel(this.#adaptiveEffort);
+				}
+			}
 			const usage = this.getSessionStats().tokens;
 			await this.#goalRuntime.onAgentEnd({
 				currentUsage: {
@@ -5124,16 +5136,91 @@ export class AgentSession {
 	// Thinking Level Management
 	// =========================================================================
 
+	/** True when the session's thinking selector is `adaptive`. */
+	get isAdaptiveThinking(): boolean {
+		return this.#thinkingLevel === ThinkingLevel.Adaptive;
+	}
+
+	/**
+	 * Current underlying effort while adaptive thinking is active. `undefined`
+	 * when the session is not in adaptive mode or the model lacks reasoning.
+	 */
+	get adaptiveEffort(): Effort | undefined {
+		return this.isAdaptiveThinking ? this.#adaptiveEffort : undefined;
+	}
+
+	/**
+	 * Update the underlying effort while adaptive thinking is active.
+	 *
+	 * `persist: false` is a per-turn override that the `agent_end` handler restores
+	 * to the baseline (`#adaptiveEffort`). `persist: true` rewrites the baseline.
+	 *
+	 * Returns `true` on success, `false` when adaptive mode is off or the model
+	 * does not support the requested effort.
+	 */
+	setAdaptiveEffort(effort: Effort, persist: boolean): boolean {
+		if (!this.isAdaptiveThinking) return false;
+		const supported = this.getAvailableThinkingLevels();
+		if (!supported.includes(effort)) return false;
+		if (persist) {
+			this.#adaptiveEffort = effort;
+			this.#adaptiveTempEffort = undefined;
+		} else {
+			this.#adaptiveTempEffort = effort;
+		}
+		const apply = persist ? this.#adaptiveEffort : (this.#adaptiveTempEffort ?? this.#adaptiveEffort);
+		this.agent.setThinkingLevel(apply);
+		return true;
+	}
+
 	/**
 	 * Set thinking level.
 	 * Saves the effective metadata-clamped level to session and settings only if it changes.
+	 *
+	 * Special-cases the adaptive selector: keeps `#thinkingLevel === "adaptive"` while
+	 * driving the agent with `#adaptiveEffort` (seeded from the current effort or
+	 * Medium clamped to the model's supported set). Transitions into/out of adaptive
+	 * also add/remove the `set_thinking_level` tool from the active set.
 	 */
 	setThinkingLevel(level: ThinkingLevel | undefined, persist: boolean = false): void {
 		const effectiveLevel = resolveThinkingLevelForModel(this.model, level);
+		const previouslyAdaptive = this.#thinkingLevel === ThinkingLevel.Adaptive;
+		const nextAdaptive = effectiveLevel === ThinkingLevel.Adaptive;
 		const isChanging = effectiveLevel !== this.#thinkingLevel;
 
+		if (nextAdaptive) {
+			if (this.#adaptiveEffort === undefined) {
+				// Seed from the agent's current effort when the model still supports it,
+				// else fall back to a Medium clamped to the supported set, else the first
+				// supported effort.
+				const supported = this.getAvailableThinkingLevels();
+				const currentAgentEffort = this.agent.state.thinkingLevel;
+				const clampedMedium = clampThinkingLevelForModel(this.model, Effort.Medium);
+				this.#adaptiveEffort =
+					currentAgentEffort && supported.includes(currentAgentEffort)
+						? currentAgentEffort
+						: (clampedMedium ?? supported[0]);
+			}
+			this.#adaptiveTempEffort = undefined;
+		} else {
+			this.#adaptiveEffort = undefined;
+			this.#adaptiveTempEffort = undefined;
+		}
+
 		this.#thinkingLevel = effectiveLevel;
-		this.agent.setThinkingLevel(toReasoningEffort(effectiveLevel));
+		this.agent.setThinkingLevel(nextAdaptive ? this.#adaptiveEffort : toReasoningEffort(effectiveLevel));
+
+		if (previouslyAdaptive !== nextAdaptive) {
+			// `set_thinking_level` enters/leaves the active set with adaptive mode.
+			// Sequencing: apply first (which may rebuild the prompt if the tool
+			// signature changed) then force a refresh so the adaptive guidance
+			// block reflects the new `isAdaptiveThinking` state even when the
+			// tool set did not actually change.
+			const currentNames = this.getActiveToolNames();
+			const filtered = currentNames.filter(name => name !== "set_thinking_level");
+			const nextNames = nextAdaptive ? [...filtered, "set_thinking_level"] : filtered;
+			void this.#applyActiveToolsByName(nextNames).then(() => this.refreshBaseSystemPrompt());
+		}
 
 		if (isChanging) {
 			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
@@ -5151,7 +5238,7 @@ export class AgentSession {
 	cycleThinkingLevel(): ThinkingLevel | undefined {
 		if (!this.model?.reasoning) return undefined;
 
-		const levels = [ThinkingLevel.Off, ...this.getAvailableThinkingLevels()];
+		const levels: ThinkingLevel[] = [ThinkingLevel.Off, ...this.getAvailableThinkingLevels()];
 		const currentLevel = this.thinkingLevel === ThinkingLevel.Inherit ? ThinkingLevel.Off : this.thinkingLevel;
 		const currentIndex = currentLevel ? levels.indexOf(currentLevel) : -1;
 		const nextIndex = (currentIndex + 1) % levels.length;

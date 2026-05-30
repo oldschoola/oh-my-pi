@@ -86,6 +86,7 @@ import { LSP_STARTUP_EVENT_CHANNEL, type LspStartupEvent } from "./lsp/startup-e
 import { discoverAndLoadMCPTools, MCPManager, type MCPToolsLoadResult } from "./mcp";
 
 import { resolveMemoryBackend } from "./memory-backend";
+import adaptiveThinkingPrompt from "./prompts/adaptive-thinking.md" with { type: "text" };
 import asyncResultTemplate from "./prompts/tools/async-result.md" with { type: "text" };
 import { AgentRegistry, MAIN_AGENT_ID } from "./registry/agent-registry";
 import {
@@ -1242,6 +1243,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			authStorage,
 			modelRegistry,
 			getTelemetry: () => agent?.telemetry,
+			isAdaptiveThinking: () => session?.isAdaptiveThinking ?? false,
+			getAdaptiveEffort: () => session?.adaptiveEffort,
+			getSupportedThinkingEfforts: () => session?.getAvailableThinkingLevels() ?? [],
+			setAdaptiveEffort: (effort, persist) => session?.setAdaptiveEffort(effort, persist) ?? false,
 		};
 
 		// Wire process-wide internal URL singletons owned by their real classes.
@@ -1606,6 +1611,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					parts.push(`### ${srvName}\n${truncated}`);
 				}
 				appendPrompt = parts.join("\n\n");
+			}
+			if (session?.isAdaptiveThinking) {
+				const currentEffort = session.adaptiveEffort ?? "medium";
+				const supported = session.getAvailableThinkingLevels();
+				const validLevels = supported.length > 0 ? supported.join(", ") : "(none)";
+				const adaptiveBlock = prompt.render(adaptiveThinkingPrompt, { currentEffort, validLevels });
+				appendPrompt = appendPrompt ? `${appendPrompt}\n\n${adaptiveBlock}` : adaptiveBlock;
 			}
 			const defaultPrompt = await buildSystemPromptInternal({
 				cwd,

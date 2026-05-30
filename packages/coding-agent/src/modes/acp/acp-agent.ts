@@ -1303,13 +1303,15 @@ export class AcpAgent implements Agent {
 	}
 
 	#buildThinkingOptions(session: AgentSession): Array<{ value: string; name: string; description?: string }> {
-		return [
+		const available = session.getAvailableThinkingLevels();
+		const options: Array<{ value: string; name: string; description?: string }> = [
 			{ value: THINKING_OFF, name: "Off" },
-			...session.getAvailableThinkingLevels().map(level => ({
-				value: level,
-				name: level,
-			})),
+			...available.map(level => ({ value: level, name: level })),
 		];
+		if (available.length > 0) {
+			options.push({ value: "adaptive", name: "Adaptive", description: "Agent picks effort per turn" });
+		}
+		return options;
 	}
 
 	#toThinkingConfigValue(value: string | undefined): string {

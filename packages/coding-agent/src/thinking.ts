@@ -1,5 +1,11 @@
 import { type ResolvedThinkingLevel, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
-import { clampThinkingLevelForModel, type Effort, type Model, THINKING_EFFORTS } from "@oh-my-pi/pi-ai";
+import {
+	clampThinkingLevelForModel,
+	type Effort,
+	getSupportedEfforts,
+	type Model,
+	THINKING_EFFORTS,
+} from "@oh-my-pi/pi-ai";
 
 /**
  * Metadata used to render thinking selector values in the coding-agent UI.
@@ -17,6 +23,11 @@ const THINKING_LEVEL_METADATA: Record<ThinkingLevel, ThinkingLevelMetadata> = {
 		description: "Inherit session default",
 	},
 	[ThinkingLevel.Off]: { value: ThinkingLevel.Off, label: "off", description: "No reasoning" },
+	[ThinkingLevel.Adaptive]: {
+		value: ThinkingLevel.Adaptive,
+		label: "adaptive",
+		description: "Agent picks effort per turn",
+	},
 	[ThinkingLevel.Minimal]: {
 		value: ThinkingLevel.Minimal,
 		label: "min",
@@ -36,7 +47,12 @@ const THINKING_LEVEL_METADATA: Record<ThinkingLevel, ThinkingLevelMetadata> = {
 	},
 };
 
-const THINKING_LEVELS = new Set<string>([ThinkingLevel.Inherit, ThinkingLevel.Off, ...THINKING_EFFORTS]);
+const THINKING_LEVELS = new Set<string>([
+	ThinkingLevel.Inherit,
+	ThinkingLevel.Off,
+	ThinkingLevel.Adaptive,
+	...THINKING_EFFORTS,
+]);
 const EFFORT_LEVELS = new Set<string>(THINKING_EFFORTS);
 
 /**
@@ -64,7 +80,12 @@ export function getThinkingLevelMetadata(level: ThinkingLevel): ThinkingLevelMet
  * Converts an agent-local selector into the effort sent to providers.
  */
 export function toReasoningEffort(level: ThinkingLevel | undefined): Effort | undefined {
-	if (level === undefined || level === ThinkingLevel.Off || level === ThinkingLevel.Inherit) {
+	if (
+		level === undefined ||
+		level === ThinkingLevel.Off ||
+		level === ThinkingLevel.Inherit ||
+		level === ThinkingLevel.Adaptive
+	) {
 		return undefined;
 	}
 	return level;
@@ -82,6 +103,12 @@ export function resolveThinkingLevelForModel(
 	}
 	if (level === ThinkingLevel.Off) {
 		return ThinkingLevel.Off;
+	}
+	if (level === ThinkingLevel.Adaptive) {
+		if (!model || getSupportedEfforts(model).length === 0) {
+			return undefined;
+		}
+		return ThinkingLevel.Adaptive;
 	}
 	return clampThinkingLevelForModel(model, level);
 }
