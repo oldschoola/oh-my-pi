@@ -1,0 +1,666 @@
+{
+  "config": {
+    "provider": "zai",
+    "model": "zai/glm-5-turbo",
+    "thinkingLevel": "off",
+    "runsPerTask": 1,
+    "timeout": 120000,
+    "maxTurns": 12,
+    "taskConcurrency": 4,
+    "autoFormat": false,
+    "guided": false,
+    "maxAttempts": 1,
+    "requireEditToolCall": false,
+    "requireReadToolCall": false,
+    "noEditRequired": false,
+    "noOpRetryLimit": 2,
+    "maxTimeoutRetries": 3,
+    "maxProviderFailureRetries": 3,
+    "mutationScopeWindow": 20,
+    "connectionTimeout": 30000,
+    "inProcess": true,
+    "earlyStopOnMatch": true,
+    "conversationDumpDir": ".autoresearch-out\\report.2026-05-30T12-28-54-978Z.dump"
+  },
+  "tasks": [
+    {
+      "id": "access-remove-optional-chain-001",
+      "name": "Access Remove Optional Chain 001",
+      "files": [
+        "rubygems.ts"
+      ],
+      "runs": [
+        {
+          "runIndex": 0,
+          "success": true,
+          "patchApplied": true,
+          "verificationPassed": true,
+          "mutationType": "remove-optional-chain",
+          "mutationCategory": "access",
+          "difficultyScore": 2,
+          "tokens": {
+            "input": 4012,
+            "output": 111,
+            "total": 4123
+          },
+          "duration": 2692,
+          "indentScore": 0,
+          "formattedEquivalent": true,
+          "diffStats": {
+            "linesChanged": 0,
+            "charsChanged": 0
+          },
+          "agentResponse": "Line 89 uses `gem.dependencies.runtime` without optional chaining, while line 98 uses `gem.dependencies?.development` with it. The bug is the missing `?.` on line 89.",
+          "toolCalls": {
+            "read": 1,
+            "edit": 1,
+            "write": 0,
+            "editSuccesses": 1,
+            "editFailures": 0,
+            "editWarnings": 0,
+            "editAutocorrects": 0,
+            "totalInputChars": 121
+          },
+          "editFailures": [],
+          "editWarnings": [],
+          "editAutocorrectCount": 0,
+          "mutationIntentMatched": true,
+          "mutationIntentReason": "Target line exactly matches expected fixture.",
+          "earlyStopped": true,
+          "retryStats": {
+            "timeoutRetries": 0,
+            "zeroToolRetries": 0,
+            "providerFailureRetries": 0
+          }
+        }
+      ],
+      "bestRunIndex": 0,
+      "success": true,
+      "tokens": {
+        "input": 4012,
+        "output": 111,
+        "total": 4123
+      },
+      "duration": 2692,
+      "indentScore": 0,
+      "toolCalls": {
+        "read": 1,
+        "edit": 1,
+        "write": 0,
+        "editSuccesses": 1,
+        "editFailures": 0,
+        "editWarnings": 0,
+        "editAutocorrects": 0,
+        "totalInputChars": 121
+      },
+      "editSuccessRate": 1,
+      "autocorrectFreeSuccess": true,
+      "flakeSuccessRate": 1
+    },
+    {
+      "id": "duplicate-duplicate-line-flip-003",
+      "name": "Duplicate Duplicate Line Flip 003",
+      "files": [
+        "procmgr.ts"
+      ],
+      "runs": [
+        {
+          "runIndex": 0,
+          "success": false,
+          "patchApplied": false,
+          "verificationPassed": false,
+          "mutationType": "duplicate-line-flip",
+          "mutationCategory": "duplicate",
+          "difficultyScore": 8,
+          "error": "Max turn limit exceeded: observed 13 turn_start events (limit 12).",
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "total": 0
+          },
+          "duration": 14017,
+          "toolCalls": {
+            "read": 0,
+            "edit": 0,
+            "write": 0,
+            "editSuccesses": 0,
+            "editFailures": 0,
+            "editWarnings": 0,
+            "editAutocorrects": 0,
+            "totalInputChars": 0
+          },
+          "editFailures": [],
+          "editWarnings": [],
+          "editAutocorrectCount": 0,
+          "retryStats": {
+            "timeoutRetries": 0,
+            "zeroToolRetries": 0,
+            "providerFailureRetries": 0
+          }
+        }
+      ],
+      "bestRunIndex": 0,
+      "success": false,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "total": 0
+      },
+      "duration": 14017,
+      "indentScore": 0,
+      "toolCalls": {
+        "read": 0,
+        "edit": 0,
+        "write": 0,
+        "editSuccesses": 0,
+        "editFailures": 0,
+        "editWarnings": 0,
+        "editAutocorrects": 0,
+        "totalInputChars": 0
+      },
+      "editSuccessRate": 1,
+      "autocorrectFreeSuccess": false,
+      "flakeSuccessRate": 0
+    },
+    {
+      "id": "literal-flip-boolean-001",
+      "name": "Literal Flip Boolean 001",
+      "files": [
+        "setup.ts"
+      ],
+      "runs": [
+        {
+          "runIndex": 0,
+          "success": true,
+          "patchApplied": true,
+          "verificationPassed": true,
+          "mutationType": "flip-boolean",
+          "mutationCategory": "literal",
+          "difficultyScore": 4,
+          "tokens": {
+            "input": 3416,
+            "output": 79,
+            "total": 3495
+          },
+          "duration": 2244,
+          "indentScore": 0,
+          "formattedEquivalent": true,
+          "diffStats": {
+            "linesChanged": 0,
+            "charsChanged": 0
+          },
+          "agentResponse": "Line 16 is `required: true,` in the args definition. Flipping the boolean:",
+          "toolCalls": {
+            "read": 1,
+            "edit": 1,
+            "write": 0,
+            "editSuccesses": 1,
+            "editFailures": 0,
+            "editWarnings": 0,
+            "editAutocorrects": 0,
+            "totalInputChars": 87
+          },
+          "editFailures": [],
+          "editWarnings": [],
+          "editAutocorrectCount": 0,
+          "mutationIntentMatched": true,
+          "mutationIntentReason": "Target line exactly matches expected fixture.",
+          "earlyStopped": true,
+          "retryStats": {
+            "timeoutRetries": 0,
+            "zeroToolRetries": 0,
+            "providerFailureRetries": 0
+          }
+        }
+      ],
+      "bestRunIndex": 0,
+      "success": true,
+      "tokens": {
+        "input": 3416,
+        "output": 79,
+        "total": 3495
+      },
+      "duration": 2244,
+      "indentScore": 0,
+      "toolCalls": {
+        "read": 1,
+        "edit": 1,
+        "write": 0,
+        "editSuccesses": 1,
+        "editFailures": 0,
+        "editWarnings": 0,
+        "editAutocorrects": 0,
+        "totalInputChars": 87
+      },
+      "editSuccessRate": 1,
+      "autocorrectFreeSuccess": true,
+      "flakeSuccessRate": 1
+    },
+    {
+      "id": "operator-remove-negation-003",
+      "name": "Operator Remove Negation 003",
+      "files": [
+        "google.ts"
+      ],
+      "runs": [
+        {
+          "runIndex": 0,
+          "success": true,
+          "patchApplied": true,
+          "verificationPassed": true,
+          "mutationType": "remove-negation",
+          "mutationCategory": "operator",
+          "difficultyScore": 6,
+          "tokens": {
+            "input": 10567,
+            "output": 190,
+            "total": 10757
+          },
+          "duration": 3981,
+          "indentScore": 0,
+          "formattedEquivalent": true,
+          "diffStats": {
+            "linesChanged": 0,
+            "charsChanged": 0
+          },
+          "agentResponse": "Line 109 is the bug. `firstTokenTime` is set unconditionally, but the intention is to set it only on the first token (i.e., when it's not yet set). The `!` was removed.",
+          "toolCalls": {
+            "read": 4,
+            "edit": 1,
+            "write": 0,
+            "editSuccesses": 1,
+            "editFailures": 0,
+            "editWarnings": 0,
+            "editAutocorrects": 0,
+            "totalInputChars": 215
+          },
+          "editFailures": [],
+          "editWarnings": [],
+          "editAutocorrectCount": 0,
+          "mutationIntentMatched": true,
+          "mutationIntentReason": "Target line exactly matches expected fixture.",
+          "earlyStopped": true,
+          "retryStats": {
+            "timeoutRetries": 0,
+            "zeroToolRetries": 0,
+            "providerFailureRetries": 0
+          }
+        }
+      ],
+      "bestRunIndex": 0,
+      "success": true,
+      "tokens": {
+        "input": 10567,
+        "output": 190,
+        "total": 10757
+      },
+      "duration": 3981,
+      "indentScore": 0,
+      "toolCalls": {
+        "read": 4,
+        "edit": 1,
+        "write": 0,
+        "editSuccesses": 1,
+        "editFailures": 0,
+        "editWarnings": 0,
+        "editAutocorrects": 0,
+        "totalInputChars": 215
+      },
+      "editSuccessRate": 1,
+      "autocorrectFreeSuccess": true,
+      "flakeSuccessRate": 1
+    },
+    {
+      "id": "operator-swap-equality-001",
+      "name": "Operator Swap Equality 001",
+      "files": [
+        "json-parse.ts"
+      ],
+      "runs": [
+        {
+          "runIndex": 0,
+          "success": false,
+          "patchApplied": true,
+          "verificationPassed": false,
+          "mutationType": "swap-equality",
+          "mutationCategory": "operator",
+          "difficultyScore": 4,
+          "error": "File mismatch for json-parse.ts",
+          "tokens": {
+            "input": 10544,
+            "output": 215,
+            "total": 10759
+          },
+          "duration": 4652,
+          "indentScore": 0,
+          "formattedEquivalent": false,
+          "diffStats": {
+            "linesChanged": 2,
+            "charsChanged": 118
+          },
+          "agentResponse": "The fix: `||` → `&&` on line 37. With `||`, the condition was always true when `value` was not `null` (including `undefined`), causing the function to return `undefined` immediately without recursing into the rest of the tree. The `&&` correctly gates the early return to only `undefined` values that are also not `null`.",
+          "diff": "@@ -34 @@\n  * downstream code sees as a truthy non-empty string.\n  */\n export function coerceNullStrings<T>(value: T): T {\n-  if (value === null || value === undefined) return value;\n+  if (value !== null && value === undefined) return value;\n   if (typeof value === 'string') {\n     return (value === 'null' ? null : value) as T;\n   }",
+          "toolCalls": {
+            "read": 1,
+            "edit": 1,
+            "write": 0,
+            "editSuccesses": 1,
+            "editFailures": 0,
+            "editWarnings": 0,
+            "editAutocorrects": 0,
+            "totalInputChars": 133
+          },
+          "editFailures": [],
+          "editWarnings": [],
+          "editAutocorrectCount": 0,
+          "mutationIntentMatched": false,
+          "mutationIntentReason": "Target line mismatch at json-parse.ts:37.",
+          "retryStats": {
+            "timeoutRetries": 0,
+            "zeroToolRetries": 0,
+            "providerFailureRetries": 0
+          }
+        }
+      ],
+      "bestRunIndex": 0,
+      "success": false,
+      "tokens": {
+        "input": 10544,
+        "output": 215,
+        "total": 10759
+      },
+      "duration": 4652,
+      "indentScore": 0,
+      "toolCalls": {
+        "read": 1,
+        "edit": 1,
+        "write": 0,
+        "editSuccesses": 1,
+        "editFailures": 0,
+        "editWarnings": 0,
+        "editAutocorrects": 0,
+        "totalInputChars": 133
+      },
+      "editSuccessRate": 1,
+      "autocorrectFreeSuccess": false,
+      "flakeSuccessRate": 0
+    },
+    {
+      "id": "operator-swap-logical-003",
+      "name": "Operator Swap Logical 003",
+      "files": [
+        "parallel.ts"
+      ],
+      "runs": [
+        {
+          "runIndex": 0,
+          "success": true,
+          "patchApplied": true,
+          "verificationPassed": true,
+          "mutationType": "swap-logical",
+          "mutationCategory": "operator",
+          "difficultyScore": 8,
+          "tokens": {
+            "input": 9044,
+            "output": 260,
+            "total": 9304
+          },
+          "duration": 4715,
+          "indentScore": 0,
+          "formattedEquivalent": true,
+          "diffStats": {
+            "linesChanged": 0,
+            "charsChanged": 0
+          },
+          "agentResponse": "Found the bug. Line 107 in `getNumber`:\n\n```ts\ntypeof candidate === 'number' || Number.isFinite(candidate)\n```\n\n`||` (OR) is wrong — `Number.isFinite` will return `true` for non-number finite values (e.g., `'3'`). It should be `&&` (AND) to first confirm the value is a number, then check it's finite.",
+          "toolCalls": {
+            "read": 4,
+            "edit": 1,
+            "write": 0,
+            "editSuccesses": 1,
+            "editFailures": 0,
+            "editWarnings": 0,
+            "editAutocorrects": 0,
+            "totalInputChars": 255
+          },
+          "editFailures": [],
+          "editWarnings": [],
+          "editAutocorrectCount": 0,
+          "mutationIntentMatched": true,
+          "mutationIntentReason": "Target line exactly matches expected fixture.",
+          "earlyStopped": true,
+          "retryStats": {
+            "timeoutRetries": 0,
+            "zeroToolRetries": 0,
+            "providerFailureRetries": 0
+          }
+        }
+      ],
+      "bestRunIndex": 0,
+      "success": true,
+      "tokens": {
+        "input": 9044,
+        "output": 260,
+        "total": 9304
+      },
+      "duration": 4715,
+      "indentScore": 0,
+      "toolCalls": {
+        "read": 4,
+        "edit": 1,
+        "write": 0,
+        "editSuccesses": 1,
+        "editFailures": 0,
+        "editWarnings": 0,
+        "editAutocorrects": 0,
+        "totalInputChars": 255
+      },
+      "editSuccessRate": 1,
+      "autocorrectFreeSuccess": true,
+      "flakeSuccessRate": 1
+    },
+    {
+      "id": "structural-delete-statement-001",
+      "name": "Structural Delete Statement 001",
+      "files": [
+        "chat-simple.ts"
+      ],
+      "runs": [
+        {
+          "runIndex": 0,
+          "success": false,
+          "patchApplied": true,
+          "verificationPassed": false,
+          "mutationType": "delete-statement",
+          "mutationCategory": "structural",
+          "difficultyScore": 4,
+          "error": "File mismatch for chat-simple.ts",
+          "tokens": {
+            "input": 20188,
+            "output": 283,
+            "total": 20471
+          },
+          "duration": 6227,
+          "indentScore": 0,
+          "formattedEquivalent": false,
+          "diffStats": {
+            "linesChanged": 3,
+            "charsChanged": 117
+          },
+          "agentResponse": "The deleted statement `const userMessage = new Text(trimmed);` has been restored on line 86, immediately before its use on line 87. This creates the user message component with the trimmed input text, matching the pattern used for the bot message on line 116 (`new Markdown(randomResponse, ...)`) and using `Text` (already imported on line 8).",
+          "diff": "@@ -82 @@\n     isResponding = true;\n     editor.disableSubmit = true;\n \n-    const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);\n-\n     const children = tui.children;\n     const children = tui.children;\n+    const userMessage = new Text(trimmed);\n     children.splice(children.length - 1, 0, userMessage);\n \n     const loader = new Loader(",
+          "toolCalls": {
+            "read": 3,
+            "edit": 1,
+            "write": 0,
+            "editSuccesses": 1,
+            "editFailures": 0,
+            "editWarnings": 0,
+            "editAutocorrects": 0,
+            "totalInputChars": 221
+          },
+          "editFailures": [],
+          "editWarnings": [],
+          "editAutocorrectCount": 0,
+          "mutationIntentMatched": false,
+          "mutationIntentReason": "Target line mismatch at chat-simple.ts:85.",
+          "retryStats": {
+            "timeoutRetries": 0,
+            "zeroToolRetries": 0,
+            "providerFailureRetries": 0
+          }
+        }
+      ],
+      "bestRunIndex": 0,
+      "success": false,
+      "tokens": {
+        "input": 20188,
+        "output": 283,
+        "total": 20471
+      },
+      "duration": 6227,
+      "indentScore": 0,
+      "toolCalls": {
+        "read": 3,
+        "edit": 1,
+        "write": 0,
+        "editSuccesses": 1,
+        "editFailures": 0,
+        "editWarnings": 0,
+        "editAutocorrects": 0,
+        "totalInputChars": 221
+      },
+      "editSuccessRate": 1,
+      "autocorrectFreeSuccess": false,
+      "flakeSuccessRate": 0
+    },
+    {
+      "id": "structural-swap-adjacent-lines-003",
+      "name": "Structural Swap Adjacent Lines 003",
+      "files": [
+        "index.ts"
+      ],
+      "runs": [
+        {
+          "runIndex": 0,
+          "success": false,
+          "patchApplied": false,
+          "verificationPassed": false,
+          "mutationType": "swap-adjacent-lines",
+          "mutationCategory": "structural",
+          "difficultyScore": 12,
+          "error": "Max turn limit exceeded: observed 13 turn_start events (limit 12).",
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "total": 0
+          },
+          "duration": 17919,
+          "toolCalls": {
+            "read": 0,
+            "edit": 0,
+            "write": 0,
+            "editSuccesses": 0,
+            "editFailures": 0,
+            "editWarnings": 0,
+            "editAutocorrects": 0,
+            "totalInputChars": 0
+          },
+          "editFailures": [],
+          "editWarnings": [],
+          "editAutocorrectCount": 0,
+          "retryStats": {
+            "timeoutRetries": 0,
+            "zeroToolRetries": 0,
+            "providerFailureRetries": 0
+          }
+        }
+      ],
+      "bestRunIndex": 0,
+      "success": false,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "total": 0
+      },
+      "duration": 17919,
+      "indentScore": 0,
+      "toolCalls": {
+        "read": 0,
+        "edit": 0,
+        "write": 0,
+        "editSuccesses": 0,
+        "editFailures": 0,
+        "editWarnings": 0,
+        "editAutocorrects": 0,
+        "totalInputChars": 0
+      },
+      "editSuccessRate": 1,
+      "autocorrectFreeSuccess": false,
+      "flakeSuccessRate": 0
+    }
+  ],
+  "summary": {
+    "totalTasks": 8,
+    "totalRuns": 6,
+    "successfulRuns": 4,
+    "successfulTasks": 4,
+    "taskSuccessRate": 0.5,
+    "flakyTasks": 0,
+    "consistentlyPassingTasks": 4,
+    "totalTokens": {
+      "input": 57771,
+      "output": 1138,
+      "total": 58909
+    },
+    "avgTokensPerTask": {
+      "input": 7221,
+      "output": 142,
+      "total": 7364
+    },
+    "totalDuration": 56447,
+    "avgDurationPerTask": 7056,
+    "avgIndentScore": 0,
+    "totalToolCalls": {
+      "read": 14,
+      "edit": 6,
+      "write": 0,
+      "editSuccesses": 6,
+      "editFailures": 0,
+      "editWarnings": 0,
+      "editAutocorrects": 0,
+      "totalInputChars": 1032
+    },
+    "avgToolCallsPerTask": {
+      "read": 1.75,
+      "edit": 0.75,
+      "write": 0,
+      "editSuccesses": 0.75,
+      "editFailures": 0,
+      "editWarnings": 0,
+      "editAutocorrects": 0,
+      "totalInputChars": 129
+    },
+    "editSuccessRate": 1,
+    "autocorrectFreeSuccessfulTasks": 4,
+    "autocorrectFreeSuccessRate": 0.5,
+    "autocorrectedBestRuns": 0,
+    "editAutocorrectRate": 0,
+    "timeoutRuns": 0,
+    "totalTimeoutRetries": 0,
+    "totalZeroToolRetries": 0,
+    "totalProviderFailureRetries": 0,
+    "ghostRuns": 2,
+    "transportFailureRuns": 0,
+    "mutationIntentMatchRate": 0.6666666666666666,
+    "editFailureCategories": {
+      "range-continuation": 0,
+      "unified-diff": 0,
+      "no-change": 0,
+      "hash-mismatch": 0,
+      "other": 0
+    }
+  },
+  "startTime": "2026-05-30T12:28:54.980Z",
+  "endTime": "2026-05-30T12:29:13.088Z"
+}
