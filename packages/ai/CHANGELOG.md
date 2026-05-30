@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Claude Opus 4.8 emitting malformed / truncated `tool_use` JSON (unterminated strings, missing braces) that streamed back as `{}` or partial tool arguments and broke strict-schema tools like `todo_write`. Opus 4.8+ on the Messages API (first-party, OAuth/subscription, and GitHub-Copilot-routed Claude) now buffers tool input server-side — sending neither the per-tool `eager_input_streaming` flag nor the `fine-grained-tool-streaming-2025-05-14` beta — so the API validates and only streams complete tool JSON. Added `AnthropicCompat.bufferToolInput` (auto-detected for Opus 4.8+, overridable per model) and the exported `anthropicToolInputStreamingMode` resolver; earlier Claude models keep fast eager streaming. (refs anthropics/claude-code#63604)
+- Fixed an empty-text but signed `thinking` block being replayed to the Anthropic Messages API, which returns `400 ... thinking blocks ... cannot be modified` and permanently wedges long interleaved-thinking + tool sessions (notably over OAuth). `convertAnthropicMessages` now drops a signed thinking block whose text is empty while preserving non-empty signed blocks and the accompanying `tool_use`. (refs anthropics/claude-code#63147)
+
 ## [15.5.15] - 2026-05-30
 
 ### Added

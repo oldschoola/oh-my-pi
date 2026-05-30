@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the `todo_write` failure nudge looping forever when a model keeps emitting malformed tool arguments (notably Claude Opus 4.8 truncated `tool_use` JSON). After 3 consecutive failures the session now sends a single terminal "known issue — stop retrying" reminder (naming the Opus 4.8 malformed-tool-JSON cause) and then goes silent, instead of re-injecting the fix-and-retry `<system-reminder>` on every failed call; a successful `todo_write` resets the counter.
+
 ## [15.5.15] - 2026-05-30
 ### Changed
 

@@ -826,6 +826,15 @@ export interface AnthropicCompat {
 	disableAdaptiveThinking?: boolean;
 	/** Whether tools may include Anthropic's per-tool eager_input_streaming flag. Default: true. */
 	supportsEagerToolInputStreaming?: boolean;
+	/**
+	 * Buffer tool input server-side instead of streaming it, restoring
+	 * Anthropic's tool-JSON validation. Sends neither `eager_input_streaming`
+	 * nor the `fine-grained-tool-streaming` beta so only complete, valid tool
+	 * input streams back. Default: auto-detected (Claude Opus 4.8+, which
+	 * otherwise emits malformed `tool_use` JSON). Takes precedence over
+	 * `supportsEagerToolInputStreaming`.
+	 */
+	bufferToolInput?: boolean;
 	/** Whether long prompt-cache retention (`ttl: "1h"`) is supported. Default: true for canonical Anthropic API. */
 	supportsLongCacheRetention?: boolean;
 	/**

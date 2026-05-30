@@ -22,6 +22,7 @@ import {
 	readSseEvents,
 } from "@oh-my-pi/pi-utils";
 import {
+	anthropicModelNeedsBufferedToolInput,
 	hasOpus47ApiRestrictions,
 	mapEffortToAnthropicAdaptiveEffort,
 	supportsMidConversationSystemMessages,
@@ -975,6 +976,7 @@ function getAnthropicCompat(
 		disableStrictTools: model.compat?.disableStrictTools ?? false,
 		disableAdaptiveThinking: model.compat?.disableAdaptiveThinking ?? false,
 		supportsEagerToolInputStreaming: model.compat?.supportsEagerToolInputStreaming ?? true,
+		bufferToolInput: model.compat?.bufferToolInput ?? anthropicModelNeedsBufferedToolInput(model.id),
 		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
 		supportsMidConversationSystem:
 			model.compat?.supportsMidConversationSystem ??
@@ -983,6 +985,24 @@ function getAnthropicCompat(
 			// the canonical api.anthropic.com host plus an Opus 4.8+ model id.
 			(isAnthropicApiBaseUrl(model.baseUrl) && supportsMidConversationSystemMessages(model.id)),
 	};
+}
+
+/**
+ * Resolves how tool input is streamed for an Anthropic model:
+ * - `"buffered"`: server buffers + validates tool JSON, then streams the
+ *   complete input (neither `eager_input_streaming` nor fine-grained beta).
+ *   Used for models that emit malformed tool_use JSON (Opus 4.8+).
+ * - `"eager"`: per-tool `eager_input_streaming` flag (default for Claude).
+ * - `"fine-grained"`: `fine-grained-tool-streaming` beta header.
+ * `bufferToolInput` takes precedence over `supportsEagerToolInputStreaming`.
+ */
+export function anthropicToolInputStreamingMode(
+	model: Model<"anthropic-messages">,
+): "buffered" | "eager" | "fine-grained" {
+	const compat = getAnthropicCompat(model);
+	if (compat.bufferToolInput) return "buffered";
+	if (compat.supportsEagerToolInputStreaming) return "eager";
+	return "fine-grained";
 }
 
 const PROVIDER_MAX_RETRIES = 3;
@@ -1663,9 +1683,8 @@ export function buildAnthropicClientOptions(args: AnthropicClientOptionsArgs): A
 		isOAuth,
 		onSseEvent,
 	} = args;
-	const compat = getAnthropicCompat(model);
 	const needsInterleavedBeta = interleavedThinking && !supportsAdaptiveThinkingDisplay(model.id);
-	const needsFineGrainedToolStreamingBeta = hasTools && !compat.supportsEagerToolInputStreaming;
+	const needsFineGrainedToolStreamingBeta = hasTools && anthropicToolInputStreamingMode(model) === "fine-grained";
 	const oauthToken = isOAuth ?? isAnthropicOAuthToken(apiKey);
 	const baseUrl = resolveAnthropicBaseUrl(model, apiKey);
 	const foundryCustomHeaders = resolveAnthropicCustomHeaders(model);
@@ -2069,7 +2088,7 @@ function buildParams(
 			context.tools,
 			isOAuthToken,
 			disableStrictTools || model.provider === "github-copilot",
-			getAnthropicCompat(model).supportsEagerToolInputStreaming,
+			anthropicToolInputStreamingMode(model) === "eager",
 		);
 	}
 
@@ -2276,6 +2295,11 @@ export function convertAnthropicMessages(
 							});
 							continue;
 						}
+						// A signed thinking block whose text is empty is provably dead:
+						// Anthropic rejects it with `400 ... thinking blocks ... cannot
+						// be modified` on the next turn. Drop it (interleaved-thinking +
+						// tool turns on long OAuth sessions emit these).
+						if (block.thinking.trim().length === 0) continue;
 						blocks.push({
 							type: "thinking",
 							thinking: block.thinking,
