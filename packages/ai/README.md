@@ -67,6 +67,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **OpenRouter**
 - **Kilo Gateway** (supports OAuth `/login kilo` or `KILO_API_KEY`)
 - **LiteLLM** (requires `LITELLM_API_KEY`)
+- **CLIProxyAPI** (local meta-router; requires `CLIPROXY_API_KEY` + optional `CLIPROXY_BASE_URL`)
 - **zAI** (requires `ZAI_API_KEY`)
 - **MiniMax Coding Plan** (requires `MINIMAX_CODE_API_KEY` or `MINIMAX_CODE_CN_API_KEY`)
 - **Xiaomi MiMo** (requires `XIAOMI_API_KEY`)
@@ -948,6 +949,7 @@ In Node.js environments, you can set environment variables to avoid passing API 
 | xAI            | `XAI_API_KEY`                                                                |
 | OpenRouter     | `OPENROUTER_API_KEY`                                                         |
 | LiteLLM        | `LITELLM_API_KEY`                                                            |
+| CLIProxy       | `CLIPROXY_API_KEY` (+ optional `CLIPROXY_BASE_URL`)                          |
 | Ollama         | `OLLAMA_API_KEY` (optional for local deployments)                            |
 | Ollama Cloud   | `OLLAMA_CLOUD_API_KEY`                                                     |
 | Qwen Portal    | `QWEN_OAUTH_TOKEN` or `QWEN_PORTAL_API_KEY`                                  |
@@ -982,6 +984,7 @@ Provider endpoint defaults for the current OpenAI-compatible integrations:
 - Ollama: local OpenAI-compatible runtime (`http://127.0.0.1:11434/v1`)
 - Ollama Cloud: native Ollama API host (`https://ollama.com/api`, configured here as base URL `https://ollama.com`)
 - LiteLLM: `http://localhost:4000/v1`
+- CLIProxyAPI: `http://127.0.0.1:8317/v1` (override with `CLIPROXY_BASE_URL`)
 - Cloudflare AI Gateway: `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/anthropic`
 - Qwen Portal: `https://portal.qwen.ai/v1`
 When set, the library automatically uses these keys:

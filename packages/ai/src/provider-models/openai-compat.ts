@@ -858,6 +858,55 @@ export function deepseekModelManagerOptions(
 	return createSimpleOpenAICompletionsOptions("deepseek", "https://api.deepseek.com", config);
 }
 // ---------------------------------------------------------------------------
+// 6.65 CLIProxyAPI
+// ---------------------------------------------------------------------------
+
+export interface CliProxyModelManagerConfig {
+	apiKey?: string;
+	baseUrl?: string;
+}
+
+/**
+ * CLIProxyAPI (https://github.com/router-for-me/CLIProxyAPI) is a local meta-router
+ * that wraps OAuth'd Claude Code / ChatGPT Codex / Gemini CLI / Grok subscriptions
+ * behind OpenAI/Anthropic/Gemini compatible endpoints. Per-installation API keys
+ * are configured in the proxy's `api-keys` list. The default base URL targets the
+ * standard loopback port (8317); `CLIPROXY_BASE_URL` overrides this for remote
+ * instances. `/v1/models` returns only `{id,object,created,owned_by}` per entry,
+ * so reasoning/vision flags are inferred from the upstream model family in the id.
+ */
+export function cliproxyModelManagerOptions(
+	config?: CliProxyModelManagerConfig,
+): ModelManagerOptions<"openai-completions"> {
+	const apiKey = config?.apiKey;
+	const baseUrl = config?.baseUrl ?? Bun.env.CLIPROXY_BASE_URL ?? "http://127.0.0.1:8317/v1";
+	return {
+		providerId: "cliproxy",
+		...(apiKey && {
+			fetchDynamicModels: () =>
+				fetchOpenAICompatibleModels({
+					api: "openai-completions",
+					provider: "cliproxy",
+					baseUrl,
+					apiKey,
+					mapModel: (_entry, defaults) => {
+						const id = defaults.id;
+						const isImage = id.startsWith("gpt-image-");
+						const isClaude = id.startsWith("claude-");
+						// gpt-5.* family (Codex via CLIProxyAPI) and codex-* / claude-* are
+						// reasoning-capable; image-gen models never are.
+						const isReasoningFamily = isClaude || /^(gpt-5\.|codex-)/.test(id);
+						return {
+							...defaults,
+							reasoning: !isImage && isReasoningFamily,
+						};
+					},
+				}),
+		}),
+	};
+}
+
+// ---------------------------------------------------------------------------
 // 6.7 Zhipu Coding Plan
 // ---------------------------------------------------------------------------
 

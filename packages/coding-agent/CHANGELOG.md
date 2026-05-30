@@ -192,6 +192,7 @@
 
 - Added `read.summarize.minTotalLines` setting (default 100) to set the minimum file length that triggers read summarization
 - Added `<file>:<lines>` support to `search` `paths`, allowing file-scoped constraints such as `:N-M`, `:N+K`, and comma-separated ranges
+- Added CLIProxyAPI as a login provider (`/login cliproxy`) with API-key prompt flow. Local meta-router that proxies OAuth'd Claude/Codex/Gemini/Grok subscriptions through an OpenAI-compatible interface; set `CLIPROXY_BASE_URL` to point at a non-default deployment.
 
 ### Changed
 

@@ -199,6 +199,7 @@ const serviceProviderMap: Record<string, KeyResolver> = {
 	"opencode-zen": "OPENCODE_API_KEY",
 	cursor: "CURSOR_ACCESS_TOKEN",
 	deepseek: "DEEPSEEK_API_KEY",
+	cliproxy: "CLIPROXY_API_KEY",
 	"openai-codex": "OPENAI_CODEX_OAUTH_TOKEN",
 	"azure-openai-responses": "AZURE_OPENAI_API_KEY",
 	exa: "EXA_API_KEY",

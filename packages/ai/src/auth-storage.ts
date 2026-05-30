@@ -1703,6 +1703,12 @@ export class AuthStorage {
 				await saveApiKeyCredential(apiKey);
 				return;
 			}
+			case "cliproxy": {
+				const { loginCliproxy } = await import("./utils/oauth/cliproxy");
+				const apiKey = await loginCliproxy(ctrl);
+				await saveApiKeyCredential(apiKey);
+				return;
+			}
 			case "openrouter": {
 				const { loginOpenRouter } = await import("./utils/oauth/openrouter");
 				const apiKey = await loginOpenRouter(ctrl);

@@ -181,6 +181,11 @@ const builtInOAuthProviders: OAuthProviderInfo[] = [
 		available: true,
 	},
 	{
+		id: "cliproxy",
+		name: "CLIProxy (router-for-me/CLIProxyAPI)",
+		available: true,
+	},
+	{
 		id: "parallel",
 		name: "Parallel",
 		available: true,
@@ -351,6 +356,7 @@ export async function refreshOAuthToken(
 		case "firepass":
 		case "nvidia":
 		case "nanogpt":
+		case "cliproxy":
 		case "synthetic":
 		case "together":
 		case "litellm":
