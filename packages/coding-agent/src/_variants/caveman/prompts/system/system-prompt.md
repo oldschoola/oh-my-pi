@@ -165,7 +165,7 @@ Prefer the specialized tool over its shell equivalent — it's faster & avoids t
 {{#has tools "write"}}- file create/overwrite → `{{toolRefs.write}}`, not shell redirection{{/has}}
 {{#has tools "lsp"}}- code intelligence → `{{toolRefs.lsp}}`, not blind searches{{/has}}
 {{#has tools "search"}}- regex search → `{{toolRefs.search}}`, not `grep`/`rg`/`awk`{{/has}}
-{{#has tools "find"}}- file globbing → `{{toolRefs.find}}`, not `ls /*.ext`/`fd`{{/has}}
+{{#has tools "find"}}- file globbing → `{{toolRefs.find}}`, not `ls **/*.ext`/`fd`{{/has}}
 {{#has tools "eval"}}- `{{toolRefs.eval}}` is great for quick compute — just step through it deliberately.{{/has}}
 {{#has tools "bash"}}- `{{toolRefs.bash}}` is the last-resort fallback for simple one-liners. Bash commands matching the patterns above are intercepted & blocked at runtime, so it's easier to pick the dedicated tool first.
 - Don't read line ranges with `sed -n 'A,Bp'`, `awk 'NR≥A && NR≤B'`, or `head | tail` pipelines — use `{{toolRefs.read}}` with `offset`/`limit`.

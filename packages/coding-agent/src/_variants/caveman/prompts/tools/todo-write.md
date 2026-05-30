@@ -3,15 +3,15 @@ Manages a phased task list. Pass `ops`: a flat array of operations.
 The next pending task is auto-promoted to `in_progress` after each completion.
 Allowed `op` values are only `init`, `start`, `done`, `drop`, `rm`, `append`, & `note`. `pending` is a task status, not an `op`; leave not-yet-started tasks implicit in `init`/`append` lists.
 Operations
-|__CAVEMAN_BLOCK_15__|Required fields|Effect|
+|`op`|Required fields|Effect|
 |---|---|---|
-|__CAVEMAN_BLOCK_16__|__CAVEMAN_BLOCK_17__|Initialize the full list (replaces any existing list)|
-|__CAVEMAN_BLOCK_18__|__CAVEMAN_BLOCK_19__|Mark in progress|
-|__CAVEMAN_BLOCK_20__|__CAVEMAN_BLOCK_21__ or __CAVEMAN_BLOCK_22__|Mark completed|
-|__CAVEMAN_BLOCK_23__|__CAVEMAN_BLOCK_24__ or __CAVEMAN_BLOCK_25__|Mark abandoned|
-|__CAVEMAN_BLOCK_26__|__CAVEMAN_BLOCK_27__ or __CAVEMAN_BLOCK_28__|Remove|
-|__CAVEMAN_BLOCK_29__|__CAVEMAN_BLOCK_30__, __CAVEMAN_BLOCK_31__|Append tasks to __CAVEMAN_BLOCK_32__; lazily creates phase|
-|__CAVEMAN_BLOCK_33__|__CAVEMAN_BLOCK_34__, __CAVEMAN_BLOCK_35__|Append a note to a task. Reminders for future-you only.|
+|`init`|`list: [{phase, items: string[]}]`|Initialize the full list (replaces any existing list)|
+|`start`|`task`|Mark in progress|
+|`done`|`task` or `phase`|Mark completed|
+|`drop`|`task` or `phase`|Mark abandoned|
+|`rm`|`task` or `phase`|Remove|
+|`append`|`phase`, `items: string[]`|Append tasks to `phase`; lazily creates phase|
+|`note`|`task`, `text`|Append a note to a task. Reminders for future-you only.|
 
 Anatomy
 Task content: 5-10 words, what is being done, not how. Used as the task identifier — unique.

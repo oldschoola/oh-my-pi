@@ -19,13 +19,13 @@ Match lines are numbered under a file snapshot tag header in hashline mode: `¶s
 Summary counts (`totalMatches`, `filesWithMatches`, `filesSearched`) & parse issues when present
 <examples>
 Search TypeScript files under src
-`{"pat":"console.log($$$)","paths":["src//*.ts"]}`
+`{"pat":"console.log($$$)","paths":["src/**/*.ts"]}`
 Named imports from a specific package
-`{"pat":"import { $$$IMPORTS } from \"react\"","paths":["src//*.ts"]}`
+`{"pat":"import { $$$IMPORTS } from \"react\"","paths":["src/**/*.ts"]}`
 Arrow functions assigned to a const
-`{"pat":"const $NAME = ($$$ARGS) => $BODY","paths":["src/utils//*.ts"]}`
+`{"pat":"const $NAME = ($$$ARGS) => $BODY","paths":["src/utils/**/*.ts"]}`
 Method call on any object, ignoring method name with `$_`
-`{"pat":"logger.$_($$$ARGS)","paths":["src//*.ts"]}`
+`{"pat":"logger.$_($$$ARGS)","paths":["src/**/*.ts"]}`
 Loosest existence check for a symbol in one file
 `{"pat":"processItems","paths":["src/worker.ts"]}`
 <critical>

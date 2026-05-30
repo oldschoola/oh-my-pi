@@ -6,6 +6,7 @@ The tool result lists the assigned task ids (e.g. `0-AuthLoader`) — those are 
 Coordinate with running tasks via `irc` using those ids. `job cancel` terminates a task & cannot carry a message — only use it for stalled/abandoned work.
 If genuinely blocked on completion, wait with `job poll`; otherwise keep working.
 {{else}}
+If genuinely blocked on completion, wait with `job poll`; otherwise keep working.
 Use `job list` to snapshot manager state; `cancel: [id]` only to actually stop a stuck task.
 {{/if}}
 {{/if}}

@@ -13,14 +13,14 @@ Replace handles content-addressed changes — you identify _what_ to change by i
 For position-addressed or pattern-addressed changes, bash is more efficient:
 |Operation|Command|
 |---|---|
-|Append to file|__CAVEMAN_BLOCK_7__…__CAVEMAN_BLOCK_8__|
-|Prepend to file|__CAVEMAN_BLOCK_9__|
-|Delete lines N-M|__CAVEMAN_BLOCK_10__|
-|Insert after line N|__CAVEMAN_BLOCK_11__|
-|Regex replace|__CAVEMAN_BLOCK_12__|
-|Bulk replace across files|__CAVEMAN_BLOCK_13__|
-|Copy lines N-M to another file|__CAVEMAN_BLOCK_14__|
-|Move lines N-M to another file|__CAVEMAN_BLOCK_15__|
+|Append to file|`cat >> file <<'EOF'`…`EOF`|
+|Prepend to file|`{ cat - file; } <<'EOF' > tmp && mv tmp file`|
+|Delete lines N-M|`sed -i 'N,Md' file`|
+|Insert after line N|`sed -i 'Na\text' file`|
+|Regex replace|`sd 'pattern' 'replacement' file`|
+|Bulk replace across files|`sd 'pattern' 'replacement' **/*.ts`|
+|Copy lines N-M to another file|`sed -n 'N,Mp' src >> dest`|
+|Move lines N-M to another file|`sed -n 'N,Mp' src >> dest && sed -i 'N,Md' src`|
 
 Use Replace when _content itself_ identifies location.
 Use bash when _position_ or _pattern_ identifies what to change.

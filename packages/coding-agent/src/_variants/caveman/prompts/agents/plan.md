@@ -27,7 +27,7 @@ Phase 4: Produce Plan
 Write a plan the executor can run without re-exploring.
 <structure>
 Summary: What to build & why (one paragraph).
-Exact file paths/line ranges where relevant.
+Changes: List concrete changes (files, functions, types), as concrete as possible. Exact file paths/line ranges where relevant.
 Sequence: List sequence & dependencies between sub-tasks, so they can be scheduled in the best order.
 Edge Cases: List edge cases & error conditions to be aware of.
 Verification: List verification steps so the result can be checked.

@@ -15,17 +15,17 @@ Replacement summary, per-file replacement counts, & change diffs as `¶src/foo.t
 Parse issues when files cannot be processed
 <examples>
 Rename a call site across TypeScript files
-`{"ops":[{"pat":"oldApi($$$ARGS)","out":"newApi($$$ARGS)"}],"paths":["src//*.ts"]}`
+`{"ops":[{"pat":"oldApi($$$ARGS)","out":"newApi($$$ARGS)"}],"paths":["src/**/*.ts"]}`
 Delete matching calls
-`{"ops":[{"pat":"console.log($$$ARGS)","out":""}],"paths":["src//*.ts"]}`
+`{"ops":[{"pat":"console.log($$$ARGS)","out":""}],"paths":["src/**/*.ts"]}`
 Rewrite import source path
-`{"ops":[{"pat":"import { $$$IMPORTS } from \"old-package\"","out":"import { $$$IMPORTS } from \"new-package\""}],"paths":["src//*.ts"]}`
+`{"ops":[{"pat":"import { $$$IMPORTS } from \"old-package\"","out":"import { $$$IMPORTS } from \"new-package\""}],"paths":["src/**/*.ts"]}`
 Modernize to optional chaining (same metavariable enforces identity)
-`{"ops":[{"pat":"$A && $A()","out":"$A?.()"}],"paths":["src//*.ts"]}`
+`{"ops":[{"pat":"$A && $A()","out":"$A?.()"}],"paths":["src/**/*.ts"]}`
 Swap two arguments using captures
-`{"ops":[{"pat":"assertEqual($A, $B)","out":"assertEqual($B, $A)"}],"paths":["tests//*.ts"]}`
+`{"ops":[{"pat":"assertEqual($A, $B)","out":"assertEqual($B, $A)"}],"paths":["tests/**/*.ts"]}`
 Python — convert print calls to logging
-`{"ops":[{"pat":"print($$$ARGS)","out":"logger.info($$$ARGS)"}],"paths":["src//*.py"]}`
+`{"ops":[{"pat":"print($$$ARGS)","out":"logger.info($$$ARGS)"}],"paths":["src/**/*.py"]}`
 <critical>
 A parse issue means the rewrite is malformed or mis-scoped — fix the pattern rather than assuming a clean no-op.
 For one-off local text edits, the Edit tool is the lighter path.

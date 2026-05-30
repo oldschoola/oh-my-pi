@@ -2,6 +2,7 @@ Interacts with Language Server Protocol servers for code intelligence.
 <operations>
 `diagnostics`: Get errors/warnings for a file, a glob of files, or the entire workspace (`file: "*"`)
 `definition`: Go to symbol definition → file path + position + 3-line source context
+`type_definition`: Go to symbol type definition → file path + position + 3-line source context
 `implementation`: Find concrete implementations → file path + position + 3-line source context
 `references`: Find references → locations with 3-line source context (first 50), remaining location-only
 `hover`: Get type info & documentation → type signature + docs
@@ -14,7 +15,7 @@ Interacts with Language Server Protocol servers for code intelligence.
 `request`: Send a raw LSP request to a server — `query` is the method name (e.g. `rust-analyzer/expandMacro`, `typescript/goToSourceDefinition`, `workspace/executeCommand`); use `payload` for arbitrary JSON params or let the tool auto-build them from `file`/`line`/`symbol`
 `reload`: Restart a specific server (via `file`) or all servers with `file: "*"`
 <parameters>
-`file`: File path, glob pattern (e.g. `src//.ts`), or `""` for workspace scope. Globs are expanded locally before dispatch. `"*"` routes `diagnostics`/`symbols`/`reload` to their workspace-wide form.
+`file`: File path, glob pattern (e.g. `src/**/*.ts`), or `"*"` for workspace scope. Globs are expanded locally before dispatch. `"*"` routes `diagnostics`/`symbols`/`reload` to their workspace-wide form.
 `line`: 1-indexed line number for position-based actions
 `symbol`: Substring on the target line used to resolve column automatically. Append `#N` to pick the Nth occurrence on that line (1-indexed; default 1) — e.g. `foo#2` selects the second `foo`.
 `query`: Symbol search query, code-action kind filter / selector (list/apply mode), or LSP method name when `action: request`
