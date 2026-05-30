@@ -20,7 +20,7 @@
     "connectionTimeout": 30000,
     "inProcess": true,
     "earlyStopOnMatch": true,
-    "conversationDumpDir": ".autoresearch-out\\report.2026-05-30T18-33-12-651Z.dump"
+    "conversationDumpDir": ".autoresearch-out\\report.2026-05-30T18-43-22-234Z.dump"
   },
   "tasks": [
     {
@@ -39,11 +39,11 @@
           "mutationCategory": "access",
           "difficultyScore": 2,
           "tokens": {
-            "input": 3233,
-            "output": 201,
-            "total": 3434
+            "input": 2609,
+            "output": 151,
+            "total": 2760
           },
-          "duration": 3245,
+          "duration": 28690,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
@@ -59,7 +59,7 @@
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 123
+            "totalInputChars": 128
           },
           "editFailures": [],
           "editWarnings": [],
@@ -77,11 +77,11 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 3233,
-        "output": 201,
-        "total": 3434
+        "input": 2609,
+        "output": 151,
+        "total": 2760
       },
-      "duration": 3245,
+      "duration": 28690,
       "indentScore": 0,
       "toolCalls": {
         "read": 1,
@@ -91,7 +91,7 @@
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 123
+        "totalInputChars": 128
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -113,11 +113,11 @@
           "mutationCategory": "duplicate",
           "difficultyScore": 8,
           "tokens": {
-            "input": 14887,
-            "output": 7632,
-            "total": 22519
+            "input": 14772,
+            "output": 13599,
+            "total": 28371
           },
-          "duration": 41657,
+          "duration": 99551,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
@@ -130,12 +130,14 @@
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
-            "editWarnings": 0,
+            "editWarnings": 1,
             "editAutocorrects": 0,
-            "totalInputChars": 160
+            "totalInputChars": 161
           },
           "editFailures": [],
-          "editWarnings": [],
+          "editWarnings": [
+            "Auto-prefixed bare body row(s) with `+`. Body rows must be `+TEXT` literal lines; pasting raw code as payload is not a portable shape."
+          ],
           "editAutocorrectCount": 0,
           "mutationIntentMatched": true,
           "mutationIntentReason": "Target line exactly matches expected fixture.",
@@ -150,11 +152,11 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 14887,
-        "output": 7632,
-        "total": 22519
+        "input": 14772,
+        "output": 13599,
+        "total": 28371
       },
-      "duration": 41657,
+      "duration": 99551,
       "indentScore": 0,
       "toolCalls": {
         "read": 3,
@@ -162,9 +164,9 @@
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
-        "editWarnings": 0,
+        "editWarnings": 1,
         "editAutocorrects": 0,
-        "totalInputChars": 160
+        "totalInputChars": 161
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -186,11 +188,11 @@
           "mutationCategory": "literal",
           "difficultyScore": 4,
           "tokens": {
-            "input": 2498,
-            "output": 167,
-            "total": 2665
+            "input": 2622,
+            "output": 162,
+            "total": 2784
           },
-          "duration": 3007,
+          "duration": 2469,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
@@ -205,7 +207,7 @@
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 90
+            "totalInputChars": 91
           },
           "editFailures": [],
           "editWarnings": [],
@@ -223,11 +225,11 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 2498,
-        "output": 167,
-        "total": 2665
+        "input": 2622,
+        "output": 162,
+        "total": 2784
       },
-      "duration": 3007,
+      "duration": 2469,
       "indentScore": 0,
       "toolCalls": {
         "read": 1,
@@ -237,7 +239,7 @@
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 90
+        "totalInputChars": 91
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -259,27 +261,27 @@
           "mutationCategory": "operator",
           "difficultyScore": 6,
           "tokens": {
-            "input": 8425,
-            "output": 337,
-            "total": 8762
+            "input": 48306,
+            "output": 1173,
+            "total": 49479
           },
-          "duration": 4954,
+          "duration": 12744,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
-          "agentResponse": "Line 109: `if (firstTokenTime)` should be `if (!firstTokenTime)`.",
+          "agentResponse": ".",
           "toolCalls": {
-            "read": 2,
-            "edit": 1,
+            "read": 6,
+            "edit": 2,
             "write": 0,
-            "editSuccesses": 1,
+            "editSuccesses": 2,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 159
+            "totalInputChars": 413
           },
           "editFailures": [],
           "editWarnings": [],
@@ -297,21 +299,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 8425,
-        "output": 337,
-        "total": 8762
+        "input": 48306,
+        "output": 1173,
+        "total": 49479
       },
-      "duration": 4954,
+      "duration": 12744,
       "indentScore": 0,
       "toolCalls": {
-        "read": 2,
-        "edit": 1,
+        "read": 6,
+        "edit": 2,
         "write": 0,
-        "editSuccesses": 1,
+        "editSuccesses": 2,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 159
+        "totalInputChars": 413
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -333,11 +335,11 @@
           "mutationCategory": "operator",
           "difficultyScore": 4,
           "tokens": {
-            "input": 2782,
-            "output": 522,
-            "total": 3304
+            "input": 2752,
+            "output": 258,
+            "total": 3010
           },
-          "duration": 3650,
+          "duration": 2671,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
@@ -353,7 +355,7 @@
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 137
+            "totalInputChars": 133
           },
           "editFailures": [],
           "editWarnings": [],
@@ -371,11 +373,11 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 2782,
-        "output": 522,
-        "total": 3304
+        "input": 2752,
+        "output": 258,
+        "total": 3010
       },
-      "duration": 3650,
+      "duration": 2671,
       "indentScore": 0,
       "toolCalls": {
         "read": 1,
@@ -385,7 +387,7 @@
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 137
+        "totalInputChars": 133
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -407,26 +409,27 @@
           "mutationCategory": "operator",
           "difficultyScore": 8,
           "tokens": {
-            "input": 13922,
-            "output": 1083,
-            "total": 15005
+            "input": 22689,
+            "output": 1724,
+            "total": 24413
           },
-          "duration": 10459,
+          "duration": 37501,
           "indentScore": 0,
           "formattedEquivalent": true,
           "diffStats": {
             "linesChanged": 0,
             "charsChanged": 0
           },
+          "agentResponse": ".",
           "toolCalls": {
-            "read": 3,
+            "read": 4,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 227
+            "totalInputChars": 254
           },
           "editFailures": [],
           "editWarnings": [],
@@ -444,21 +447,21 @@
       "bestRunIndex": 0,
       "success": true,
       "tokens": {
-        "input": 13922,
-        "output": 1083,
-        "total": 15005
+        "input": 22689,
+        "output": 1724,
+        "total": 24413
       },
-      "duration": 10459,
+      "duration": 37501,
       "indentScore": 0,
       "toolCalls": {
-        "read": 3,
+        "read": 4,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 227
+        "totalInputChars": 254
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": true,
@@ -481,28 +484,28 @@
           "difficultyScore": 4,
           "error": "File mismatch for chat-simple.ts",
           "tokens": {
-            "input": 17197,
-            "output": 3241,
-            "total": 20438
+            "input": 27926,
+            "output": 2918,
+            "total": 30844
           },
-          "duration": 17452,
+          "duration": 16718,
           "indentScore": 0,
           "formattedEquivalent": false,
           "diffStats": {
             "linesChanged": 3,
-            "charsChanged": 149
+            "charsChanged": 117
           },
-          "agentResponse": "Restored the deleted statement at line 86:\n\n```typescript\nconst userMessage = new Markdown(trimmed, 1, 1, defaultMarkdownTheme);\n```\n\nThis creates the user message component before it gets inserted into `tui.children` on the following line.",
-          "diff": "@@ -82 @@\n     isResponding = true;\n     editor.disableSubmit = true;\n \n-    const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);\n-\n     const children = tui.children;\n     const children = tui.children;\n+    const userMessage = new Markdown(trimmed, 1, 1, defaultMarkdownTheme);\n     children.splice(children.length - 1, 0, userMessage);\n \n     const loader = new Loader(",
+          "agentResponse": "Done. The deleted `const userMessage = new Text(trimmed);` statement has been restored on line 86, right after the `children` variable is declared. This was the missing piece that caused the `userMessage` reference on line 87 to be undefined.",
+          "diff": "@@ -82 @@\n     isResponding = true;\n     editor.disableSubmit = true;\n \n-    const userMessage = new Markdown(value, 1, 1, defaultMarkdownTheme);\n-\n     const children = tui.children;\n     const children = tui.children;\n+    const userMessage = new Text(trimmed);\n     children.splice(children.length - 1, 0, userMessage);\n \n     const loader = new Loader(",
           "toolCalls": {
-            "read": 2,
+            "read": 4,
             "edit": 1,
             "write": 0,
             "editSuccesses": 1,
             "editFailures": 0,
             "editWarnings": 0,
             "editAutocorrects": 0,
-            "totalInputChars": 184
+            "totalInputChars": 216
           },
           "editFailures": [],
           "editWarnings": [],
@@ -519,21 +522,21 @@
       "bestRunIndex": 0,
       "success": false,
       "tokens": {
-        "input": 17197,
-        "output": 3241,
-        "total": 20438
+        "input": 27926,
+        "output": 2918,
+        "total": 30844
       },
-      "duration": 17452,
+      "duration": 16718,
       "indentScore": 0,
       "toolCalls": {
-        "read": 2,
+        "read": 4,
         "edit": 1,
         "write": 0,
         "editSuccesses": 1,
         "editFailures": 0,
         "editWarnings": 0,
         "editAutocorrects": 0,
-        "totalInputChars": 184
+        "totalInputChars": 216
       },
       "editSuccessRate": 1,
       "autocorrectFreeSuccess": false,
@@ -554,13 +557,13 @@
           "mutationType": "swap-adjacent-lines",
           "mutationCategory": "structural",
           "difficultyScore": 12,
-          "error": "Timeout exhausted after 3 retries (last: 120003ms, events=23573, last_event=message_update)",
+          "error": "Timeout exhausted after 3 retries (last: 120011ms, events=22129, last_event=message_update)",
           "tokens": {
             "input": 0,
             "output": 0,
             "total": 0
           },
-          "duration": 360235,
+          "duration": 360076,
           "toolCalls": {
             "read": 0,
             "edit": 0,
@@ -575,11 +578,11 @@
           "editWarnings": [],
           "editAutocorrectCount": 0,
           "timeoutTelemetry": {
-            "elapsedMs": 120003,
-            "eventCount": 23573,
-            "toolExecutionStarts": 2,
-            "toolExecutionEnds": 2,
-            "messageEnds": 5,
+            "elapsedMs": 120011,
+            "eventCount": 22129,
+            "toolExecutionStarts": 0,
+            "toolExecutionEnds": 0,
+            "messageEnds": 1,
             "lastEventType": "message_update",
             "recentEventTypes": [
               "message_update",
@@ -607,7 +610,7 @@
         "output": 0,
         "total": 0
       },
-      "duration": 360235,
+      "duration": 360076,
       "indentScore": 0,
       "toolCalls": {
         "read": 0,
@@ -633,37 +636,37 @@
     "flakyTasks": 0,
     "consistentlyPassingTasks": 6,
     "totalTokens": {
-      "input": 62944,
-      "output": 13183,
-      "total": 76127
+      "input": 121676,
+      "output": 19985,
+      "total": 141661
     },
     "avgTokensPerTask": {
-      "input": 7868,
-      "output": 1648,
-      "total": 9516
+      "input": 15210,
+      "output": 2498,
+      "total": 17708
     },
-    "totalDuration": 444659,
-    "avgDurationPerTask": 55582,
+    "totalDuration": 560420,
+    "avgDurationPerTask": 70053,
     "avgIndentScore": 0,
     "totalToolCalls": {
-      "read": 13,
-      "edit": 7,
+      "read": 20,
+      "edit": 8,
       "write": 0,
-      "editSuccesses": 7,
+      "editSuccesses": 8,
       "editFailures": 0,
-      "editWarnings": 0,
+      "editWarnings": 1,
       "editAutocorrects": 0,
-      "totalInputChars": 1080
+      "totalInputChars": 1396
     },
     "avgToolCallsPerTask": {
-      "read": 1.625,
-      "edit": 0.875,
+      "read": 2.5,
+      "edit": 1,
       "write": 0,
-      "editSuccesses": 0.875,
+      "editSuccesses": 1,
       "editFailures": 0,
-      "editWarnings": 0,
+      "editWarnings": 0.125,
       "editAutocorrects": 0,
-      "totalInputChars": 135
+      "totalInputChars": 174.5
     },
     "editSuccessRate": 1,
     "autocorrectFreeSuccessfulTasks": 6,
@@ -685,6 +688,6 @@
       "other": 0
     }
   },
-  "startTime": "2026-05-30T18:33:12.652Z",
-  "endTime": "2026-05-30T18:39:13.158Z"
+  "startTime": "2026-05-30T18:43:22.234Z",
+  "endTime": "2026-05-30T18:49:25.000Z"
 }

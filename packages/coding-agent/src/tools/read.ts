@@ -17,6 +17,7 @@ import { InternalUrlRouter } from "../internal-urls";
 import { parseInternalUrl } from "../internal-urls/parse";
 import type { InternalUrl } from "../internal-urls/types";
 import { getLanguageFromPath, type Theme } from "../modes/theme/theme";
+import { isKimiClassModelString } from "../model-families";
 import readDescription from "../prompts/tools/read.md" with { type: "text" };
 import type { ToolSession } from "../sdk";
 import {
@@ -1371,7 +1372,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 			// doesn't trip on extra inline code while ruminating. Other models keep
 			// the larger default optimal for their faster decisions on bigger contexts.
 			const activeModel = this.session.getActiveModelString?.() ?? "";
-			const isKimiClass = /(?:^|\/)(kimi|glm-|qwen)/i.test(activeModel);
+			const isKimiClass = isKimiClassModelString(activeModel);
 			const minBodyLines = isKimiClass
 				? Math.min(4, this.session.settings.get("read.summarize.minBodyLines"))
 				: this.session.settings.get("read.summarize.minBodyLines");
@@ -1749,7 +1750,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				if (summary?.parsed && summary.elided) {
 					const renderedSummary = this.#renderSummary(summary);
 					const activeModel = this.session.getActiveModelString?.() ?? "";
-					const isKimiClass = /(?:^|\/)(kimi|glm-|qwen)/i.test(activeModel);
+					const isKimiClass = isKimiClassModelString(activeModel);
 					const footer = formatSummaryElisionFooter(
 						localReadPath,
 						renderedSummary.elidedRanges,

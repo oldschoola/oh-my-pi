@@ -147,6 +147,7 @@ import type { Goal, GoalModeState } from "../goals/state";
 import type { HindsightSessionState } from "../hindsight/state";
 import { type LocalProtocolOptions, resolveLocalUrlToPath } from "../internal-urls";
 import { resolveMemoryBackend } from "../memory-backend";
+import { isKimiClassModel } from "../model-families";
 import { getCurrentThemeName, theme } from "../modes/theme/theme";
 import { containsUltrathink, ULTRATHINK_NOTICE } from "../modes/ultrathink";
 import type { PlanModeState } from "../plan-mode/state";
@@ -472,11 +473,9 @@ export function resolveToolCallBatchCapForModel(model: Model | undefined): numbe
  * the abort. Tunable via the new `Agent.maxResponseContentChars` setter.
  */
 export const KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS = 12000;
-const KIMI_CLASS_MODEL_ID = /(?:^|\/)(kimi|glm-|qwen)/i;
 
 export function resolveMaxResponseContentCharsForModel(model: Model | undefined): number | undefined {
-	if (!model) return undefined;
-	return KIMI_CLASS_MODEL_ID.test(model.id) ? KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS : undefined;
+	return isKimiClassModel(model) ? KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS : undefined;
 }
 
 /**

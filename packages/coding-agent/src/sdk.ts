@@ -88,6 +88,7 @@ import { LSP_STARTUP_EVENT_CHANNEL, type LspStartupEvent } from "./lsp/startup-e
 import { discoverAndLoadMCPTools, MCPManager, type MCPToolsLoadResult } from "./mcp";
 
 import { resolveMemoryBackend } from "./memory-backend";
+import { isKimiClassModel } from "./model-families";
 import asyncResultTemplate from "./prompts/tools/async-result.md" with { type: "text" };
 import { AgentRegistry, MAIN_AGENT_ID } from "./registry/agent-registry";
 import {
@@ -630,19 +631,6 @@ function resolveAppendOnlyMode(setting: "auto" | "on" | "off" | undefined, provi
  * Returns `null` for Anthropic/OpenAI/Gemini — those use a provider-side
  * reasoning channel and don't need (and should not get) this instruction.
  */
-const KIMI_CLASS_MODEL_REGEX = /(^|\/)(kimi|glm-|qwen)/;
-
-/**
- * Whether the given model belongs to a family that embeds inline
- * `<thinking>...</thinking>` text in its message content rather than using a
- * provider-side reasoning channel. Kimi K2.x, GLM-5.x, and Qwen are trained
- * to emit these blocks even when the API reasoning toggle is off.
- */
-function isKimiClassModel(m: Model | undefined): boolean {
-	if (!m) return false;
-	return KIMI_CLASS_MODEL_REGEX.test(m.id.toLowerCase());
-}
-
 function buildModelBehavioralAddendum(m: Model | undefined): string | null {
 	if (!isKimiClassModel(m)) return null;
 	return [
