@@ -1359,10 +1359,19 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 			if (lineCount > MAX_SUMMARY_LINES) return null;
 			if (lineCount < this.session.settings.get("read.summarize.minTotalLines")) return null;
 
+			// For kimi/glm/qwen models that ramble through structural summaries, use
+			// a tighter inline-body threshold so summaries stay compact and the model
+			// doesn't trip on extra inline code while ruminating. Other models keep
+			// the larger default optimal for their faster decisions on bigger contexts.
+			const activeModel = this.session.getActiveModelString?.() ?? "";
+			const isKimiClass = /(?:^|\/)(kimi|glm-|qwen)/i.test(activeModel);
+			const minBodyLines = isKimiClass
+				? Math.min(4, this.session.settings.get("read.summarize.minBodyLines"))
+				: this.session.settings.get("read.summarize.minBodyLines");
 			const result = summarizeCode({
 				code,
 				path: absolutePath,
-				minBodyLines: this.session.settings.get("read.summarize.minBodyLines"),
+				minBodyLines,
 				minCommentLines: this.session.settings.get("read.summarize.minCommentLines"),
 				unfoldUntilLines: this.session.settings.get("read.summarize.unfoldUntil"),
 				unfoldLimitLines: this.session.settings.get("read.summarize.unfoldLimit"),
