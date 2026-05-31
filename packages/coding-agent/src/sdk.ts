@@ -90,7 +90,7 @@ import { discoverAndLoadMCPTools, MCPManager, type MCPToolsLoadResult } from "./
 
 import { resolveMemoryBackend } from "./memory-backend";
 import { getMnemopiSessionState, type MnemopiSessionState } from "./mnemopi/state";
-import { isGlmModel, isKimiClassModel } from "./model-families";
+import { isDeepseekModel, isGlmModel, isKimiClassModel } from "./model-families";
 import asyncResultTemplate from "./prompts/tools/async-result.md" with { type: "text" };
 import { AgentRegistry, MAIN_AGENT_ID } from "./registry/agent-registry";
 import {
@@ -671,7 +671,7 @@ function resolveAppendOnlyMode(setting: "auto" | "on" | "off" | undefined, provi
  * prompt for model families that embed inline `<thinking>...</thinking>` text
  * in their assistant output instead of using a provider-side thinking channel.
  *
- * Kimi K2.x, GLM-5.x, and Qwen models are trained to emit verbose inline
+ * Kimi K2.x, GLM-5.x, Qwen, and MiMo models are trained to emit verbose inline
  * `<thinking>` blocks even when the API-level reasoning toggle is off. On
  * tool-calling loops these blocks (a) blow past per-attempt wall-clock budgets
  * via 20k+ token monologues and (b) bloat subsequent-turn context. We can't
@@ -723,6 +723,35 @@ function resolveKimiClassSamplingDefault(
 ): number | undefined {
 	if (rawSetting >= 0) return rawSetting;
 	if (isKimiClassModel(m)) return KIMI_CLASS_SAMPLING_DEFAULTS[key];
+	return undefined;
+}
+
+/**
+ * DeepSeek-family sampling defaults. DeepSeek's official coder profile
+ * recommends `temperature=0.0` for code generation (deterministic decoding);
+ * provider defaults sit around 1.0 which is conversational and empirically
+ * over-noises tool-calling loops. `top_p=0.95` mirrors the kimi-class topP
+ * value — DeepSeek lacks an explicit vendor recommendation but the value is
+ * conservative enough to preserve enough probability mass for the dominant
+ * decision while excluding far-tail noise. `minP` intentionally omitted: the
+ * DeepSeek API does not surface a min_p control; passing it through is a
+ * no-op on the backend.
+ *
+ * Layered with `resolveKimiClassSamplingDefault` via `??` at the call site;
+ * the two predicates are disjoint by construction so order does not matter.
+ */
+const DEEPSEEK_SAMPLING_DEFAULTS = {
+	temperature: 0.0,
+	topP: 0.95,
+} as const;
+
+function resolveDeepseekSamplingDefault(
+	m: Model | undefined,
+	rawSetting: number,
+	key: keyof typeof DEEPSEEK_SAMPLING_DEFAULTS,
+): number | undefined {
+	if (rawSetting >= 0) return rawSetting;
+	if (isDeepseekModel(m)) return DEEPSEEK_SAMPLING_DEFAULTS[key];
 	return undefined;
 }
 
@@ -1992,8 +2021,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			followUpMode: settings.get("followUpMode") ?? "one-at-a-time",
 			interruptMode: settings.get("interruptMode") ?? "immediate",
 			thinkingBudgets: settings.getGroup("thinkingBudgets"),
-			temperature: resolveKimiClassSamplingDefault(model, settings.get("temperature"), "temperature"),
-			topP: resolveKimiClassSamplingDefault(model, settings.get("topP"), "topP"),
+			temperature:
+				resolveDeepseekSamplingDefault(model, settings.get("temperature"), "temperature") ??
+				resolveKimiClassSamplingDefault(model, settings.get("temperature"), "temperature"),
+			topP:
+				resolveDeepseekSamplingDefault(model, settings.get("topP"), "topP") ??
+				resolveKimiClassSamplingDefault(model, settings.get("topP"), "topP"),
 			topK: settings.get("topK") >= 0 ? settings.get("topK") : undefined,
 			minP: resolveKimiClassSamplingDefault(model, settings.get("minP"), "minP"),
 			presencePenalty: settings.get("presencePenalty") >= 0 ? settings.get("presencePenalty") : undefined,

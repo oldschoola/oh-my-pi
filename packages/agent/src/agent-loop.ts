@@ -496,6 +496,13 @@ async function runLoopBody(
 	let harmonyTruncateResumeCount = 0;
 	// See `runLoopBody` docstring for the per-attempt content-char accumulator contract.
 	const contentCharCounter = { count: 0 };
+	// Per-attempt "has the model called an editing/mutating tool yet" flag. Used
+	// by the text-only spiral cap to distinguish productive read-then-act flows
+	// (cap stays armed at toolcall_end) from pure read-spirals where the model
+	// keeps re-reading without ever attempting an edit (cap also fires on
+	// text_end/thinking_end). Names match common edit/write/patch tool names
+	// case-insensitively; benchmark-meaningful without hardcoding a single tool.
+	const editingToolCallSeen = { seen: false };
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
 		let hasMoreToolCalls = true;
@@ -542,6 +549,7 @@ async function runLoopBody(
 					streamFn,
 					harmonyRetryAttempt,
 					contentCharCounter,
+					editingToolCallSeen,
 				);
 				harmonyRetryAttempt = 0;
 				harmonyTruncateResumeCount = 0;
@@ -711,6 +719,7 @@ async function streamAssistantResponse(
 	streamFn?: StreamFn,
 	harmonyRetryAttempt = 0,
 	contentCharCounter: { count: number } = { count: 0 },
+	editingToolCallSeen: { seen: boolean } = { seen: false },
 ): Promise<AssistantMessage> {
 	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
 	let messages = context.messages;
@@ -943,6 +952,15 @@ async function streamAssistantResponse(
 								) {
 									contentCharCounter.count += event.delta.length;
 								}
+								if (event.type === "toolcall_end") {
+									// Mark editing/mutating tool calls so the text-only spiral cap
+									// below can stay armed across read-only spirals. Pattern matches
+									// edit/write/patch/vim/str_replace-style tools without hardcoding
+									// any specific tool registry.
+									if (/^(edit|write|patch|vim|str_replace|apply)/i.test(event.toolCall.name)) {
+										editingToolCallSeen.seen = true;
+									}
+								}
 								if (event.type === "toolcall_end" && maxToolCallsPerTurn !== undefined) {
 									completedToolCalls++;
 									if (completedToolCalls >= maxToolCallsPerTurn) {
@@ -956,8 +974,30 @@ async function streamAssistantResponse(
 									event.type === "toolcall_end" &&
 									maxResponseContentChars !== undefined &&
 									contentCharCounter.count >= maxResponseContentChars &&
-									!toolCallCapAbortController?.signal.aborted
+									!toolCallCapAbortController?.signal.aborted &&
+									!contentCharCapAbortController?.signal.aborted
 								) {
+									cappedMessage = cloneAssistantMessageForToolCallCap(partialMessage);
+									contentCharCapAbortController?.abort();
+									const capped = await finishCappedAssistantMessage();
+									if (capped) return capped;
+								}
+								if (
+									(event.type === "text_end" || event.type === "thinking_end") &&
+									!editingToolCallSeen.seen &&
+									maxResponseContentChars !== undefined &&
+									contentCharCounter.count >= maxResponseContentChars &&
+									!toolCallCapAbortController?.signal.aborted &&
+									!contentCharCapAbortController?.signal.aborted
+								) {
+									// Text-only / read-only spiral safety net. The original gate was
+									// `completedToolCalls === 0` which catches text-before-any-toolcall
+									// spirals but misses read-only spirals (model keeps reading the file
+									// without ever attempting an edit — mimo-precision / qwen failure on
+									// structural-swap). The `editingToolCallSeen` flag persists across
+									// turns within the loop body and only flips when the model calls a
+									// mutating tool, so productive read-then-edit flows still finish
+									// naturally via the toolcall_end gate above.
 									cappedMessage = cloneAssistantMessageForToolCallCap(partialMessage);
 									contentCharCapAbortController?.abort();
 									const capped = await finishCappedAssistantMessage();
