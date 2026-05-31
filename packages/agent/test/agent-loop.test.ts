@@ -386,6 +386,145 @@ describe("agentLoop with AgentMessage", () => {
 		]);
 	});
 
+	it("prefers the tool-call cap over the content-char cap when both fire on the same toolcall_end", async () => {
+		const toolSchema = z.object({ value: z.string() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = { systemPrompt: [""], messages: [], tools: [tool] };
+		const mock = createMockModel();
+
+		const TOOL_CAP = 3;
+		// Each `toolcall_delta` carries 50 chars; the counter sees no other
+		// content. Set CHAR_CAP so it is first satisfied EXACTLY on
+		// `toolcall_delta` #3 — counter is 100 after #2 and 150 after #3 — which
+		// puts the char-cap predicate true on `toolcall_end` #3 (the cap check
+		// happens at `toolcall_end`, after the matching delta). The tool-call
+		// cap predicate is also first true on `toolcall_end` #3 (3 ≥ 3).
+		// Both caps therefore fire on the SAME `toolcall_end`.
+		const CHAR_CAP = 150;
+		const DELTA = "x".repeat(50);
+
+		let modelCalls = 0;
+		let firstRequestSignal: AbortSignal | undefined;
+		let emittedToolCalls = 0;
+
+		const makeToolCall = (index: number): AssistantMessage["content"][number] => ({
+			type: "toolCall",
+			id: `tool-${index}`,
+			name: "echo",
+			arguments: { value: String(index) },
+		});
+		const makeMessage = (count: number, stopReason: AssistantMessage["stopReason"] = "stop") =>
+			createAssistantMessage(
+				Array.from({ length: count }, (_, index) => makeToolCall(index + 1)),
+				stopReason,
+			);
+
+		const streamFn: StreamFn = (_model, _llmContext, options) => {
+			modelCalls++;
+			const stream = new AssistantMessageEventStream();
+			if (modelCalls > 1) {
+				queueMicrotask(() => {
+					const done = createAssistantMessage([{ type: "text", text: "done" }], "stop");
+					stream.push({ type: "start", partial: done });
+					stream.push({ type: "text_start", contentIndex: 0, partial: done });
+					stream.push({ type: "text_delta", contentIndex: 0, delta: "done", partial: done });
+					stream.push({ type: "text_end", contentIndex: 0, content: "done", partial: done });
+					stream.push({ type: "done", reason: "stop", message: done });
+				});
+				return stream;
+			}
+
+			queueMicrotask(async () => {
+				firstRequestSignal = options?.signal;
+				stream.push({ type: "start", partial: makeMessage(0) });
+				for (let index = 1; index <= 6; index++) {
+					if (options?.signal?.aborted) {
+						const aborted = createAssistantMessage([], "aborted");
+						stream.push({ type: "error", reason: "aborted", error: aborted });
+						return;
+					}
+					const partial = makeMessage(index);
+					const toolCall = partial.content[index - 1];
+					if (toolCall?.type !== "toolCall") throw new Error("Expected tool call");
+					stream.push({ type: "toolcall_start", contentIndex: index - 1, partial });
+					stream.push({
+						type: "toolcall_delta",
+						contentIndex: index - 1,
+						delta: DELTA,
+						partial,
+					});
+					stream.push({ type: "toolcall_end", contentIndex: index - 1, toolCall, partial });
+					emittedToolCalls++;
+					await Bun.sleep(0);
+				}
+				stream.push({ type: "done", reason: "toolUse", message: makeMessage(6, "toolUse") });
+			});
+			return stream;
+		};
+
+		const config: AgentLoopConfig = {
+			model: mock.model,
+			convertToLlm: identityConverter,
+			maxToolCallsPerTurn: TOOL_CAP,
+			maxResponseContentChars: CHAR_CAP,
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([createUserMessage("trigger both caps")], context, config, undefined, streamFn);
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		// Tool-call cap fires on `toolcall_end` #3 — the same event on which the
+		// content-char cap predicate is also satisfied (3 * 50 = 150 ≥ 100).
+		// First-fired cap (tool-call) wins: only TOOL_CAP tools actually execute
+		// in the cap-truncated batch, the request signal is aborted, and the
+		// producer eventually sees the abort (an extra push from the producer
+		// before the abort propagates is tolerated — the contract is that the
+		// consumer stops feeding new tool calls into the capped message after
+		// the cap fires, NOT that the producer must observe the abort instantly).
+		expect(executed).toEqual(["1", "2", "3"]);
+		expect(firstRequestSignal?.aborted).toBe(true);
+		expect(emittedToolCalls).toBeGreaterThanOrEqual(TOOL_CAP);
+
+		const messages = await stream.result();
+		const cappedAssistant = messages.find(
+			(m): m is AssistantMessage => m.role === "assistant" && m.content.some(b => b.type === "toolCall"),
+		);
+		expect(cappedAssistant).toBeDefined();
+		if (!cappedAssistant) return;
+		expect(cappedAssistant.stopReason).toBe("toolUse");
+		expect(cappedAssistant.content.filter(b => b.type === "toolCall")).toHaveLength(TOOL_CAP);
+
+		// The other cap's surface is suppressed: a single `message_end` event
+		// for the capped assistant turn (no double-finalize from the char-cap
+		// branch racing to also clone-and-finalize the same partial message),
+		// and the follow-up turn proceeds normally with exactly one extra
+		// model call.
+		const cappedMessageEnds = events.filter(
+			e =>
+				e.type === "message_end" &&
+				e.message.role === "assistant" &&
+				e.message.content.some(b => b.type === "toolCall"),
+		);
+		expect(cappedMessageEnds).toHaveLength(1);
+		expect(modelCalls).toBe(2);
+	});
+
 	it("injects and strips intent when intent tracing is enabled", async () => {
 		const toolSchema = z.object({ value: z.string() });
 		const executedParams: Record<string, unknown>[] = [];
