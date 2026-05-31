@@ -892,10 +892,16 @@ export function cliproxyModelManagerOptions(
 					mapModel: (_entry, defaults) => {
 						const id = defaults.id;
 						const isImage = id.startsWith("gpt-image-");
+						// `claude-` ids are OAuth-bound: CLIProxyAPI only proxies real
+						// Claude Code subscriptions, so any `claude-*` id surfaced here
+						// represents a reasoning-capable Anthropic model.
 						const isClaude = id.startsWith("claude-");
-						// gpt-5.* family (Codex via CLIProxyAPI) and codex-* / claude-* are
-						// reasoning-capable; image-gen models never are.
-						const isReasoningFamily = isClaude || /^(gpt-5\.|codex-)/.test(id);
+						// Reasoning-family match (case-insensitive):
+						//   - `gpt-5` exact, `gpt-5-...`, `gpt-5.x` (Codex via CLIProxyAPI)
+						//   - `codex-...`
+						// The boundary class `[-.]` and `$` anchor prevent matches like
+						// `gpt-5oxxx` or `gpt-50` from being misclassified.
+						const isReasoningFamily = isClaude || /^(gpt-5(?:[-.]|$)|codex-)/i.test(id);
 						return {
 							...defaults,
 							reasoning: !isImage && isReasoningFamily,
