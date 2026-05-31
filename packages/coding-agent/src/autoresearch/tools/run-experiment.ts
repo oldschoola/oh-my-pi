@@ -2,7 +2,7 @@ import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Text } from "@oh-my-pi/pi-tui";
-import { formatBytes } from "@oh-my-pi/pi-utils";
+import { formatBytes, procmgr } from "@oh-my-pi/pi-utils";
 import * as z from "zod/v4";
 import type { ToolDefinition } from "../../extensibility/extensions";
 import type { Theme } from "../../modes/theme/theme";
@@ -115,9 +115,14 @@ export function createRunExperimentTool(
 
 			const timeoutMs = Math.max(0, Math.floor((params.timeout_seconds ?? 600) * 1000));
 			let execution: ProcessExecutionResult;
+			// Resolve bash via the same platform-aware logic the bash tool uses.
+			// On Windows this picks Git Bash (`C:\Program Files\Git\bin\bash.exe`)
+			// rather than letting CreateProcess fall back to WSL's `bash.exe`,
+			// which fails on hosts without the WSL2 platform installed.
+			const shellPath = procmgr.getShellConfig().shell;
 			try {
 				execution = await executeProcess({
-					command: ["bash", "-lc", resolvedCommand],
+					command: [shellPath, "-lc", resolvedCommand],
 					cwd: ctx.cwd,
 					logPath: benchmarkLogPath,
 					timeoutMs,

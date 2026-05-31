@@ -1659,7 +1659,7 @@ export const SETTINGS_SCHEMA = {
 
 	"read.summarize.minTotalLines": {
 		type: "number",
-		default: 100,
+		default: 200,
 		ui: {
 			tab: "editing",
 			label: "Read Summary Minimum File Length",
