@@ -76,10 +76,26 @@ pub fn apply_bash_fixups(cmd: &str) -> BashFixupResult {
 }
 
 /// Apply the bash fixups to `cmd` with explicit options. See module docs.
+///
+/// # Multi-line carve-out
+///
+/// Multi-line input (containing `\n` or `\r`) returns verbatim *before*
+/// any rewrite or strip fires. This bypass is intentional and covers both
+/// the Windows-path pre-pass **and** the AST-driven head/tail/`2>&1`
+/// strip: heredoc bodies, `for`/`while`/`if` blocks, and other
+/// multi-statement scripts need quote- and scope-tracking that this
+/// single-line pre-pass deliberately does not implement, and a partial
+/// rewrite of only the first physical line would be worse than passing
+/// the original through untouched. The bash tool's primary input is a
+/// single command; agents that need a Windows drive path inside a
+/// multi-line block can quote it explicitly (POSIX double quotes
+/// preserve `\X` verbatim) or split the work into separate calls. See
+/// PR #1308 review (codex `r3308411805`) for the rationale.
 pub fn apply_bash_fixups_with_options(cmd: &str, options: BashFixupOptions) -> BashFixupResult {
-	// Multi-line input is out of scope: heredoc/loop bodies can't be safely
-	// rewritten and the agent rarely passes them as bash tool input. Bailing
-	// early also keeps the per-call cost bounded.
+	// Multi-line carve-out — see the function-level doc comment above for
+	// why heredocs and loop bodies are out of scope for both the
+	// Windows-path rewrite and the AST strip. Bailing early also keeps
+	// the per-call cost bounded.
 	if cmd.contains('\n') || cmd.contains('\r') {
 		return BashFixupResult { command: cmd.to_owned(), stripped: vec![], rewritten: vec![] };
 	}
