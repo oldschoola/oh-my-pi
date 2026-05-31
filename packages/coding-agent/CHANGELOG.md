@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-
+- Added a `workflow` tool that lets the model write deterministic JavaScript scripts to orchestrate multiple subagents with `agent()`, `parallel()`, `pipeline()`, `phase()`, and `log()` primitives. Scripts are sandboxed in `node:vm` and validated with `acorn` AST parsing. The tool is discoverable (`loadMode: discoverable`) and gated by the `workflow.enabled` setting (default true). ([#1544](https://github.com/can1357/oh-my-pi/issues/1544))
 - Added an `omp completions <bash|zsh|fish>` command that prints a shell completion script generated from the live command/flag metadata, so completions never drift from the actual CLI. Subcommands, flags, and enum values complete statically; `--model`/`--smol`/`--slow`/`--plan` resolve against the bundled model catalog and `--resume` against on-disk sessions via a hidden `__complete` helper.
 
 ### Fixed

@@ -54,6 +54,7 @@ import { loadSshTool } from "./ssh";
 import { type TodoPhase, TodoWriteTool } from "./todo-write";
 import { WriteTool } from "./write";
 import { YieldTool } from "./yield";
+import { WorkflowTool } from "./workflow";
 
 // Exa MCP tools (22 tools)
 
@@ -96,6 +97,7 @@ export * from "./todo-write";
 export * from "./tts";
 export * from "./write";
 export * from "./yield";
+export * from "./workflow";
 
 /** Tool type (AgentTool from pi-ai) */
 export type Tool = AgentTool<any, any, any>;
@@ -310,6 +312,7 @@ export const BUILTIN_TOOLS: Record<string, ToolFactory> = {
 	retain: MemoryRetainTool.createIf,
 	recall: MemoryRecallTool.createIf,
 	reflect: MemoryReflectTool.createIf,
+	workflow: WorkflowTool.createIf,
 };
 
 export const HIDDEN_TOOLS: Record<string, ToolFactory> = {
@@ -456,6 +459,7 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		if (name === "render_mermaid") return session.settings.get("renderMermaid.enabled");
 		if (name === "inspect_image") return session.settings.get("inspect_image.enabled");
 		if (name === "web_search") return session.settings.get("web_search.enabled");
+		if (name === "workflow") return session.settings.get("workflow.enabled");
 		// search_tool_bm25 is allowed when either legacy mcp.discoveryMode or new tools.discoveryMode is active.
 		if (name === "search_tool_bm25") return discoveryActive;
 		if (name === "browser") return session.settings.get("browser.enabled");

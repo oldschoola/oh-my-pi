@@ -9,6 +9,7 @@
       "python/robomp/web"
     ],
     "catalog": {
+      "acorn": "^8.16.0",
       "@agentclientprotocol/sdk": "0.22.1",
       "@anthropic-ai/sdk": "^0.99.0",
       "@babel/generator": "^7.29.7",

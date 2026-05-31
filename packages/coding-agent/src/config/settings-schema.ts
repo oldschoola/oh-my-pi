@@ -2293,11 +2293,15 @@ export const SETTINGS_SCHEMA = {
 				"Past soft TTL but within hard TTL, the tool returns the cached row and refreshes it in the background. Past hard TTL, the row is dropped. Default 7 days.",
 		},
 	},
-
 	"web_search.enabled": {
 		type: "boolean",
 		default: true,
 		ui: { tab: "tools", label: "Web Search", description: "Enable the web_search tool for web searching" },
+	},
+	"workflow.enabled": {
+		type: "boolean",
+		default: true,
+		ui: { tab: "tools", label: "Workflow", description: "Enable the workflow tool for dynamic multi-agent orchestration" },
 	},
 
 	"browser.enabled": {

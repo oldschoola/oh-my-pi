@@ -58,6 +58,7 @@
 		"@puppeteer/browsers": "catalog:",
 		"@types/turndown": "catalog:",
 		"@xterm/headless": "catalog:",
+		"acorn": "catalog:",
 		"chalk": "catalog:",
 		"diff": "catalog:",
 		"fflate": "catalog:",
