@@ -10,7 +10,9 @@ import type { Skill } from "../extensibility/skills";
 import type { GoalModeState, GoalRuntime } from "../goals";
 import { GoalTool } from "../goals/tools/goal-tool";
 import type { HindsightSessionState } from "../hindsight/state";
+import type { LocalProtocolOptions } from "../internal-urls";
 import { LspTool } from "../lsp";
+import type { MCPManager } from "../mcp";
 import type { MnemosyneSessionState } from "../mnemosyne/state";
 import type { PlanModeState } from "../plan-mode/state";
 import { type AgentRegistry, MAIN_AGENT_ID } from "../registry/agent-registry";
@@ -201,6 +203,10 @@ export interface ToolSession {
 	setTodoPhases?: (phases: TodoPhase[]) => void;
 	/** Whether MCP tool discovery is active for this session. */
 	isMCPDiscoveryEnabled?: () => boolean;
+	/** Parent MCP manager for headless subagents that proxy the parent's MCP tools instead of rediscovering. */
+	mcpManager?: MCPManager;
+	/** Parent local:// protocol root/session wiring for subagents. */
+	localProtocolOptions?: LocalProtocolOptions;
 	/** Get MCP tools activated by prior search_tool_bm25 calls. */
 	getSelectedMCPToolNames?: () => string[];
 	/** Merge MCP tool selections into the active session tool set. */

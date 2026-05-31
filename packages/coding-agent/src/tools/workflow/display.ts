@@ -1,5 +1,6 @@
 import type { AgentToolUpdateCallback } from "@oh-my-pi/pi-agent-core";
 import { Text } from "@oh-my-pi/pi-tui";
+import { replaceTabs, shortenPath, TRUNCATE_LENGTHS, truncateToWidth } from "../render-utils";
 import type { WorkflowMeta } from "./workflow.js";
 
 export type WorkflowAgentStatus = "queued" | "running" | "done" | "error" | "skipped";
@@ -120,7 +121,7 @@ export function renderWorkflowLines(snapshot: WorkflowSnapshot, options: Workflo
 		const complete = agents.length > 0 && done + errors + skipped === agents.length;
 		const marker = running > 0 || (!complete && snapshot.currentPhase === phase) ? "▶" : complete ? "✓" : " ";
 		lines.push(
-			`  ${marker} ${phase} ${done}/${agents.length}${running ? ` · ${running} running` : ""}${errors ? ` · ${errors} errors` : ""}${skipped ? ` · ${skipped} skipped` : ""}`,
+			`  ${marker} ${sanitizeLine(phase, TRUNCATE_LENGTHS.TITLE)} ${done}/${agents.length}${running ? ` · ${running} running` : ""}${errors ? ` · ${errors} errors` : ""}${skipped ? ` · ${skipped} skipped` : ""}`,
 		);
 
 		const visibleAgents = agents.slice(-maxAgents);
@@ -142,7 +143,7 @@ export function renderWorkflowLines(snapshot: WorkflowSnapshot, options: Workflo
 		}
 	}
 
-	for (const log of snapshot.logs.slice(-maxLogs)) lines.push(`  log: ${log}`);
+	for (const log of snapshot.logs.slice(-maxLogs)) lines.push(`  log: ${sanitizeLine(log, TRUNCATE_LENGTHS.LINE)}`);
 	return lines;
 }
 
@@ -175,12 +176,16 @@ function unique(values: string[]): string[] {
 }
 
 function shorten(value: string, max: number): string {
-	const text = value.replace(/\s+/g, " ").trim();
-	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+	return sanitizeLine(value, max);
 }
 
-export function preview(value: unknown, max = 80): string {
+export function preview(value: unknown, max = TRUNCATE_LENGTHS.CONTENT): string {
 	const text = typeof value === "string" ? value : JSON.stringify(value);
 	if (!text) return "";
-	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+	return sanitizeLine(text, max);
+}
+
+function sanitizeLine(value: string, max: number): string {
+	const text = replaceTabs(shortenPath(value)).replace(/\s+/g, " ").trim();
+	return truncateToWidth(text, max);
 }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parseWorkflowScript } from "../../src/tools/workflow/workflow";
+import { renderWorkflowLines } from "../../src/tools/workflow/display";
+import { parseWorkflowScript, runWorkflow } from "../../src/tools/workflow/workflow";
 
 const validScript = `export const meta = {
   name: 'demo_workflow',
@@ -76,9 +77,8 @@ describe("parseWorkflowScript", () => {
 	});
 
 	test("rejects template interpolation", () => {
-		expect(() => parseWorkflowScript("export const meta = { name: `demo_${id}`, description: 'desc' }")).toThrow(
-			/template interpolation not allowed/,
-		);
+		const interpolation = "export const meta = { name: `demo_$" + "{id}`, description: 'desc' }";
+		expect(() => parseWorkflowScript(interpolation)).toThrow(/template interpolation not allowed/);
 	});
 
 	test("rejects nondeterministic APIs", () => {
@@ -91,5 +91,71 @@ describe("parseWorkflowScript", () => {
 		expect(() =>
 			parseWorkflowScript("export const meta = { name: 'demo', description: 'desc' }\nreturn new Date()"),
 		).toThrow(/must be deterministic/);
+	});
+});
+
+describe("runWorkflow", () => {
+	const script = (body: string) => `export const meta = { name: 'runtime_demo', description: 'desc' }\n${body}`;
+
+	test("reports intentional null agent results as success", async () => {
+		const events: Array<{ failed: boolean; result: unknown }> = [];
+		const result = await runWorkflow(script("return await agent('return null')"), {
+			agent: { run: async () => null },
+			onAgentEnd: event => events.push({ failed: event.failed, result: event.result }),
+		});
+
+		expect(result.result).toBeNull();
+		expect(events).toEqual([{ failed: false, result: null }]);
+	});
+
+	test("rejects unsupported per-agent options instead of silently prompting", async () => {
+		const events: Array<{ failed: boolean; error?: string }> = [];
+		const result = await runWorkflow(script("return await agent('x', { model: 'slow' })"), {
+			agent: {
+				run: async () => {
+					throw new Error("agent should not run");
+				},
+			},
+			onAgentEnd: event => events.push({ failed: event.failed, error: event.error }),
+		});
+
+		expect(result.result).toBeNull();
+		expect(events[0]).toEqual({ failed: true, error: 'agent() option "model" is not supported by workflow' });
+	});
+
+	test("does not expose host process through constructors", async () => {
+		await expect(
+			runWorkflow(script("return Object.constructor('return process')()"), {
+				agent: { run: async () => "unused" },
+				scriptTimeoutMs: 100,
+			}),
+		).rejects.toThrow(/Code generation from strings disallowed|not defined/);
+	});
+
+	test("bounds synchronous script execution", async () => {
+		await expect(
+			runWorkflow(script("while (true) {}"), {
+				agent: { run: async () => "unused" },
+				scriptTimeoutMs: 10,
+			}),
+		).rejects.toThrow(/Script execution timed out|timed out/);
+	});
+});
+
+describe("renderWorkflowLines", () => {
+	test("sanitizes log lines before rendering", () => {
+		const [line] = renderWorkflowLines({
+			name: "demo",
+			phases: [],
+			logs: ["a\t".repeat(80)],
+			agents: [],
+			agentCount: 0,
+			runningCount: 0,
+			doneCount: 0,
+			errorCount: 0,
+		}).slice(-1);
+
+		expect(line).not.toContain("\t");
+		expect(line.length).toBeLessThanOrEqual(120);
 	});
 });

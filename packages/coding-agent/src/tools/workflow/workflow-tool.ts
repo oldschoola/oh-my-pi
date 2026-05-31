@@ -70,9 +70,18 @@ export class WorkflowTool implements AgentTool<typeof workflowSchema, WorkflowTo
 
 	formatApprovalDetails(args: unknown): string[] {
 		const params = args as Partial<WorkflowToolInput>;
-		const script = params.script ?? "";
-		const firstLine = script.split("\n")[0] ?? "";
-		return [firstLine];
+		const script = normalizeWorkflowScript(params.script ?? "");
+		try {
+			const { meta } = parseWorkflowScript(script);
+			const lines = [`${meta.name}: ${meta.description}`];
+			if (meta.phases?.length) {
+				lines.push(`Phases: ${meta.phases.map(phase => phase.title).join(" → ")}`);
+			}
+			return lines;
+		} catch {
+			const firstLine = script.split("\n")[0] ?? "";
+			return [firstLine];
+		}
 	}
 
 	async execute(
@@ -103,11 +112,25 @@ export class WorkflowTool implements AgentTool<typeof workflowSchema, WorkflowTo
 				cwd: this.#session.cwd,
 				args: params.args,
 				signal,
+				concurrency: this.#session.settings.get("workflow.maxConcurrency"),
+				scriptTimeoutMs: this.#session.settings.get("workflow.scriptTimeoutMs"),
 				session: {
 					settings: this.#session.settings,
 					authStorage: this.#session.authStorage,
 					modelRegistry: this.#session.modelRegistry,
 					taskDepth: (this.#session.taskDepth ?? 0) + 1,
+					hasUI: false,
+					eventBus: this.#session.eventBus,
+					agentRegistry: this.#session.agentRegistry,
+					parentTaskPrefix: this.#session.getAgentId?.() ?? undefined,
+					parentHindsightSessionState: this.#session.getHindsightSessionState?.(),
+					parentMnemosyneSessionState: this.#session.getMnemosyneSessionState?.(),
+					parentEvalSessionId: this.#session.getEvalSessionId?.() ?? undefined,
+					enableLsp: this.#session.enableLsp,
+					enableMCP: !this.#session.mcpManager,
+					mcpManager: this.#session.mcpManager,
+					localProtocolOptions: this.#session.localProtocolOptions,
+					telemetry: this.#session.getTelemetry?.(),
 				},
 				onLog(message) {
 					snapshot.logs.push(message);
@@ -134,7 +157,7 @@ export class WorkflowTool implements AgentTool<typeof workflowSchema, WorkflowTo
 						.reverse()
 						.find(item => item.label === event.label && item.status === "running");
 					if (agent) {
-						agent.status = event.error ? "error" : "done";
+						agent.status = event.failed ? "error" : "done";
 						if (event.error) agent.error = event.error;
 						agent.resultPreview = preview(event.result);
 					}

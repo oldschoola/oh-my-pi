@@ -19,12 +19,13 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
 	args?: unknown;
 	agent?: Pick<WorkflowAgent, "run">;
 	concurrency?: number;
+	scriptTimeoutMs?: number;
 	tokenBudget?: number | null;
 	signal?: AbortSignal;
 	onLog?: (message: string) => void;
 	onPhase?: (title: string) => void;
 	onAgentStart?: (event: { label: string; phase?: string; prompt: string }) => void;
-	onAgentEnd?: (event: { label: string; phase?: string; result: unknown; error?: string }) => void;
+	onAgentEnd?: (event: { label: string; phase?: string; result: unknown; failed: boolean; error?: string }) => void;
 }
 
 export interface WorkflowRunResult<T = unknown> {
@@ -40,8 +41,6 @@ export interface AgentOptions {
 	label?: string;
 	phase?: string;
 	schema?: unknown;
-	model?: string;
-	isolation?: "worktree";
 	agentType?: string;
 }
 
@@ -56,6 +55,43 @@ interface RuntimeState {
 type AnyNode = Node & { [key: string]: any; start: number; end: number };
 
 const DETERMINISM_BLOCKLIST = /\bDate\s*\.\s*now\b|\bMath\s*\.\s*random\b|\bnew\s+Date\s*\(\s*\)/;
+const DEFAULT_WORKFLOW_CONCURRENCY = 4;
+const DEFAULT_SCRIPT_TIMEOUT_MS = 5000;
+const SUPPORTED_AGENT_OPTION_KEYS = new Set<keyof AgentOptions>(["label", "phase", "schema", "agentType"]);
+const HARDEN_INTRINSICS_SCRIPT = `
+for (const value of [
+	Array,
+	Boolean,
+	Error,
+	JSON,
+	Map,
+	Math,
+	Number,
+	Object,
+	Promise,
+	Reflect,
+	RegExp,
+	Set,
+	String,
+	TypeError,
+]) Object.freeze(value);
+for (const value of [
+	Array.prototype,
+	Boolean.prototype,
+	Error.prototype,
+	Map.prototype,
+	Number.prototype,
+	Object.prototype,
+	Promise.prototype,
+	RegExp.prototype,
+	Set.prototype,
+	String.prototype,
+	TypeError.prototype,
+]) Object.freeze(value);
+Object.freeze(console);
+Object.freeze(process);
+Object.freeze(budget);
+`;
 
 export async function runWorkflow<T = unknown>(
 	script: string,
@@ -65,10 +101,8 @@ export async function runWorkflow<T = unknown>(
 	const { meta, body } = parseWorkflowScript(script);
 	const state: RuntimeState = { logs: [], phases: [], agentCount: 0, spent: 0 };
 	const agentRunner = options.agent ?? new WorkflowAgent(options);
-	const concurrency = Math.max(
-		1,
-		Math.min(options.concurrency ?? Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 8) - 2), 16),
-	);
+	const concurrency = Math.max(1, Math.min(options.concurrency ?? DEFAULT_WORKFLOW_CONCURRENCY, 16));
+	const scriptTimeoutMs = Math.max(1, Math.trunc(options.scriptTimeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS));
 	const limiter = createLimiter(concurrency);
 
 	const log = (message: string) => {
@@ -103,6 +137,7 @@ export async function runWorkflow<T = unknown>(
 			const label = requestedLabel || defaultAgentLabel(assignedPhase, state.agentCount);
 			options.onAgentStart?.({ label, phase: assignedPhase, prompt });
 			try {
+				validateAgentOptions(agentOptions);
 				throwIfAborted();
 				const result = await agentRunner.run(prompt, {
 					label,
@@ -112,13 +147,13 @@ export async function runWorkflow<T = unknown>(
 				});
 				throwIfAborted();
 				state.spent += estimateTokens(result);
-				options.onAgentEnd?.({ label, phase: assignedPhase, result });
+				options.onAgentEnd?.({ label, phase: assignedPhase, result, failed: false });
 				return result;
 			} catch (error) {
 				if (options.signal?.aborted) throw error;
 				const errorMessage = error instanceof Error ? error.message : String(error);
 				log(`agent ${label} failed: ${errorMessage}`);
-				options.onAgentEnd?.({ label, phase: assignedPhase, result: null, error: errorMessage });
+				options.onAgentEnd?.({ label, phase: assignedPhase, result: null, failed: true, error: errorMessage });
 				return null;
 			}
 		});
@@ -173,7 +208,7 @@ export async function runWorkflow<T = unknown>(
 		);
 	};
 
-	const context = vm.createContext({
+	const context = createWorkflowContext({
 		agent,
 		parallel,
 		pipeline,
@@ -181,28 +216,20 @@ export async function runWorkflow<T = unknown>(
 		phase,
 		args: options.args,
 		cwd: options.cwd ?? process.cwd(),
-		process: Object.freeze({ cwd: () => options.cwd ?? process.cwd() }),
+		process: Object.freeze({ cwd: hardenCallable(() => options.cwd ?? process.cwd()) }),
 		budget,
-		console: {
-			log,
-			info: log,
-			warn: (m: unknown) => log(`[warn] ${String(m)}`),
-			error: (m: unknown) => log(`[error] ${String(m)}`),
-		},
-		JSON,
-		Math,
-		Array,
-		Object,
-		String,
-		Number,
-		Boolean,
-		Set,
-		Map,
-		Promise,
+		console: Object.freeze({
+			log: hardenCallable((message: unknown) => log(String(message))),
+			info: hardenCallable((message: unknown) => log(String(message))),
+			warn: hardenCallable((message: unknown) => log(`[warn] ${String(message)}`)),
+			error: hardenCallable((message: unknown) => log(`[error] ${String(message)}`)),
+		}),
 	});
 
 	const wrapped = `(async () => {\n${body}\n})()`;
-	const result = await new vm.Script(wrapped, { filename: `${meta.name || "workflow"}.js` }).runInContext(context);
+	const result = await new vm.Script(wrapped, { filename: `${meta.name || "workflow"}.js` }).runInContext(context, {
+		timeout: scriptTimeoutMs,
+	});
 	return {
 		meta,
 		result: result as T,
@@ -317,6 +344,41 @@ function validateMeta(meta: unknown): asserts meta is WorkflowMeta {
 	}
 }
 
+function createWorkflowContext(globals: Record<string, unknown>): vm.Context {
+	const context = vm.createContext(Object.create(null), {
+		codeGeneration: { strings: false, wasm: false },
+	});
+	for (const [key, value] of Object.entries(globals)) {
+		context[key] = typeof value === "function" ? hardenCallable(value) : value;
+	}
+	new vm.Script(HARDEN_INTRINSICS_SCRIPT, { filename: "workflow-intrinsics.js" }).runInContext(context, {
+		timeout: 100,
+	});
+	return context;
+}
+
+function hardenCallable<T>(fn: T): T {
+	if (typeof fn === "function") {
+		Object.defineProperty(fn, "constructor", {
+			value: undefined,
+			configurable: false,
+			enumerable: false,
+			writable: false,
+		});
+		Object.setPrototypeOf(fn, null);
+		Object.freeze(fn);
+	}
+	return fn;
+}
+
+function validateAgentOptions(options: AgentOptions): void {
+	for (const key of Object.keys(options)) {
+		if (!SUPPORTED_AGENT_OPTION_KEYS.has(key as keyof AgentOptions)) {
+			throw new Error(`agent() option "${key}" is not supported by workflow`);
+		}
+	}
+}
+
 function createLimiter(limit: number) {
 	let active = 0;
 	const queue: Array<() => void> = [];
@@ -325,7 +387,11 @@ function createLimiter(limit: number) {
 		queue.shift()?.();
 	};
 	return async <T>(fn: () => Promise<T>): Promise<T> => {
-		if (active >= limit) await new Promise<void>(resolve => queue.push(resolve));
+		if (active >= limit) {
+			const { promise, resolve } = Promise.withResolvers<void>();
+			queue.push(resolve);
+			await promise;
+		}
 		active++;
 		try {
 			return await fn();
@@ -343,8 +409,6 @@ function buildAgentInstructions(phase: string | undefined, options: AgentOptions
 	const lines = [];
 	if (phase) lines.push(`Workflow phase: ${phase}`);
 	if (options.agentType) lines.push(`Act as workflow subagent type: ${options.agentType}`);
-	if (options.isolation) lines.push(`Requested isolation: ${options.isolation}`);
-	if (options.model) lines.push(`Requested model: ${options.model}`);
 	return lines.length ? lines.join("\n") : undefined;
 }
 

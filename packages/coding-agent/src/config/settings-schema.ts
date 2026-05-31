@@ -2300,11 +2300,31 @@ export const SETTINGS_SCHEMA = {
 	},
 	"workflow.enabled": {
 		type: "boolean",
-		default: true,
+		default: false,
 		ui: {
 			tab: "tools",
 			label: "Workflow",
 			description: "Enable the workflow tool for dynamic multi-agent orchestration",
+		},
+	},
+
+	"workflow.maxConcurrency": {
+		type: "number",
+		default: 4,
+		ui: {
+			tab: "tools",
+			label: "Workflow max concurrency",
+			description: "Maximum number of workflow subagents that can run concurrently",
+		},
+	},
+
+	"workflow.scriptTimeoutMs": {
+		type: "number",
+		default: 5000,
+		ui: {
+			tab: "tools",
+			label: "Workflow script timeout (ms)",
+			description: "Maximum synchronous execution time for a workflow script",
 		},
 	},
 

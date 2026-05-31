@@ -1,3 +1,5 @@
+import type { AgentIdentity, AgentTelemetryConfig } from "@oh-my-pi/pi-agent-core";
+import { recordHandoff, resolveTelemetry } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@oh-my-pi/pi-ai";
 import { prompt } from "@oh-my-pi/pi-utils";
 import { z } from "zod";
@@ -6,7 +8,10 @@ import { SETTINGS_SCHEMA, type SettingPath } from "../../config/settings-schema"
 import type { CustomTool } from "../../extensibility/custom-tools/types";
 import workflowSubagentPrompt from "../../prompts/system/workflow-subagent-prompt.md" with { type: "text" };
 import { type CreateAgentSessionOptions, createAgentSession } from "../../sdk";
+import type { AgentSession } from "../../session/agent-session";
 import { SessionManager } from "../../session/session-manager";
+import { TASK_SUBAGENT_LIFECYCLE_CHANNEL } from "../../task";
+import { buildOutputValidator, summarizeValidationFailure } from "../output-schema-validator";
 
 export interface WorkflowAgentOptions {
 	cwd?: string;
@@ -33,13 +38,22 @@ export interface StructuredOutputCapture<T = unknown> {
 	called: boolean;
 }
 
-function createStructuredOutputTool(capture: StructuredOutputCapture): CustomTool {
+function createStructuredOutputTool(capture: StructuredOutputCapture, schema: unknown): CustomTool {
+	const { validator, error } = buildOutputValidator(schema);
+	if (error) throw new Error(`Invalid structured_output schema: ${error}`);
 	return {
 		name: "structured_output",
 		label: "Structured Output",
 		description: "Return the final machine-readable result for this subagent task.",
 		parameters: z.object({}).passthrough(),
 		async execute(_toolCallId, params) {
+			if (validator) {
+				const result = validator.validate(params);
+				if (!result.success) {
+					const summary = summarizeValidationFailure(result, params, validator.requiredFields);
+					throw new Error(`structured_output failed schema validation: ${summary.message}`);
+				}
+			}
 			capture.value = params;
 			capture.called = true;
 			return {
@@ -70,6 +84,8 @@ export class WorkflowAgent {
 	readonly #baseTools: CustomTool[];
 	readonly #sessionOptions: Partial<CreateAgentSessionOptions>;
 	readonly #instructions?: string;
+	#runIndex = 0;
+
 	constructor(options: WorkflowAgentOptions = {}) {
 		this.#cwd = options.cwd ?? process.cwd();
 		this.#baseTools = options.tools ?? [];
@@ -82,17 +98,39 @@ export class WorkflowAgent {
 		const customTools: CustomTool[] = [...this.#baseTools, ...(options.tools ?? [])];
 
 		if (options.schema) {
-			customTools.push(createStructuredOutputTool(capture));
+			customTools.push(createStructuredOutputTool(capture, options.schema));
 		}
 
+		const runIndex = ++this.#runIndex;
+		const agentDisplayName = options.label ?? `workflow agent ${runIndex}`;
+		const parentTaskPrefix = this.#sessionOptions.parentTaskPrefix;
+		const agentId = `${parentTaskPrefix ? `${parentTaskPrefix}-` : ""}${sanitizeAgentId(agentDisplayName, runIndex)}`;
+
 		const { session } = await createAgentSession({
+			...this.#sessionOptions,
 			cwd: this.#cwd,
 			settings: createSubagentSettings(this.#sessionOptions.settings),
 			sessionManager: SessionManager.inMemory(),
 			customTools,
 			requireYieldTool: true,
 			taskDepth: this.#sessionOptions.taskDepth ?? 0,
-			...this.#sessionOptions,
+			hasUI: false,
+			parentTaskPrefix,
+			agentId,
+			agentDisplayName,
+			telemetry: createWorkflowSubagentTelemetry(this.#sessionOptions.telemetry, {
+				id: agentId,
+				name: agentDisplayName,
+				description: "Workflow subagent",
+			}),
+		});
+
+		await removeParentOwnedTools(session);
+		emitLifecycle(this.#sessionOptions, {
+			id: agentId,
+			agent: agentDisplayName,
+			status: "started",
+			index: runIndex - 1,
 		});
 
 		let removeAbortListener: (() => void) | undefined;
@@ -117,18 +155,35 @@ export class WorkflowAgent {
 
 			if (options.signal?.aborted) throw new Error("Subagent was aborted");
 
-			if (options.schema) {
-				if (!capture.called) {
-					throw new Error("Subagent finished without calling structured_output");
-				}
-				return capture.value;
-			}
-
-			return this.#lastAssistantText(session.messages);
+			const result = options.schema
+				? this.#structuredOutputValue(capture)
+				: this.#lastAssistantText(session.messages);
+			emitLifecycle(this.#sessionOptions, {
+				id: agentId,
+				agent: agentDisplayName,
+				status: "completed",
+				index: runIndex - 1,
+			});
+			return result;
+		} catch (error) {
+			emitLifecycle(this.#sessionOptions, {
+				id: agentId,
+				agent: agentDisplayName,
+				status: options.signal?.aborted ? "aborted" : "failed",
+				index: runIndex - 1,
+			});
+			throw error;
 		} finally {
 			removeAbortListener?.();
 			void session.dispose();
 		}
+	}
+
+	#structuredOutputValue(capture: StructuredOutputCapture): unknown {
+		if (!capture.called) {
+			throw new Error("Subagent finished without calling structured_output");
+		}
+		return capture.value;
 	}
 
 	#lastAssistantText(messages: unknown[]): string {
@@ -143,4 +198,51 @@ export class WorkflowAgent {
 		}
 		return "";
 	}
+}
+
+function createWorkflowSubagentTelemetry(
+	parentTelemetry: AgentTelemetryConfig | undefined,
+	agent: AgentIdentity,
+): AgentTelemetryConfig | undefined {
+	if (!parentTelemetry) return undefined;
+	const parentTelemetryHandle = resolveTelemetry(parentTelemetry, parentTelemetry.conversationId);
+	recordHandoff(parentTelemetryHandle, {
+		fromAgent: parentTelemetry.agent,
+		toAgent: agent,
+	});
+	return {
+		...parentTelemetry,
+		agent,
+		conversationId: undefined,
+	};
+}
+
+async function removeParentOwnedTools(session: AgentSession): Promise<void> {
+	const parentOwnedToolNames = new Set(["todo_write"]);
+	const activeToolNames = session.getActiveToolNames();
+	const filteredToolNames = activeToolNames.filter(name => !parentOwnedToolNames.has(name));
+	if (filteredToolNames.length !== activeToolNames.length) {
+		await session.setActiveToolsByName(filteredToolNames);
+	}
+}
+
+function emitLifecycle(
+	sessionOptions: Partial<CreateAgentSessionOptions>,
+	event: { id: string; agent: string; status: "started" | "completed" | "failed" | "aborted"; index: number },
+): void {
+	sessionOptions.eventBus?.emit(TASK_SUBAGENT_LIFECYCLE_CHANNEL, {
+		id: event.id,
+		agent: event.agent,
+		agentSource: "bundled",
+		status: event.status,
+		index: event.index,
+	});
+}
+
+function sanitizeAgentId(label: string, index: number): string {
+	const slug = label
+		.replace(/[^A-Za-z0-9_-]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 40);
+	return `${index}-${slug || "workflow-agent"}`;
 }

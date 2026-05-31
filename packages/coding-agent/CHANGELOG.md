@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- Added a `workflow` tool that lets the model write deterministic JavaScript scripts to orchestrate multiple subagents with `agent()`, `parallel()`, `pipeline()`, `phase()`, and `log()` primitives. Scripts are sandboxed in `node:vm` and validated with `acorn` AST parsing. The tool is discoverable (`loadMode: discoverable`) and gated by the `workflow.enabled` setting (default true). ([#1544](https://github.com/can1357/oh-my-pi/issues/1544))
+- Added a `workflow` tool that lets the model write deterministic JavaScript scripts to orchestrate multiple subagents with `agent()`, `parallel()`, `pipeline()`, `phase()`, and `log()` primitives. Scripts are sandboxed in `node:vm`, validated with `acorn` AST parsing, bounded by `workflow.maxConcurrency` / `workflow.scriptTimeoutMs`, and gated by the disabled-by-default `workflow.enabled` setting. ([#1544](https://github.com/can1357/oh-my-pi/issues/1544))
 
 ## [15.7.0] - 2026-05-31
 
