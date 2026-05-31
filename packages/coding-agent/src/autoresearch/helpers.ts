@@ -216,3 +216,7 @@ export async function tryGitPrefix(cwd: string): Promise<string> {
 		return "";
 	}
 }
+export function isAutoresearchShCommand(command: string): boolean {
+	const trimmed = command.trim().toLowerCase();
+	return trimmed === "bash autoresearch.sh" || trimmed === "./autoresearch.sh" || trimmed.endsWith("autoresearch.sh");
+}

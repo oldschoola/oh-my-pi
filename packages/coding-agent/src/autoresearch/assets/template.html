@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Autoresearch Dashboard</title>
+	<style>
+		:root {
+			--bg: #0f0f1a;
+			--fg: #e0e0e0;
+			--accent: #58a6ff;
+			--success: #3fb950;
+			--warning: #d29922;
+			--error: #f85149;
+			--muted: #8b949e;
+			--border: #30363d;
+			--card: #161b22;
+		}
+		* { box-sizing: border-box; }
+		body {
+			font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+			background: var(--bg);
+			color: var(--fg);
+			margin: 0;
+			padding: 1rem;
+			line-height: 1.5;
+		}
+		h1 { margin: 0 0 1rem; font-size: 1.25rem; color: var(--accent); }
+		#status {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.5rem;
+			font-size: 0.875rem;
+			color: var(--muted);
+			margin-bottom: 1rem;
+		}
+		#status .dot {
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: var(--muted);
+		}
+		#status.connected .dot { background: var(--success); }
+		#status.disconnected .dot { background: var(--error); }
+		#stats {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+			gap: 0.5rem;
+			margin-bottom: 1rem;
+		}
+		.stat-card {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 0.75rem;
+			font-size: 0.875rem;
+		}
+		.stat-card .label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; }
+		.stat-card .value { font-size: 1.125rem; font-weight: 600; }
+		#runs {
+			display: flex;
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+		.run-card {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 0.75rem;
+			font-size: 0.875rem;
+		}
+		.run-card .run-header {
+			display: flex;
+			gap: 0.75rem;
+			align-items: center;
+			margin-bottom: 0.25rem;
+		}
+		.run-card .run-id { color: var(--muted); }
+		.run-card .status {
+			font-weight: 600;
+			padding: 0 0.375rem;
+			border-radius: 4px;
+			font-size: 0.75rem;
+			text-transform: uppercase;
+		}
+		.run-card .status.keep { background: rgba(63, 185, 80, 0.15); color: var(--success); }
+		.run-card .status.discard { background: rgba(210, 153, 34, 0.15); color: var(--warning); }
+		.run-card .status.crash { background: rgba(248, 81, 73, 0.15); color: var(--error); }
+		.run-card .status.checks_failed { background: rgba(248, 81, 73, 0.15); color: var(--error); }
+		.run-card .metric { color: var(--accent); font-weight: 600; }
+		.run-card .description { color: var(--muted); }
+		#empty {
+			color: var(--muted);
+			text-align: center;
+			padding: 2rem;
+			font-size: 0.875rem;
+		}
+	</style>
+</head>
+<body>
+	<h1>Autoresearch Dashboard</h1>
+	<div id="status"><span class="dot"></span><span class="text">Connecting...</span></div>
+	<div id="stats">
+		<div class="stat-card"><div class="label">Runs</div><div class="value" id="stat-runs">0</div></div>
+		<div class="stat-card"><div class="label">Kept</div><div class="value" id="stat-kept">0</div></div>
+		<div class="stat-card"><div class="label">Best</div><div class="value" id="stat-best">-</div></div>
+		<div class="stat-card"><div class="label">Confidence</div><div class="value" id="stat-conf">-</div></div>
+	</div>
+	<div id="runs"></div>
+	<div id="empty">No runs yet.</div>
+
+	<script>
+		const source = new EventSource('/events');
+		const statusEl = document.getElementById('status');
+		const statusText = statusEl.querySelector('.text');
+		const runsEl = document.getElementById('runs');
+		const emptyEl = document.getElementById('empty');
+
+		let runs = [];
+		let session = null;
+
+		function updateStats() {
+			const current = runs.filter(r => session && r.segment === session.currentSegment);
+			const kept = current.filter(r => r.status === 'keep' && !r.flagged);
+			const best = kept.length > 0
+				? kept.reduce((a, b) => session && session.bestDirection === 'lower' ? (a.metric < b.metric ? a : b) : (a.metric > b.metric ? a : b))
+				: null;
+			document.getElementById('stat-runs').textContent = current.length;
+			document.getElementById('stat-kept').textContent = kept.length;
+			document.getElementById('stat-best').textContent = best ? best.metric : '-';
+			document.getElementById('stat-conf').textContent = session && session.confidence !== null ? session.confidence.toFixed(1) + 'x' : '-';
+			emptyEl.style.display = runs.length === 0 ? 'block' : 'none';
+		}
+
+		function renderRuns() {
+			runsEl.innerHTML = '';
+			for (const run of runs.slice().reverse()) {
+				const card = document.createElement('div');
+				card.className = 'run-card';
+				const header = document.createElement('div');
+				header.className = 'run-header';
+				header.innerHTML = `<span class="run-id">#${run.runNumber}</span><span class="status ${run.status}">${run.status}</span><span class="metric">${run.metric}</span>`;
+				const desc = document.createElement('div');
+				desc.className = 'description';
+				desc.textContent = run.description;
+				card.appendChild(header);
+				card.appendChild(desc);
+				runsEl.appendChild(card);
+			}
+			updateStats();
+		}
+
+		source.onopen = () => {
+			statusEl.className = 'connected';
+			statusText.textContent = 'Connected';
+		};
+		source.onerror = () => {
+			statusEl.className = 'disconnected';
+			statusText.textContent = 'Disconnected';
+		};
+		source.onmessage = (e) => {
+			const data = JSON.parse(e.data);
+			if (data.type === 'init') {
+				session = data.data.state;
+				runs = session.results || [];
+				renderRuns();
+			} else if (data.type === 'run') {
+				runs.push(data.data);
+				renderRuns();
+			} else if (data.type === 'session') {
+				session = data.data;
+				runs = session.results || [];
+				renderRuns();
+			}
+		};
+	</script>
+</body>
+</html>

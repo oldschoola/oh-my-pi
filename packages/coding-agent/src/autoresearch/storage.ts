@@ -449,6 +449,11 @@ export class AutoresearchStorage {
 		return this.getRunByIdRequired(runId);
 	}
 
+	updateRunCommitHash(runId: number, commitHash: string | null): RunRow {
+		this.#db.prepare("UPDATE runs SET commit_hash = ? WHERE id = ?").run(commitHash, runId);
+		return this.getRunByIdRequired(runId);
+	}
+
 	markRunCompleted(params: MarkRunCompletedParams): RunRow {
 		this.#db
 			.prepare(

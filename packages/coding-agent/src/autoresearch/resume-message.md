@@ -7,4 +7,5 @@ Continue the autoresearch loop now.
 {{/if}}
 - Continue from the most promising unfinished direction.
 - Keep iterating until interrupted or until the configured iteration cap is reached.
+- Auto-resume is limited to 20 turns per session to prevent infinite loops.
 - Preserve correctness and do not game the benchmark.
