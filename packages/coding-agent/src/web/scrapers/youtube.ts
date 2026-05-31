@@ -156,19 +156,15 @@ export const handleYouTube: SpecialHandler = async (
 	const installStartMs = installRequired ? performance.now() : 0;
 	if (installRequired) {
 		logger.warn("yt-dlp not found; installing on first use", { url });
-		notes.push("Installing yt-dlp on first use (downloading from GitHub)…");
 	}
 
 	const ytdlp = await ensureTool("yt-dlp", { signal, silent: true });
 	const installMs = installRequired && ytdlp ? performance.now() - installStartMs : 0;
 	if (installRequired && ytdlp) {
 		logger.warn("yt-dlp installed", { ms: installMs, path: ytdlp });
-		// Replace the "installing…" placeholder with the completed note
-		const placeholder = "Installing yt-dlp on first use (downloading from GitHub)…";
-		const idx = notes.indexOf(placeholder);
-		const doneNote = `Installed yt-dlp on first use (${(installMs / 1000).toFixed(1)}s) — subsequent YouTube fetches will skip this step`;
-		if (idx >= 0) notes[idx] = doneNote;
-		else notes.push(doneNote);
+		notes.push(
+			`Installed yt-dlp on first use (${(installMs / 1000).toFixed(1)}s) — subsequent YouTube fetches will skip this step`,
+		);
 	}
 
 	if (!ytdlp) {
