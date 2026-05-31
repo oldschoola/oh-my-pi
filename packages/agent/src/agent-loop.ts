@@ -9,6 +9,7 @@ import {
 	EventStream,
 	isZodSchema,
 	streamSimple,
+	type ToolChoice,
 	type ToolResultMessage,
 	type TSchema,
 	validateToolArguments,
@@ -503,6 +504,14 @@ async function runLoopBody(
 	// text_end/thinking_end). Names match common edit/write/patch tool names
 	// case-insensitively; benchmark-meaningful without hardcoding a single tool.
 	const editingToolCallSeen = { seen: false };
+	// Per-attempt force-tool-choice ref. Set by the spiral-cap branches inside
+	// `streamAssistantResponse` when the cap fires on a zero-edit response
+	// (kimi-class-only path — cap is only set via `resolveMaxResponseContentChars
+	// ForModel` for kimi/glm/qwen/mimo). The next assistant turn then runs with
+	// `tool_choice: "required"`, eliminating the zero-tool-retry loop where
+	// kimi rambles past the budget again without committing. Consumed and
+	// cleared at the top of the next streamAssistantResponse call.
+	const forceNextToolChoice: { value: ToolChoice | undefined } = { value: undefined };
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
 		let hasMoreToolCalls = true;
@@ -550,6 +559,7 @@ async function runLoopBody(
 					harmonyRetryAttempt,
 					contentCharCounter,
 					editingToolCallSeen,
+					forceNextToolChoice,
 				);
 				harmonyRetryAttempt = 0;
 				harmonyTruncateResumeCount = 0;
@@ -720,6 +730,7 @@ async function streamAssistantResponse(
 	harmonyRetryAttempt = 0,
 	contentCharCounter: { count: number } = { count: 0 },
 	editingToolCallSeen: { seen: boolean } = { seen: false },
+	forceNextToolChoice: { value: ToolChoice | undefined } = { value: undefined },
 ): Promise<AssistantMessage> {
 	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
 	let messages = context.messages;
@@ -781,7 +792,13 @@ async function streamAssistantResponse(
 				: AbortSignal.any(requestSignals);
 	const effectiveTemperature =
 		harmonyRetryAttempt > 0 && config.temperature !== undefined ? config.temperature + 0.05 : config.temperature;
-	const effectiveToolChoice = dynamicToolChoice ?? config.toolChoice;
+	// Per-attempt force-tool-choice override consumed at the call boundary so it
+	// applies to exactly one assistant turn and then auto-clears. Set by the
+	// spiral-cap branches below when the previous turn ended on a zero-edit
+	// cap-fire. Highest precedence — beats both the dynamic and static choice.
+	const forcedToolChoiceFromPrevCap = forceNextToolChoice.value;
+	forceNextToolChoice.value = undefined;
+	const effectiveToolChoice = forcedToolChoiceFromPrevCap ?? dynamicToolChoice ?? config.toolChoice;
 	const effectiveReasoning = dynamicReasoning ?? config.reasoning;
 
 	const chatStepNumber = stepCounter.count;
@@ -951,6 +968,33 @@ async function streamAssistantResponse(
 									maxResponseContentChars !== undefined
 								) {
 									contentCharCounter.count += event.delta.length;
+									// Delta-event spiral cap: kimi-class models can stay inside a
+									// single `thinking` block streaming deltas past the wall-clock
+									// timeout without ever firing `thinking_end`. The two `_end`-gated
+									// caps below then never get a chance to run. Trip the cap mid-
+									// stream when the budget is exhausted AND no editing tool has
+									// been seen this attempt — same gate as the spiral safety net at
+									// the close event, so productive read-then-edit flows are
+									// unaffected (they close blocks naturally well before the cap).
+									if (
+										!editingToolCallSeen.seen &&
+										contentCharCounter.count >= maxResponseContentChars &&
+										!toolCallCapAbortController?.signal.aborted &&
+										!contentCharCapAbortController?.signal.aborted
+									) {
+										cappedMessage = cloneAssistantMessageForToolCallCap(partialMessage);
+										// Tell the next assistant turn to force a tool call — kimi-class
+										// otherwise spirals again under the retry-context user prompt
+										// instead of committing. Only fires on the zero-edit path
+										// (gated by `!editingToolCallSeen.seen` above) so productive
+										// flows are never forced. Tested escalating to `{type: "tool",
+										// name: "edit"}` on consecutive cap-fires (runs #229–231); net
+										// negative — mean 0.917 vs 0.969 for plain "required".
+										forceNextToolChoice.value = "required";
+										contentCharCapAbortController?.abort();
+										const capped = await finishCappedAssistantMessage();
+										if (capped) return capped;
+									}
 								}
 								if (event.type === "toolcall_end") {
 									// Mark editing/mutating tool calls so the text-only spiral cap
@@ -999,6 +1043,10 @@ async function streamAssistantResponse(
 									// mutating tool, so productive read-then-edit flows still finish
 									// naturally via the toolcall_end gate above.
 									cappedMessage = cloneAssistantMessageForToolCallCap(partialMessage);
+									// Same kimi-class force-tool-choice signal as the delta-event
+									// branch above — gated on the zero-edit path so productive flows
+									// are never forced.
+									forceNextToolChoice.value = "required";
 									contentCharCapAbortController?.abort();
 									const capped = await finishCappedAssistantMessage();
 									if (capped) return capped;
