@@ -462,6 +462,22 @@ function cloneAssistantMessageForToolCallCap(message: AssistantMessage): Assista
 	};
 }
 
+/**
+ * Drive one invocation of the agent loop end-to-end: outer steering / follow-up
+ * loop wrapping the inner per-turn loop that streams an assistant response,
+ * executes any tool calls, and decides whether to continue.
+ *
+ * Per-attempt content-char accumulator: the `contentCharCounter` declared
+ * below is intentionally allocated **once per `runLoopBody`** and threaded
+ * through every `streamAssistantResponse` call in this loop. That makes
+ * `maxResponseContentChars` an end-to-end budget for the whole agent
+ * invocation rather than a per-individual-response budget — without this,
+ * kimi-class rambling spread across many cheap turns never trips a
+ * per-response cap. Cap precedence on a `toolcall_end` that satisfies both
+ * limits at once is handled inside `streamAssistantResponse`: the
+ * `maxToolCallsPerTurn` branch is checked first and returns early, so the
+ * `maxResponseContentChars` branch's abort path stays unfired.
+ */
 async function runLoopBody(
 	currentContext: AgentContext,
 	newMessages: AgentMessage[],
@@ -478,10 +494,7 @@ async function runLoopBody(
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 	let harmonyRetryAttempt = 0;
 	let harmonyTruncateResumeCount = 0;
-	// Per-attempt content-char accumulator: shared across every `streamAssistantResponse`
-	// call in this loop body so `maxResponseContentChars` is enforced over the entire
-	// agent invocation, not per-individual-response. Without this kimi-class rambling
-	// across many cheap turns never trips a per-response cap.
+	// See `runLoopBody` docstring for the per-attempt content-char accumulator contract.
 	const contentCharCounter = { count: 0 };
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
