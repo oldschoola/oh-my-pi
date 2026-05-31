@@ -517,7 +517,7 @@ export function resolveToolCallBatchCapForModel(model: Model | undefined): numbe
  * chars) fits comfortably, while runaway monologues (~80 KB chars at peak) trip
  * the abort. Tunable via the new `Agent.maxResponseContentChars` setter.
  */
-export const KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS = 12000;
+export const KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS = 18000;
 
 export function resolveMaxResponseContentCharsForModel(model: Model | undefined): number | undefined {
 	return isKimiClassModel(model) ? KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS : undefined;
