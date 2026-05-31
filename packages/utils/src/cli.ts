@@ -342,11 +342,36 @@ function renderCommandBody(lines: string[], Cmd: CommandCtor): void {
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-/** A lazily-loaded command: canonical name, loader, and optional aliases. */
+/**
+ * A lazily-loaded command: canonical name, loader, and optional aliases.
+ *
+ * Provide `description` (and, for the one default command, `default: true`)
+ * to let the root-help renderer build its command list without importing
+ * every command module. Skipping those imports is the dominant savings on
+ * `<bin> --help` cold start — each command's transitive module graph is
+ * otherwise paid in full even though only its name + description appear in
+ * the help table.
+ */
 export interface CommandEntry {
 	name: string;
 	load: () => Promise<CommandCtor>;
 	aliases?: string[];
+	/**
+	 * Static description shown in the root-help command list. When set,
+	 * `loadAllCommands` does NOT import the command module during help
+	 * rendering. Keep this in sync with the command class's
+	 * `static description` — there is no runtime cross-check.
+	 */
+	description?: string;
+	/**
+	 * Marks the implicit default command — the one rendered inline with
+	 * its full flag/args/example body. Its module is always imported
+	 * during help rendering so the body can be displayed. At most one
+	 * entry should set this; the corresponding class should also carry
+	 * `static hidden = true` so it does not also appear in the command
+	 * list section.
+	 */
+	default?: boolean;
 }
 
 export interface RunOptions {
@@ -392,17 +417,20 @@ export async function run(opts: RunOptions): Promise<void> {
 		return;
 	}
 
-	// Per-command help
+	// Per-command help — load ONLY the targeted subcommand. `renderCommandHelp`
+	// reads the class's flags / args / examples, none of which live on the
+	// metadata stubs `loadAllCommands` synthesizes for unloaded entries; calling
+	// it here would also re-import every command in the registry just to throw
+	// the bulk away. One-entry load matches the work the renderer actually
+	// performs.
 	if (commandArgv.includes("--help") || commandArgv.includes("-h")) {
-		const config = await loadAllCommands(opts);
-		// Resolve aliases for help too
 		const entry = findEntry(opts.commands, commandId);
-		const Cmd = entry ? config.commands.get(entry.name) : undefined;
-		if (Cmd) {
-			renderCommandHelp(bin, entry!.name, Cmd);
-		} else {
+		if (!entry) {
 			process.stderr.write(`Unknown command: ${commandId}\n`);
+			return;
 		}
+		const Cmd = await entry.load();
+		renderCommandHelp(bin, entry.name, Cmd);
 		return;
 	}
 
@@ -421,12 +449,36 @@ export async function run(opts: RunOptions): Promise<void> {
 	await instance.run();
 }
 
-/** Resolve all command loaders for help/alias display. */
+/**
+ * Resolve commands for help / alias display.
+ *
+ * For each entry:
+ *  - if it carries a `description` AND is not the default, register a
+ *    metadata-only stub (no module import — saves the entry's transitive
+ *    module-graph load on every `<bin> --help` invocation);
+ *  - otherwise, import the module so its full `CommandCtor` is available
+ *    (the default command's body is rendered inline; entries without a
+ *    static description fall back to reading it off the loaded class).
+ *
+ * The stub satisfies the root-help renderer because it only reads
+ * `.description` and `.hidden` from non-default entries.
+ */
 async function loadAllCommands(opts: RunOptions): Promise<CliConfig> {
 	const commands = new Map<string, CommandCtor>();
-	const loaded = await Promise.all(opts.commands.map(async e => [e.name, await e.load()] as const));
-	for (const [name, Cmd] of loaded) {
-		commands.set(name, Cmd);
-	}
+	await Promise.all(
+		opts.commands.map(async e => {
+			if (e.default || e.description === undefined) {
+				commands.set(e.name, await e.load());
+			} else {
+				// Metadata-only stub. Cast through unknown because we
+				// satisfy only the runtime surface the renderer reads
+				// (`description`, `hidden`) — never `new`'d.
+				commands.set(e.name, {
+					description: e.description,
+					hidden: false,
+				} as unknown as CommandCtor);
+			}
+		}),
+	);
 	return { bin: opts.bin, version: opts.version, commands };
 }

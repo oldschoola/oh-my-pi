@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+
+- Sped up `omp --help` and every `omp <subcommand> --help` invocation. `--help` median wall time drops from ~1820 ms to ~1343 ms (-26%) on this host; per-subcommand help drops from ~1815 ms to ~533 ms (-71%). The root-help renderer no longer imports every command module just to read its description — descriptions are now lifted to the registry in `cli-commands.ts` and consumed statically. The `launch` command additionally defers its heavy runtime imports (`runRootCommand`, `parseArgs`, ACP terminal auth) into the `run()` body, and reads `THINKING_EFFORTS` from `@oh-my-pi/pi-ai/model-thinking` instead of the package barrel (the barrel re-exports models.json + every provider for the sake of one 5-string constant).
 
 ## [15.7.4] - 2026-05-31
 

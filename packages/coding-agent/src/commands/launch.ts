@@ -2,12 +2,22 @@
  * Root command for the coding agent CLI.
  */
 
-import { THINKING_EFFORTS } from "@oh-my-pi/pi-ai";
+// Import THINKING_EFFORTS from the dedicated subpath instead of the package
+// barrel. The barrel re-exports the entire pi-ai surface (model registry,
+// providers, models.json — ~540 ms cold) for the sake of one 5-string
+// constant the help renderer needs at class-declaration time. The subpath
+// resolves the same value in ~7 ms.
+import { THINKING_EFFORTS } from "@oh-my-pi/pi-ai/model-thinking";
 import { APP_NAME } from "@oh-my-pi/pi-utils";
 import { Args, Command, Flags } from "@oh-my-pi/pi-utils/cli";
-import { parseArgs } from "../cli/args";
-import { runRootCommand } from "../main";
-import { prepareAcpTerminalAuthArgs } from "../modes/acp/terminal-auth";
+
+// Heavy imports — `parseArgs`, `runRootCommand`, and `prepareAcpTerminalAuthArgs`
+// transitively pull in the entire agent runtime (sdk, mcp, lsp, session-manager,
+// model registry, tool tree). Loading that graph eagerly costs ~1.5 s on cold
+// disk. The help renderer reads this module to display the default command's
+// inline body but never instantiates the class, so the heavy graph is paid for
+// no user-observable work on every `omp --help` / `omp <subcommand> --help`.
+// Deferred into `run()` they are only paid when the agent actually launches.
 
 export default class Index extends Command {
 	static description = "AI coding assistant";
@@ -152,6 +162,11 @@ export default class Index extends Command {
 	static strict = false;
 
 	async run(): Promise<void> {
+		const [{ parseArgs }, { runRootCommand }, { prepareAcpTerminalAuthArgs }] = await Promise.all([
+			import("../cli/args"),
+			import("../main"),
+			import("../modes/acp/terminal-auth"),
+		]);
 		const { args } = prepareAcpTerminalAuthArgs(this.argv);
 		const parsed = parseArgs(args);
 		await runRootCommand(parsed, args);
