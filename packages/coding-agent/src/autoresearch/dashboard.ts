@@ -1,10 +1,10 @@
 import { matchesKey, replaceTabs, Text, truncateToWidth, visibleWidth } from "@oh-my-pi/pi-tui";
 import type { Theme } from "../modes/theme/theme";
+import type { BrowserDashboardController } from "./browser-dashboard";
 import { formatElapsed, formatNum, isBetter } from "./helpers";
 import { currentResults, findBaselineMetric, findBaselineRunNumber, findBaselineSecondary } from "./state";
 import type { AutoresearchRuntime, DashboardController, ExperimentResult, ExperimentState } from "./types";
-
-export function createDashboardController(): DashboardController {
+export function createDashboardController(browserDashboard?: BrowserDashboardController): DashboardController {
 	let overlayTui: { requestRender(): void } | null = null;
 	let spinnerTimer: NodeJS.Timeout | undefined;
 	let spinnerFrame = 0;
@@ -21,6 +21,24 @@ export function createDashboardController(): DashboardController {
 		}
 	};
 
+	const broadcastToBrowser = (runtime: AutoresearchRuntime): void => {
+		if (!browserDashboard?.isRunning()) return;
+		browserDashboard.broadcast("session", {
+			name: runtime.state.name,
+			goal: runtime.state.goal,
+			metricName: runtime.state.metricName,
+			metricUnit: runtime.state.metricUnit,
+			bestDirection: runtime.state.bestDirection,
+			currentSegment: runtime.state.currentSegment,
+			maxExperiments: runtime.state.maxExperiments,
+			results: runtime.state.results,
+			confidence: runtime.state.confidence,
+			branch: runtime.state.branch,
+			baselineCommit: runtime.state.baselineCommit,
+			notes: runtime.state.notes,
+		});
+	};
+
 	return {
 		clear(ctx): void {
 			clear();
@@ -34,6 +52,7 @@ export function createDashboardController(): DashboardController {
 			const state = runtime.state;
 			if (!shouldShowDashboard(runtime, state)) {
 				ctx.ui.setWidget("autoresearch", undefined);
+				broadcastToBrowser(runtime);
 				return;
 			}
 
@@ -51,6 +70,7 @@ export function createDashboardController(): DashboardController {
 				}
 				return new Text(renderCollapsedLine(runtime, state, theme), 0, 0);
 			});
+			broadcastToBrowser(runtime);
 		},
 		async showOverlay(ctx, runtime): Promise<void> {
 			if (!ctx.hasUI || !shouldShowDashboard(runtime, runtime.state)) return;
@@ -119,6 +139,7 @@ export function createDashboardController(): DashboardController {
 				{ overlay: true },
 			);
 		},
+		browserDashboard,
 	};
 }
 

@@ -4,10 +4,14 @@ import type { AutocompleteItem } from "@oh-my-pi/pi-tui";
 import { logger, prompt } from "@oh-my-pi/pi-utils";
 import type { ExtensionContext, ExtensionFactory } from "../extensibility/extensions";
 import * as git from "../utils/git";
+import { createBrowserDashboardController } from "./browser-dashboard";
 import commandResumeTemplate from "./command-resume.md" with { type: "text" };
+import { compactJsonl } from "./compaction";
 import { createDashboardController } from "./dashboard";
 import { ensureAutoresearchBranch } from "./git";
 import { formatNum } from "./helpers";
+import { readEvoConfig } from "./jsonl";
+import { getRecommendation, populationStateFromJson } from "./population";
 import promptTemplate from "./prompt.md" with { type: "text" };
 import setupPromptTemplate from "./prompt-setup.md" with { type: "text" };
 import resumeMessageTemplate from "./resume-message.md" with { type: "text" };
@@ -29,10 +33,12 @@ import { createUpdateNotesTool } from "./tools/update-notes";
 import type { AutoresearchRuntime, ExperimentResult, PendingRunSummary } from "./types";
 
 const EXPERIMENT_TOOL_NAMES = ["init_experiment", "run_experiment", "log_experiment", "update_notes"];
+const MAX_AUTORESUME_TURNS = 20;
 
 export const createAutoresearchExtension: ExtensionFactory = api => {
 	const runtimeStore = createRuntimeStore();
-	const dashboard = createDashboardController();
+	const browserDashboard = createBrowserDashboardController();
+	const dashboard = createDashboardController(browserDashboard);
 
 	const getSessionKey = (ctx: ExtensionContext): string => ctx.sessionManager.getSessionId();
 	const getRuntime = (ctx: ExtensionContext): AutoresearchRuntime => runtimeStore.ensure(getSessionKey(ctx));
@@ -170,6 +176,20 @@ export const createAutoresearchExtension: ExtensionFactory = api => {
 				return;
 			}
 
+			if (trimmed === "export") {
+				try {
+					await browserDashboard.start(ctx.cwd);
+					const url = browserDashboard.getUrl();
+					ctx.ui.notify(`Browser dashboard: ${url}`, "info");
+				} catch (err) {
+					ctx.ui.notify(
+						`Failed to start browser dashboard: ${err instanceof Error ? err.message : String(err)}`,
+						"error",
+					);
+				}
+				return;
+			}
+
 			const goalArg = trimmed.length > 0 ? trimmed : null;
 			const branchResult = await ensureAutoresearchBranch(api, ctx.cwd, goalArg ?? runtime.goal);
 			if (!branchResult.ok) {
@@ -264,6 +284,11 @@ export const createAutoresearchExtension: ExtensionFactory = api => {
 			runtime.autoResumeArmed = false;
 			return;
 		}
+		// Auto-resume limit
+		if (runtime.experimentsThisSession >= MAX_AUTORESUME_TURNS) {
+			logger.info("Auto-resume limit reached", { experimentsThisSession: runtime.experimentsThisSession });
+			return;
+		}
 		const { session } = await loadActiveSession(ctx);
 		const storage = session ? await openAutoresearchStorageIfExists(ctx.cwd) : null;
 		const pendingRow = session && storage ? storage.getPendingRun(session.id) : null;
@@ -278,6 +303,7 @@ export const createAutoresearchExtension: ExtensionFactory = api => {
 		}
 		runtime.autoResumeArmed = false;
 		runtime.lastAutoResumePendingRunNumber = pendingRun?.runNumber ?? null;
+		runtime.experimentsThisSession += 1;
 		api.sendMessage(
 			{
 				customType: "autoresearch-resume",
@@ -310,16 +336,67 @@ export const createAutoresearchExtension: ExtensionFactory = api => {
 			await api.setActiveTools(api.getActiveTools().filter(name => !experimentTools.has(name)));
 			return;
 		}
+
 		const storage = await openAutoresearchStorageIfExists(ctx.cwd);
 		if (session && storage) {
 			runtime.state = buildExperimentState(session, storage.listLoggedRuns(session.id));
 		}
+		const state = runtime.state;
+
+		// Deterministic compaction before building prompt
+		if (session && storage) {
+			try {
+				compactJsonl(ctx.cwd);
+			} catch {
+				// Best effort
+			}
+		}
+
+		// Population guidance
+		let populationHint = "";
+		try {
+			const popPath = path.join(ctx.cwd, "autoresearch.population.json");
+			if (fs.existsSync(popPath)) {
+				const popJson = fs.readFileSync(popPath, "utf8");
+				const population = populationStateFromJson(popJson);
+				if (population) {
+					const rec = getRecommendation(population, state);
+					if (rec) {
+						populationHint = `Population guidance: ${rec.type} — ${rec.reason}`;
+					}
+				}
+			}
+		} catch {
+			// Best effort
+		}
+
+		// Read autoresearch.md and autoresearch.ideas.md
+		let autoresearchMd = "";
+		let autoresearchIdeasMd = "";
+		try {
+			const mdPath = path.join(ctx.cwd, "autoresearch.md");
+			if (fs.existsSync(mdPath)) {
+				autoresearchMd = fs.readFileSync(mdPath, "utf8");
+			}
+		} catch {
+			// Best effort
+		}
+		try {
+			const ideasPath = path.join(ctx.cwd, "autoresearch.ideas.md");
+			if (fs.existsSync(ideasPath)) {
+				autoresearchIdeasMd = fs.readFileSync(ideasPath, "utf8");
+			}
+		} catch {
+			// Best effort
+		}
+
+		// Read autoresearch.config.json
+		const evoConfig = readEvoConfig(ctx.cwd);
 		const pendingRow = session && storage ? storage.getPendingRun(session.id) : null;
 		const pendingRun = pendingRunSummaryFromRow(pendingRow);
 		runtime.lastRunSummary = pendingRun;
 		runtime.lastRunDuration = pendingRun?.durationSeconds ?? runtime.lastRunDuration;
 		runtime.lastRunAsi = pendingRun?.parsedAsi ?? runtime.lastRunAsi;
-		const state = runtime.state;
 		const currentSegmentResults = currentResults(state.results, state.currentSegment);
 		const baselineMetric = findBaselineMetric(state.results, state.currentSegment);
 		const baselineRunNumber = findBaselineRunNumber(state.results, state.currentSegment);
@@ -366,6 +443,10 @@ export const createAutoresearchExtension: ExtensionFactory = api => {
 						branch: currentBranch ?? "",
 						has_baseline_warning: baselineWarning !== null,
 						baseline_warning: baselineWarning ?? "",
+						has_autoresearch_md: autoresearchMd.trim().length > 0,
+						autoresearch_md: autoresearchMd,
+						has_autoresearch_ideas_md: autoresearchIdeasMd.trim().length > 0,
+						autoresearch_ideas_md: autoresearchIdeasMd,
 					}),
 				],
 			};
@@ -406,6 +487,14 @@ export const createAutoresearchExtension: ExtensionFactory = api => {
 						pendingRun?.parsedPrimary !== null && pendingRun?.parsedPrimary !== undefined
 							? formatNum(pendingRun.parsedPrimary, state.metricUnit)
 							: null,
+					has_autoresearch_md: autoresearchMd.trim().length > 0,
+					autoresearch_md: autoresearchMd,
+					has_autoresearch_ideas_md: autoresearchIdeasMd.trim().length > 0,
+					autoresearch_ideas_md: autoresearchIdeasMd,
+					has_population_hint: populationHint.length > 0,
+					population_hint: populationHint,
+					has_evo_config: evoConfig !== null,
+					evo_config: evoConfig ? JSON.stringify(evoConfig, null, 2) : "",
 				}),
 			],
 		};
@@ -462,8 +551,6 @@ const LEGACY_ARTIFACTS = [
 	"autoresearch.checks.sh",
 	"autoresearch.program.md",
 	"autoresearch.ideas.md",
-	"autoresearch.jsonl",
-	"autoresearch.config.json",
 	".autoresearch",
 ];
 

@@ -1,5 +1,4 @@
 import * as path from "node:path";
-
 import { Text } from "@oh-my-pi/pi-tui";
 import * as z from "zod/v4";
 import type { ToolDefinition } from "../../extensibility/extensions";
@@ -8,10 +7,11 @@ import { replaceTabs, truncateToWidth } from "../../tools/render-utils";
 import * as git from "../../utils/git";
 import { parseWorkDirDirtyPaths } from "../git";
 import { dedupeStrings, normalizePathSpec } from "../helpers";
+import { readEvoConfig, writeJsonlConfig } from "../jsonl";
+import { createFamily, createPopulationState, populationStateToJson } from "../population";
 import { buildExperimentState } from "../state";
 import { openAutoresearchStorage, type SessionRow } from "../storage";
 import type { AutoresearchToolFactoryOptions, ExperimentState } from "../types";
-
 export const HARNESS_FILENAME = "autoresearch.sh";
 export const DEFAULT_HARNESS_COMMAND = `bash ${HARNESS_FILENAME}`;
 const HARNESS_COMMIT_TITLE = "autoresearch: harness setup";
@@ -88,6 +88,16 @@ export function createInitExperimentTool(
 				}
 			}
 
+			// Pre-write population.json so it gets included in the harness auto-commit
+			const prePopulation = createPopulationState();
+			const preFamily = createFamily(params.name, direction);
+			prePopulation.families.push(preFamily);
+			prePopulation.activeFamilyId = preFamily.id;
+			try {
+				await Bun.write(path.join(ctx.cwd, "autoresearch.population.json"), populationStateToJson(prePopulation));
+			} catch {
+				// Best effort
+			}
 			let harnessCommitted = false;
 			let commitWarning: string | null = null;
 			if (requiresHarness && onAutoresearchBranch) {
@@ -165,6 +175,13 @@ export function createInitExperimentTool(
 			runtime.lastRunArtifactDir = null;
 			runtime.lastRunNumber = null;
 			runtime.lastRunSummary = null;
+
+			// Write JSONL config if present
+			const evoConfig = readEvoConfig(ctx.cwd);
+			const effectiveMaxIterations = maxIterations ?? evoConfig?.maxIterations ?? null;
+			if (evoConfig) {
+				writeJsonlConfig(ctx.cwd, { ...evoConfig, maxIterations: effectiveMaxIterations ?? undefined });
+			}
 			options.dashboard.updateWidget(ctx, runtime);
 			options.dashboard.requestRender();
 

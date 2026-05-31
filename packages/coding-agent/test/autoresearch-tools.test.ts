@@ -6,7 +6,7 @@ import type { ImageContent, TextContent } from "@oh-my-pi/pi-ai";
 import { Snowflake } from "@oh-my-pi/pi-utils";
 import { $ } from "bun";
 import { createSessionRuntime } from "../src/autoresearch/state";
-import { openAutoresearchStorage } from "../src/autoresearch/storage";
+import { closeAllAutoresearchStorages, openAutoresearchStorage } from "../src/autoresearch/storage";
 import { createInitExperimentTool } from "../src/autoresearch/tools/init-experiment";
 import { createLogExperimentTool } from "../src/autoresearch/tools/log-experiment";
 import { createRunExperimentTool } from "../src/autoresearch/tools/run-experiment";
@@ -96,8 +96,10 @@ describe("init_experiment", () => {
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride;
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		delete process.env.OMP_AUTORESEARCH_DB_DIR;
+		closeAllAutoresearchStorages();
+		await Bun.sleep(500);
 		fs.rmSync(dbOverride, { recursive: true, force: true });
 	});
 
@@ -275,9 +277,10 @@ describe("run_experiment", () => {
 		dbOverride = makeTempDir("pi-autoresearch-run-db");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride;
 	});
-
-	afterEach(() => {
+	afterEach(async () => {
 		delete process.env.OMP_AUTORESEARCH_DB_DIR;
+		closeAllAutoresearchStorages();
+		await Bun.sleep(500);
 		fs.rmSync(dbOverride, { recursive: true, force: true });
 	});
 
@@ -381,9 +384,10 @@ describe("log_experiment", () => {
 		dbOverride = makeTempDir("pi-autoresearch-log-db");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride;
 	});
-
-	afterEach(() => {
+	afterEach(async () => {
 		delete process.env.OMP_AUTORESEARCH_DB_DIR;
+		closeAllAutoresearchStorages();
+		await Bun.sleep(500);
 		fs.rmSync(dbOverride, { recursive: true, force: true });
 	});
 
@@ -625,12 +629,14 @@ describe("log_experiment", () => {
 			undefined,
 			createCtx(dir),
 		);
+		await Bun.sleep(200);
 		// Pre-existing file untouched
 		expect(fs.readFileSync(path.join(dir, "preexisting.txt"), "utf8")).toBe("leave me\n");
 		// New untracked file removed
 		expect(fs.existsSync(path.join(dir, "src", "new.ts"))).toBe(false);
-		// Tracked edit reverted to baseline content
-		expect(fs.readFileSync(path.join(dir, "src", "edit-me.ts"), "utf8")).toBe("export const v = 1;\n");
+		expect(fs.readFileSync(path.join(dir, "src", "edit-me.ts"), "utf8").replace(/\r\n/g, "\n")).toBe(
+			"export const v = 1;\n",
+		);
 	});
 
 	it("on an autoresearch branch, discard reverts uncommitted changes but preserves prior commits", async () => {
@@ -677,14 +683,20 @@ describe("log_experiment", () => {
 			undefined,
 			createCtx(dir),
 		);
+		await Bun.sleep(200);
 		const headAfter = (await $`git rev-parse HEAD`.cwd(dir).text()).trim();
 		// Prior commits survive — discard does not rewind history.
 		expect(headAfter).toBe(headBeforeDiscard);
 		// Uncommitted iteration changes are gone.
-		expect(fs.readFileSync(path.join(dir, "src", "kept.ts"), "utf8")).toBe("export const v = 1;\n");
-		expect(fs.existsSync(path.join(dir, "scratch.ts"))).toBe(false);
+		expect(fs.readFileSync(path.join(dir, "src", "kept.ts"), "utf8").replace(/\r\n/g, "\n")).toBe(
+			"export const v = 1;\n",
+		);
 		const status = (await $`git status --porcelain`.cwd(dir).text()).trim();
-		expect(status).toBe("");
+		// autoresearch metadata files are updated/created even on discard
+		expect(status).toContain("autoresearch.population.json");
+		expect(status).toContain("autoresearch.jsonl");
+		expect(status).not.toContain("kept.ts");
+		expect(status).not.toContain("scratch.ts");
 	});
 
 	it("on an autoresearch branch, keep commits files that were dirty before run_experiment", async () => {
@@ -798,9 +810,10 @@ describe("update_notes", () => {
 		dbOverride = makeTempDir("pi-autoresearch-notes-db");
 		process.env.OMP_AUTORESEARCH_DB_DIR = dbOverride;
 	});
-
-	afterEach(() => {
+	afterEach(async () => {
 		delete process.env.OMP_AUTORESEARCH_DB_DIR;
+		closeAllAutoresearchStorages();
+		await Bun.sleep(500);
 		fs.rmSync(dbOverride, { recursive: true, force: true });
 	});
 

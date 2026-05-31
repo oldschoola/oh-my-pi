@@ -40,4 +40,7 @@ You **may** edit anything else needed to make `autoresearch.sh` work — benchma
 
 - Do **not** call `run_experiment`, `log_experiment`, or `update_notes` yet. They will error with "no active autoresearch session" until `init_experiment` runs.
 - Do **not** treat a compile-only check as a benchmark. The harness must actually execute the workload and emit `METRIC`.
-- Do **not** create `autoresearch.md`, `autoresearch.checks.sh`, `autoresearch.program.md`, `autoresearch.ideas.md`, `autoresearch.jsonl`, `.autoresearch/`, or `autoresearch.config.json`. Session state is tracked for you.
+- Do **not** create `autoresearch.program.md`, `autoresearch.jsonl`, `.autoresearch/`, or `autoresearch.config.json`. Session state is tracked for you.
+- You **may** create `autoresearch.md` as an optional rules file that will be injected into your system prompt every iteration.
+- You **may** create `autoresearch.checks.sh` as an optional backpressure script that runs automatically after each passing benchmark to validate results.
+- You **may** create `autoresearch.ideas.md` as an optional ideas backlog.

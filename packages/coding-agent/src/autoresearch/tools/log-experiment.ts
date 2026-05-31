@@ -17,6 +17,14 @@ import {
 	tryGitPrefix,
 	tryGitStatus,
 } from "../helpers";
+import { runHooksForEvent } from "../hooks";
+import { writeJsonlRun } from "../jsonl";
+import {
+	addCandidateToPopulation,
+	createCandidate,
+	populationStateFromJson,
+	populationStateToJson,
+} from "../population";
 import {
 	buildExperimentState,
 	computeConfidence,
@@ -30,6 +38,7 @@ import type {
 	AutoresearchToolFactoryOptions,
 	ExperimentResult,
 	ExperimentState,
+	HookPayload,
 	LogDetails,
 	NumericMetricMap,
 } from "../types";
@@ -88,6 +97,16 @@ export function createLogExperimentTool(
 
 			const runtime = options.getRuntime(ctx);
 
+			// Fire before_log hooks
+			const preLogState = buildExperimentState(session, storage.listLoggedRuns(session.id));
+			const beforeHookPayload: HookPayload = {
+				event: "before_log",
+				state: preLogState,
+				cwd: ctx.cwd,
+				timestamp: Date.now(),
+			};
+			await runHooksForEvent(ctx.cwd, "before_log", beforeHookPayload);
+
 			const flaggedRuns: LogDetails["flaggedRuns"] = [];
 			for (const flag of params.flag_runs ?? []) {
 				const target = storage.getRunById(flag.run_id);
@@ -127,25 +146,7 @@ export function createLogExperimentTool(
 
 			let gitNote: string | null = null;
 			if (params.status === "keep") {
-				if (onAutoresearchBranch && allModified.length > 0) {
-					const commitResult = await commitKeptExperiment(
-						ctx.cwd,
-						params.description,
-						params.status,
-						params.metric,
-						params.metrics ?? {},
-						allModified,
-						session.primaryMetric,
-					);
-					if (commitResult.error) {
-						return {
-							content: [{ type: "text", text: `Error: ${commitResult.error}` }],
-						};
-					}
-					gitNote = commitResult.note ?? null;
-					const newSha = await tryReadHeadSha(ctx.cwd);
-					if (newSha) commitHash = newSha;
-				} else if (!onAutoresearchBranch) {
+				if (!onAutoresearchBranch) {
 					warnings.push(
 						"Auto-commit skipped: not on a dedicated autoresearch branch. Modified files remain in the worktree.",
 					);
@@ -245,6 +246,64 @@ export function createLogExperimentTool(
 				flaggedReason: null,
 			};
 
+			// Write JSONL run entry
+			writeJsonlRun(ctx.cwd, experiment, pendingRun.command);
+
+			// Update population
+			const populationPath = path.join(ctx.cwd, "autoresearch.population.json");
+			if (fs.existsSync(populationPath)) {
+				try {
+					const populationJson = fs.readFileSync(populationPath, "utf-8");
+					const population = populationStateFromJson(populationJson);
+					if (population) {
+						const family = population.activeFamilyId
+							? population.families.find(f => f.id === population.activeFamilyId)
+							: population.families[0];
+						if (family) {
+							const candidate = createCandidate(family.id, experiment, [], null);
+							addCandidateToPopulation(population, candidate);
+							fs.writeFileSync(populationPath, populationStateToJson(population));
+						}
+					}
+				} catch {
+					// Best effort
+				}
+			}
+
+			// Fire after_log hooks
+			const afterHookPayload: HookPayload = {
+				event: "after_log",
+				state: finalState,
+				cwd: ctx.cwd,
+				timestamp: Date.now(),
+			};
+			await runHooksForEvent(ctx.cwd, "after_log", afterHookPayload);
+
+			// Commit kept experiment after metadata writes so autoresearch files are included
+			if (params.status === "keep" && onAutoresearchBranch && allModified.length > 0) {
+				const commitResult = await commitKeptExperiment(
+					ctx.cwd,
+					params.description,
+					params.status,
+					params.metric,
+					params.metrics ?? {},
+					allModified,
+					session.primaryMetric,
+				);
+				if (commitResult.error) {
+					return {
+						content: [{ type: "text", text: `Error: ${commitResult.error}` }],
+					};
+				}
+				gitNote = commitResult.note ?? null;
+				const newSha = await tryReadHeadSha(ctx.cwd);
+				if (newSha) {
+					commitHash = newSha;
+					experiment.commit = newSha.slice(0, 12);
+					storage.updateRunCommitHash(tentativeRun.id, newSha);
+				}
+			}
+
 			const segmentRunCount = currentResults(finalState.results, finalState.currentSegment).length;
 			if (finalState.maxExperiments !== null && segmentRunCount >= finalState.maxExperiments) {
 				runtime.autoresearchMode = false;
@@ -318,11 +377,11 @@ async function commitKeptExperiment(
 ): Promise<KeepCommitResult> {
 	if (files.length === 0) return { note: "nothing to commit" };
 	try {
-		await git.stage.files(cwd, files);
+		await git.stage.files(cwd, []);
 	} catch (err) {
 		return { error: `git add failed: ${err instanceof Error ? err.message : String(err)}` };
 	}
-	if (!(await git.diff.has(cwd, { cached: true, files }))) {
+	if (!(await git.diff.has(cwd, { cached: true }))) {
 		return { note: "nothing to commit" };
 	}
 	const payload: { [key: string]: string | number } = {
@@ -334,7 +393,7 @@ async function commitKeptExperiment(
 	}
 	const commitMessage = `${description}\n\nResult: ${JSON.stringify(payload)}`;
 	try {
-		const commitResult = await git.commit(cwd, commitMessage, { files });
+		const commitResult = await git.commit(cwd, commitMessage);
 		const summary = `${commitResult.stdout}${commitResult.stderr}`.split("\n").find(line => line.trim().length > 0);
 		return { note: summary?.trim() ?? "committed" };
 	} catch (err) {
@@ -352,9 +411,22 @@ async function revertFailedExperiment(
 		// rewinds prior `keep` commits. Reset to HEAD so any kept improvements
 		// already on the branch survive.
 		try {
+			// Backup autoresearch metadata files
+			const autoresearchFiles = fs
+				.readdirSync(cwd)
+				.filter(name => name.startsWith("autoresearch.") && !fs.statSync(path.join(cwd, name)).isDirectory());
+			const backups: { filePath: string; content: Buffer }[] = [];
+			for (const fileName of autoresearchFiles) {
+				const filePath = path.join(cwd, fileName);
+				backups.push({ filePath, content: fs.readFileSync(filePath) });
+			}
 			await git.reset(cwd, { hard: true, target: "HEAD" });
 			await git.clean(cwd);
-			return { note: "worktree reset to HEAD" };
+			// Restore autoresearch metadata files
+			for (const backup of backups) {
+				fs.writeFileSync(backup.filePath, backup.content);
+			}
+			return { note: "worktree reset to HEAD (autoresearch files preserved)" };
 		} catch (err) {
 			return { error: `git reset/clean failed: ${err instanceof Error ? err.message : String(err)}` };
 		}

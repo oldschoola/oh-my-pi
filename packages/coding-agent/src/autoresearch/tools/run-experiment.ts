@@ -26,6 +26,8 @@ import { openAutoresearchStorageIfExists } from "../storage";
 import type { AutoresearchToolFactoryOptions, RunDetails, RunExperimentProgressDetails } from "../types";
 import { DEFAULT_HARNESS_COMMAND } from "./init-experiment";
 
+const CHECKS_FILENAME = "autoresearch.checks.sh";
+
 const runExperimentSchema = z.object({
 	timeout_seconds: z.number().describe("timeout in seconds (default 600)").optional(),
 });
@@ -173,6 +175,28 @@ export function createRunExperimentTool(
 			});
 
 			const passed = execution.exitCode === 0 && !execution.killed;
+
+			// Run backpressure checks if benchmark passed and checks script exists
+			let checksPassed: boolean | undefined;
+			let checksOutput: string | undefined;
+			if (passed) {
+				const checksPath = path.join(ctx.cwd, CHECKS_FILENAME);
+				if (fs.existsSync(checksPath)) {
+					try {
+						const checksProc = Bun.spawn(["bash", checksPath], {
+							cwd: ctx.cwd,
+							stdout: "pipe",
+							stderr: "pipe",
+						});
+						const checksExit = await checksProc.exited;
+						checksPassed = checksExit === 0;
+						checksOutput = (await new Response(checksProc.stdout).text()).slice(0, 4 * 1024);
+					} catch {
+						checksPassed = false;
+					}
+				}
+			}
+
 			const resultDetails: RunDetails = {
 				runNumber: insertedRun.id,
 				runDirectory,
@@ -193,6 +217,8 @@ export function createRunExperimentTool(
 				abandonedPriorRun,
 				truncation: llmTruncation.truncated ? llmTruncation : undefined,
 				fullOutputPath: execution.logPath,
+				checksPassed,
+				checksOutput,
 			};
 
 			runtime.lastRunSummary = {
