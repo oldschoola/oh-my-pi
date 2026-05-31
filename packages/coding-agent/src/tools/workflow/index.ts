@@ -18,6 +18,7 @@ export {
 } from "./display.js";
 export type {
 	AgentOptions,
+	SlotResult,
 	WorkflowMeta,
 	WorkflowMetaPhase,
 	WorkflowRunOptions,

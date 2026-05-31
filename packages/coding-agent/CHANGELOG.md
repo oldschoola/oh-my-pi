@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- Added a `workflow` tool that lets the model write deterministic JavaScript scripts to orchestrate multiple subagents with `agent()`, `parallel()`, `pipeline()`, `phase()`, and `log()` primitives. Scripts are sandboxed in `node:vm`, validated with `acorn` AST parsing, bounded by `workflow.maxConcurrency` / `workflow.scriptTimeoutMs`, and gated by the disabled-by-default `workflow.enabled` setting. ([#1544](https://github.com/can1357/oh-my-pi/issues/1544))
+- Added a `workflow` tool that lets the model write deterministic JavaScript scripts to orchestrate multiple subagents with `agent()`, `parallel()`, `pipeline()`, `phase()`, and `log()` primitives. Scripts are sandboxed in `node:vm`, validated with `acorn` AST parsing, bounded by `workflow.maxConcurrency` / `workflow.scriptTimeoutMs`, and gated by the disabled-by-default `workflow.enabled` setting. `parallel()` and `pipeline()` return per-slot results as `{ ok: true, value } | { ok: false, error: string }` so partial failures stay observable (and `null` remains a valid `value` for agents that intentionally return nothing). The subagent `structured_output` tool now surfaces the resolved JSON Schema inside its description so the model sees the expected payload shape on first attempt. The per-call MCP timeout for workflow proxy tools is sourced from the new `workflow.mcpCallTimeoutMs` setting (default 60_000ms; `0` disables) so long-running MCP tools can be granted more headroom without affecting non-workflow MCP callers. ([#1544](https://github.com/can1357/oh-my-pi/issues/1544))
 
 ## [15.7.0] - 2026-05-31
 

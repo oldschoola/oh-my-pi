@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { WorkflowAgent } from "../../src/tools/workflow/agent";
 import { renderWorkflowLines } from "../../src/tools/workflow/display";
 import { parseWorkflowScript, runWorkflow } from "../../src/tools/workflow/workflow";
 
@@ -152,6 +153,67 @@ describe("runWorkflow", () => {
 				scriptTimeoutMs: 100,
 			}),
 		).rejects.toThrow(/undefined|null/);
+	});
+});
+
+describe("runWorkflow parallel/pipeline slot results", () => {
+	const script = (body: string) => `export const meta = { name: 'slot_demo', description: 'desc' }\n${body}`;
+
+	test("parallel surfaces per-slot failures as {ok:false,error} and preserves null as a valid value", async () => {
+		const result = await runWorkflow(
+			script(`return await parallel([
+				() => null,
+				async () => { throw new Error('boom'); },
+				() => 'fine',
+			])`),
+			{ agent: { run: async () => "unused" } },
+		);
+
+		expect(result.result).toEqual([
+			{ ok: true, value: null },
+			{ ok: false, error: "boom" },
+			{ ok: true, value: "fine" },
+		]);
+	});
+
+	test("pipeline surfaces per-slot failures as {ok:false,error} and preserves null as a valid value", async () => {
+		const result = await runWorkflow(
+			script(`return await pipeline([1, 2, 3], (n) => {
+				if (n === 1) return null;
+				if (n === 2) throw new Error('two-bad');
+				return n * 10;
+			})`),
+			{ agent: { run: async () => "unused" } },
+		);
+
+		expect(result.result).toEqual([
+			{ ok: true, value: null },
+			{ ok: false, error: "two-bad" },
+			{ ok: true, value: 30 },
+		]);
+	});
+});
+
+describe("WorkflowAgent structured_output schema validation", () => {
+	test("rejects with typed Error when options.schema is invalid (boolean false rejects all)", async () => {
+		const agent = new WorkflowAgent();
+		await expect(agent.run("hello", { schema: false })).rejects.toThrow(/Invalid structured_output schema/);
+	});
+
+	test("workflow agent() catches the schema error as a slot failure without crashing the script", async () => {
+		const events: Array<{ failed: boolean; error?: string }> = [];
+		const agent = new WorkflowAgent();
+		const result = await runWorkflow(
+			`export const meta = { name: 'schema_runtime', description: 'desc' }\nreturn await agent('x', { schema: false })`,
+			{
+				agent,
+				onAgentEnd: event => events.push({ failed: event.failed, error: event.error }),
+			},
+		);
+
+		expect(result.result).toBeNull();
+		expect(events[0]?.failed).toBe(true);
+		expect(events[0]?.error).toMatch(/Invalid structured_output schema/);
 	});
 });
 

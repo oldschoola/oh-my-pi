@@ -2328,6 +2328,17 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
+	"workflow.mcpCallTimeoutMs": {
+		type: "number",
+		default: 60_000,
+		ui: {
+			tab: "tools",
+			label: "Workflow MCP call timeout (ms)",
+			description:
+				"Maximum duration for any MCP tool call invoked through a workflow subagent. Does not affect non-workflow MCP callers. Set to 0 to disable the per-call timeout.",
+		},
+	},
+
 	"browser.enabled": {
 		type: "boolean",
 		default: true,

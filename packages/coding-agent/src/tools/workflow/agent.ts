@@ -40,12 +40,16 @@ export interface StructuredOutputCapture<T = unknown> {
 }
 
 function createStructuredOutputTool(capture: StructuredOutputCapture, schema: unknown): CustomTool {
-	const { validator, error } = buildOutputValidator(schema);
+	const { validator, jsonSchema, error } = buildOutputValidator(schema);
 	if (error) throw new Error(`Invalid structured_output schema: ${error}`);
+	const baseDescription = "Return the final machine-readable result for this subagent task.";
+	const description = jsonSchema
+		? `${baseDescription} The arguments MUST conform to this JSON Schema:\n${JSON.stringify(jsonSchema, null, 2)}`
+		: baseDescription;
 	return {
 		name: "structured_output",
 		label: "Structured Output",
-		description: "Return the final machine-readable result for this subagent task.",
+		description,
 		parameters: z.object({}).passthrough(),
 		async execute(_toolCallId, params) {
 			if (validator) {
@@ -98,50 +102,59 @@ export class WorkflowAgent {
 		const capture: StructuredOutputCapture = { called: false, value: undefined };
 		const customTools: CustomTool[] = [...this.#baseTools, ...(options.tools ?? [])];
 
-		if (options.schema !== undefined) {
-			customTools.push(createStructuredOutputTool(capture, options.schema));
-		}
-
 		const runIndex = ++this.#runIndex;
 		const agentDisplayName = options.label ?? `workflow agent ${runIndex}`;
 		const parentTaskPrefix = this.#sessionOptions.parentTaskPrefix;
 		const agentId = `${parentTaskPrefix ? `${parentTaskPrefix}-` : ""}${sanitizeAgentId(agentDisplayName, runIndex)}`;
 		const inheritedCustomTools = this.#sessionOptions.customTools ?? [];
 
-		const mcpProxyTools = this.#sessionOptions.mcpManager ? createMCPProxyTools(this.#sessionOptions.mcpManager) : [];
-		const { session } = await createAgentSession({
-			...this.#sessionOptions,
-			cwd: this.#cwd,
-			settings: createSubagentSettings(this.#sessionOptions.settings),
-			sessionManager: SessionManager.inMemory(),
-			customTools: [...mcpProxyTools, ...inheritedCustomTools, ...customTools],
-			requireYieldTool: true,
-			taskDepth: this.#sessionOptions.taskDepth ?? 0,
-			hasUI: false,
-			parentTaskPrefix,
-			agentId,
-			agentDisplayName,
-			enableMCP: !this.#sessionOptions.mcpManager,
-			telemetry: createWorkflowSubagentTelemetry(this.#sessionOptions.telemetry, {
-				id: agentId,
-				name: agentDisplayName,
-				description: "Workflow subagent",
-			}),
-		});
-
-		await removeParentOwnedTools(session);
-		emitLifecycle(this.#sessionOptions, {
-			id: agentId,
-			agent: agentDisplayName,
-			status: "started",
-			index: runIndex - 1,
-		});
-
+		let session: AgentSession | undefined;
 		let removeAbortListener: (() => void) | undefined;
 		try {
+			// Build the structured-output tool inside the lifecycle scope so a bad
+			// user schema becomes a typed Error that workflow's agent() catch sees as
+			// a slot failure, instead of crashing run() before any "failed" lifecycle
+			// event is emitted.
+			if (options.schema !== undefined) {
+				customTools.push(createStructuredOutputTool(capture, options.schema));
+			}
+
+			const mcpProxyTools = this.#sessionOptions.mcpManager
+				? createMCPProxyTools(this.#sessionOptions.mcpManager, this.#mcpCallTimeoutMs())
+				: [];
+			const created = await createAgentSession({
+				...this.#sessionOptions,
+				cwd: this.#cwd,
+				settings: createSubagentSettings(this.#sessionOptions.settings),
+				sessionManager: SessionManager.inMemory(),
+				customTools: [...mcpProxyTools, ...inheritedCustomTools, ...customTools],
+				requireYieldTool: true,
+				taskDepth: this.#sessionOptions.taskDepth ?? 0,
+				hasUI: false,
+				parentTaskPrefix,
+				agentId,
+				agentDisplayName,
+				enableMCP: !this.#sessionOptions.mcpManager,
+				telemetry: createWorkflowSubagentTelemetry(this.#sessionOptions.telemetry, {
+					id: agentId,
+					name: agentDisplayName,
+					description: "Workflow subagent",
+				}),
+			});
+			session = created.session;
+
+			await removeParentOwnedTools(session);
+			emitLifecycle(this.#sessionOptions, {
+				id: agentId,
+				agent: agentDisplayName,
+				status: "started",
+				index: runIndex - 1,
+			});
+
 			if (options.signal?.aborted) throw new Error("Subagent was aborted");
 			if (options.signal) {
-				const onAbort = () => void session.abort();
+				const activeSession = session;
+				const onAbort = () => void activeSession.abort();
 				options.signal.addEventListener("abort", onAbort, { once: true });
 				removeAbortListener = () => options.signal?.removeEventListener("abort", onAbort);
 			}
@@ -180,8 +193,14 @@ export class WorkflowAgent {
 			throw error;
 		} finally {
 			removeAbortListener?.();
-			void session.dispose();
+			if (session) void session.dispose();
 		}
+	}
+
+	#mcpCallTimeoutMs(): number {
+		const settings = this.#sessionOptions.settings;
+		const value = settings?.get("workflow.mcpCallTimeoutMs");
+		return typeof value === "number" && value >= 0 ? value : 60_000;
 	}
 
 	#structuredOutputValue(capture: StructuredOutputCapture): unknown {

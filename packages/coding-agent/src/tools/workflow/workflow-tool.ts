@@ -23,6 +23,7 @@ const workflowSchema = z.object({
 				"First statement: export const meta = { name: 'short_snake_case', description: 'non-empty description', phases: [{ title: 'Phase' }] }",
 				"Use phase('Name'), agent(prompt, opts), parallel(arrayOfFunctions), pipeline(items, ...stages), log(message), args, and budget. The workflow must call agent() at least once.",
 				"parallel() requires functions, not promises: await parallel(items.map(item => () => agent(...))).",
+				"parallel() and pipeline() return per-slot results as { ok: true, value } | { ok: false, error: string }. Inspect r.ok before using r.value; null is a valid value (not a failure sentinel).",
 			].join(" "),
 		),
 	args: z.any().optional().describe("Optional JSON value exposed to the workflow script as global `args`."),
@@ -52,6 +53,7 @@ export class WorkflowTool implements AgentTool<typeof workflowSchema, WorkflowTo
 		return [
 			"Execute a deterministic JavaScript workflow that orchestrates multiple subagents with agent(), parallel(), and pipeline().",
 			"script is required raw JavaScript. It must start with export const meta = { name, description, phases? } and must call agent() at least once.",
+			"parallel() and pipeline() return per-slot results shaped as { ok: true, value } | { ok: false, error: string }. The model must inspect r.ok before reading r.value because null is a valid value (an agent that intentionally returned nothing).",
 		].join(" ");
 	}
 

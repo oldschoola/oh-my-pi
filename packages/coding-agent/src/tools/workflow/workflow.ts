@@ -44,6 +44,14 @@ export interface AgentOptions {
 	agentType?: string;
 }
 
+/**
+ * Per-slot outcome returned by `parallel()` and `pipeline()`. The model MUST
+ * inspect `.ok` before reading `.value` — `null` is a valid `value` for an agent
+ * that intentionally returned nothing, so `result === null` cannot be used as a
+ * failure sentinel.
+ */
+export type SlotResult<T = unknown> = { ok: true; value: T } | { ok: false; error: string };
+
 interface RuntimeState {
 	currentPhase?: string;
 	logs: string[];
@@ -202,7 +210,7 @@ export async function runWorkflow<T = unknown>(
 				return result;
 			} catch (error) {
 				if (options.signal?.aborted) throw error;
-				const errorMessage = error instanceof Error ? error.message : String(error);
+				const errorMessage = extractErrorMessage(error);
 				log(`agent ${label} failed: ${errorMessage}`);
 				options.onAgentEnd?.({ label, phase: assignedPhase, result: null, failed: true, error: errorMessage });
 				return null;
@@ -210,7 +218,7 @@ export async function runWorkflow<T = unknown>(
 		});
 	};
 
-	const parallel = async (thunks: Array<() => Promise<unknown>>) => {
+	const parallel = async (thunks: Array<() => Promise<unknown>>): Promise<SlotResult[]> => {
 		throwIfAborted();
 		if (!Array.isArray(thunks)) throw new TypeError("parallel() expects an array of functions");
 		if (thunks.some(thunk => typeof thunk !== "function")) {
@@ -219,13 +227,14 @@ export async function runWorkflow<T = unknown>(
 			);
 		}
 		return Promise.all(
-			thunks.map(async (thunk, index) => {
+			thunks.map(async (thunk, index): Promise<SlotResult> => {
 				try {
-					return await thunk();
+					return { ok: true, value: await thunk() };
 				} catch (error) {
 					if (options.signal?.aborted) throw error;
-					log(`parallel[${index}] failed: ${error instanceof Error ? error.message : String(error)}`);
-					return null;
+					const message = extractErrorMessage(error);
+					log(`parallel[${index}] failed: ${message}`);
+					return { ok: false, error: message };
 				}
 			}),
 		);
@@ -234,14 +243,14 @@ export async function runWorkflow<T = unknown>(
 	const pipeline = async (
 		items: unknown[],
 		...stages: Array<(prev: unknown, original: unknown, index: number) => unknown>
-	) => {
+	): Promise<SlotResult[]> => {
 		throwIfAborted();
 		if (!Array.isArray(items)) throw new TypeError("pipeline() expects an array as the first argument");
 		if (stages.some(stage => typeof stage !== "function")) {
 			throw new TypeError("pipeline() stages must be functions: pipeline(items, item => ..., result => ...)");
 		}
 		return Promise.all(
-			items.map(async (item, index) => {
+			items.map(async (item, index): Promise<SlotResult> => {
 				let value: unknown = item;
 				for (const stage of stages) {
 					try {
@@ -250,11 +259,12 @@ export async function runWorkflow<T = unknown>(
 						throwIfAborted();
 					} catch (error) {
 						if (options.signal?.aborted) throw error;
-						log(`pipeline[${index}] failed: ${error instanceof Error ? error.message : String(error)}`);
-						return null;
+						const message = extractErrorMessage(error);
+						log(`pipeline[${index}] failed: ${message}`);
+						return { ok: false, error: message };
 					}
 				}
-				return value;
+				return { ok: true, value };
 			}),
 		);
 	};
@@ -278,6 +288,15 @@ export async function runWorkflow<T = unknown>(
 	});
 
 	const wrapped = `(async () => {\n${body}\n})()`;
+	// vm.Script's `timeout` only bounds *synchronous* execution within runInContext.
+	// Async continuations (await, microtasks, setTimeout) are not interrupted by it,
+	// so a script that awaits forever — `for (;;) await null` — would never be killed.
+	// The user-body loop ban (DISALLOWED_LOOP_TYPES, validated in validateWorkflowBody)
+	// is what prevents that async-bypass DoS: with no synchronous `for`/`while`/`do`/
+	// `for...of`/`for...in`, a malicious script cannot construct an unbounded await loop
+	// at all. Future contributors lifting the loop ban MUST add an alternate budget
+	// (e.g. a wall-clock deadline checked via signal, or cooperative cancellation
+	// through the agent/parallel/pipeline helpers) before re-enabling user loops.
 	const result = await new vm.Script(wrapped, { filename: `${meta.name || "workflow"}.js` }).runInContext(context, {
 		timeout: scriptTimeoutMs,
 	});
@@ -582,6 +601,22 @@ function createLimiter(limit: number) {
 			next();
 		}
 	};
+}
+
+/**
+ * Extract a string error message from any thrown value, including cross-realm
+ * `Error` instances. `instanceof Error` returns false for an Error constructed
+ * inside the workflow vm context (different realm), so a plain `String(error)`
+ * fallback produces `"Error: <message>"` instead of `<message>`. Use this when
+ * surfacing errors that may originate from user-script code.
+ */
+function extractErrorMessage(error: unknown): string {
+	if (error instanceof Error) return error.message;
+	if (error !== null && typeof error === "object") {
+		const message = (error as { message?: unknown }).message;
+		if (typeof message === "string") return message;
+	}
+	return String(error);
 }
 
 function defaultAgentLabel(phase: string | undefined, index: number): string {
