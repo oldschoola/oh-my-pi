@@ -3,12 +3,49 @@ import type {
 	Api,
 	AssistantMessage,
 	DeveloperMessage,
+	KnownApi,
 	Message,
 	Model,
 	ToolCall,
 	ToolResultMessage,
 	UserMessage,
 } from "../types";
+
+/**
+ * True for wire formats that require every assistant `tool_use` block to be
+ * immediately followed by its matching `tool_result` (no intervening
+ * `user` / `developer` / other turn between them). Drives the pull-forward
+ * reorder in {@link transformMessages}; values that widen to `(string & {})`
+ * (third-party / unrecognized wire formats) fall through the default arm
+ * and return `false` so we never silently reorder instruction chronology
+ * for a provider whose contract we have not verified.
+ *
+ * Adding a new variant to {@link KnownApi} without classifying it here will
+ * fail the `satisfies never` guard in the default arm at typecheck.
+ */
+export function requiresImmediateToolResult(api: Api): boolean {
+	// Narrow to `KnownApi` so the switch is exhaustive at compile time;
+	// arbitrary strings flow into `default` and default to `false`.
+	const known = api as KnownApi;
+	switch (known) {
+		case "anthropic-messages":
+		case "bedrock-converse-stream":
+			return true;
+		case "openai-completions":
+		case "openai-responses":
+		case "openai-codex-responses":
+		case "azure-openai-responses":
+		case "google-generative-ai":
+		case "google-gemini-cli":
+		case "google-vertex":
+		case "ollama-chat":
+		case "cursor-agent":
+			return false;
+		default:
+			known satisfies never;
+			return false;
+	}
+}
 
 const enum ToolCallStatus {
 	/** Tool call has received a result (real or synthetic for orphan) */
@@ -152,7 +189,7 @@ export function transformMessages<TApi extends Api>(
 	// the per-id queue itself is built for every provider so flush can use
 	// queue exhaustion as the authoritative "no more real results
 	// available for this id" signal.
-	const pullForwardEnabled = model.api === "anthropic-messages" || model.api === "bedrock-converse-stream";
+	const pullForwardEnabled = requiresImmediateToolResult(model.api);
 
 	// Queue every real tool result by its tool-call id. Used for two things:
 	//
@@ -246,6 +283,8 @@ export function transformMessages<TApi extends Api>(
 	// pending tc with a matching id and mark it resolved by identity so the
 	// next flush doesn't redundantly synthesize a placeholder. Pair FIFO so
 	// id collisions retain the Nth-call ↔ Nth-result association.
+	// INVARIANT: `resolvedToolCalls` (identity) and `toolCallStatus` (id) must update in lockstep —
+	// every site that flips one must also flip the other, or flush vs iterator dedup desynchronises.
 	const pairFirstPendingToolCall = (msg: ToolResultMessage): void => {
 		for (const tc of pendingToolCalls) {
 			if (tc.id === msg.toolCallId && !resolvedToolCalls.has(tc)) {

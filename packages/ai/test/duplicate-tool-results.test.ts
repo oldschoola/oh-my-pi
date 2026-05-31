@@ -697,6 +697,111 @@ describe("Duplicate Tool Results Regression", () => {
 		expect(roles).toEqual(["assistant", "toolResult", "developer"]);
 	});
 
+	it("preserves natural chronology for assistant→assistant→batched-results on an OpenAI-style chat provider", () => {
+		// PR #1163 follow-up (roboomp): the original non-Anthropic gate test
+		// above covers the `assistant -> developer -> toolResult` shape on
+		// openai-responses. This complementary regression covers the
+		// `assistant -> assistant -> toolResult -> toolResult` shape on the
+		// classic chat-completions wire format, which is the canonical
+		// "batched results follow consecutive tool-using turns" history we
+		// must NEVER reorder for providers that tolerate the gap. If the
+		// pull-forward predicate ever silently flips to `true` for
+		// openai-completions, the second `toolResult` would land between
+		// the two assistant turns instead of after them, corrupting the
+		// chronology the model sees on replay.
+		const idA = "call_chat_batched_a";
+		const idB = "call_chat_batched_b";
+
+		const openaiChatModel: Model<"openai-completions"> = {
+			api: "openai-completions",
+			provider: "openai",
+			id: "gpt-4o",
+			name: "GPT-4o",
+			baseUrl: "https://api.openai.com",
+			input: ["text"],
+			cost: { input: 2.5, output: 10, cacheRead: 1.25, cacheWrite: 2.5 },
+			maxTokens: 8192,
+			contextWindow: 128000,
+			reasoning: false,
+		};
+
+		const baseAssistant = {
+			role: "assistant" as const,
+			api: "openai-completions" as const,
+			provider: "openai",
+			model: "gpt-4o",
+			usage: {
+				input: 100,
+				output: 50,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 150,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse" as const,
+		};
+
+		const firstAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [{ type: "toolCall", id: idA, name: "read", arguments: { path: "/a.ts" } }],
+			timestamp: 1000,
+		};
+		const secondAssistant: AssistantMessage = {
+			...baseAssistant,
+			content: [{ type: "toolCall", id: idB, name: "read", arguments: { path: "/b.ts" } }],
+			timestamp: 2000,
+		};
+		const firstResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: idA,
+			toolName: "read",
+			content: [{ type: "text", text: "a contents" }],
+			isError: false,
+			timestamp: 3000,
+		};
+		const secondResult: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: idB,
+			toolName: "read",
+			content: [{ type: "text", text: "b contents" }],
+			isError: false,
+			timestamp: 3001,
+		};
+
+		const messages: Message[] = [
+			{ role: "user", content: "Read two files", timestamp: 500 },
+			firstAssistant,
+			secondAssistant,
+			firstResult,
+			secondResult,
+		];
+
+		const transformed = transformMessages(messages, openaiChatModel);
+
+		// Natural chronology — no pull-forward — preserves the source order
+		// exactly: both assistants land back-to-back, both results land
+		// back-to-back after them. Pulling result A forward into the gap
+		// between the assistants (the Anthropic shape) would reorder this to
+		// [user, assistant, toolResult, assistant, toolResult] and silently
+		// change what the chat-completions model sees on replay.
+		const roles = transformed.map(m => m.role);
+		expect(roles).toEqual(["user", "assistant", "assistant", "toolResult", "toolResult"]);
+
+		// The tool-result ordering must match source order: A then B.
+		const resultsInOrder = transformed.filter((m): m is ToolResultMessage => m.role === "toolResult");
+		expect(resultsInOrder.map(r => r.toolCallId)).toEqual([idA, idB]);
+		expect(resultsInOrder.map(r => (r.content[0] as { type: "text"; text: string }).text)).toEqual([
+			"a contents",
+			"b contents",
+		]);
+
+		// And no synthetic placeholders snuck in for either id.
+		for (const r of resultsInOrder) {
+			expect(r.isError).toBe(false);
+			expect((r.content[0] as { type: "text"; text: string }).text).not.toBe("No result provided");
+		}
+	});
+
 	it("pulls tool_result forward for Bedrock Converse (Converse API enforces the same contiguity)", () => {
 		// Codex P1 review on PR #1163 (comment 3263143326): Bedrock Converse
 		// is also a contiguity-enforcing wire format — the Converse API
