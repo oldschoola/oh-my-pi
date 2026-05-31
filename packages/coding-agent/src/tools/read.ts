@@ -254,7 +254,15 @@ function formatSummaryElisionFooter(
 	if (elidedRanges.length === 0) return "";
 	const lineWord = elidedLines === 1 ? "line" : "lines";
 	const sampleCount = Math.min(elidedRanges.length, FOOTER_RANGE_SAMPLES);
-	const selector = elidedRanges
+	// For kimi-class, prefer the largest elided ranges in the e.g. sample so
+	// the model has a pointer to the biggest hidden region. Otherwise glm-5.1
+	// in particular reads the file in many small chunks of small top-level
+	// functions before discovering the big body it needs, blowing past
+	// max-turns. Sort copy; do not mutate the source.
+	const orderedRanges = options.kimiClass
+		? [...elidedRanges].sort((a, b) => b.end - b.start - (a.end - a.start))
+		: elidedRanges;
+	const selector = orderedRanges
 		.slice(0, sampleCount)
 		.map(r => `${r.start}-${r.end}`)
 		.join(",");
@@ -264,7 +272,7 @@ function formatSummaryElisionFooter(
 	// summary above is usually sufficient context to act; reserve `re-read`
 	// suggestion for cases where the agent truly needs the hidden body.
 	if (options.kimiClass) {
-		return `[${elidedLines} ${lineWord} elided. The visible structural summary usually has enough context to act. Only re-read elided ranges${tail.startsWith(",") ? "" : ""} if your fix truly depends on hidden content${tail}]`;
+		return `[${elidedLines} ${lineWord} elided. The visible structural summary usually has enough context to act. Only re-read elided ranges if your fix truly depends on hidden content${tail}]`;
 	}
 	return `[${elidedLines} ${lineWord} elided; re-read needed ranges${tail}]`;
 }
@@ -697,7 +705,6 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 			DEFAULT_MAX_LINES: String(DEFAULT_MAX_LINES),
 			IS_HL_MODE: displayMode.hashLines,
 			IS_LINE_NUMBER_MODE: !displayMode.hashLines && displayMode.lineNumbers,
-			INSPECT_IMAGE_ENABLED: this.#inspectImageEnabled,
 		});
 	}
 
