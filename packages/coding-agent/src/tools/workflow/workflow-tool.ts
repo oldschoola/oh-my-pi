@@ -59,7 +59,7 @@ export class WorkflowTool implements AgentTool<typeof workflowSchema, WorkflowTo
 		return workflowSchema;
 	}
 
-	private constructor(session: ToolSession) {
+	constructor(session: ToolSession) {
 		this.#session = session;
 	}
 

@@ -54,11 +54,58 @@ interface RuntimeState {
 
 type AnyNode = Node & { [key: string]: any; start: number; end: number };
 
-const DETERMINISM_BLOCKLIST = /\bDate\s*\.\s*now\b|\bMath\s*\.\s*random\b|\bnew\s+Date\s*\(\s*\)/;
 const DEFAULT_WORKFLOW_CONCURRENCY = 4;
 const DEFAULT_SCRIPT_TIMEOUT_MS = 5000;
 const SUPPORTED_AGENT_OPTION_KEYS = new Set<keyof AgentOptions>(["label", "phase", "schema", "agentType"]);
-const HARDEN_INTRINSICS_SCRIPT = `
+const DISALLOWED_GLOBALS = new Set(["Atomics", "Date", "eval", "Function", "globalThis", "SharedArrayBuffer"]);
+const DISALLOWED_LOOP_TYPES = new Set([
+	"DoWhileStatement",
+	"ForInStatement",
+	"ForOfStatement",
+	"ForStatement",
+	"WhileStatement",
+]);
+const BOOTSTRAP_CONTEXT_SCRIPT = `
+function __workflowDeepFreeze(value) {
+	if (!value || (typeof value !== "object" && typeof value !== "function")) return value;
+	if (Array.isArray(value)) {
+		for (const item of value) __workflowDeepFreeze(item);
+		Object.freeze(value);
+		return value;
+	}
+	if (Object.getPrototypeOf(value) === Object.prototype) Object.setPrototypeOf(value, null);
+	for (const key of Reflect.ownKeys(value)) __workflowDeepFreeze(value[key]);
+	Object.freeze(value);
+	return value;
+}
+const __workflowMath = Object.create(null);
+for (const key of Object.getOwnPropertyNames(Math)) {
+	if (key === "random") continue;
+	Object.defineProperty(__workflowMath, key, Object.getOwnPropertyDescriptor(Math, key));
+}
+Object.freeze(__workflowMath);
+Object.defineProperty(globalThis, "Math", {
+	value: __workflowMath,
+	configurable: false,
+	enumerable: false,
+	writable: false,
+});
+Object.defineProperty(globalThis, "Date", {
+	value: undefined,
+	configurable: false,
+	enumerable: false,
+	writable: false,
+});
+for (const key of ["Atomics", "SharedArrayBuffer"]) {
+	Object.defineProperty(globalThis, key, {
+		value: undefined,
+		configurable: false,
+		enumerable: false,
+		writable: false,
+	});
+}
+`;
+const FINALIZE_CONTEXT_SCRIPT = `
 for (const value of [
 	Array,
 	Boolean,
@@ -88,9 +135,13 @@ for (const value of [
 	String.prototype,
 	TypeError.prototype,
 ]) Object.freeze(value);
-Object.freeze(console);
-Object.freeze(process);
-Object.freeze(budget);
+delete globalThis.__workflowDeepFreeze;
+Object.defineProperty(globalThis, "globalThis", {
+	value: undefined,
+	configurable: false,
+	enumerable: false,
+	writable: false,
+});
 `;
 
 export async function runWorkflow<T = unknown>(
@@ -216,14 +267,14 @@ export async function runWorkflow<T = unknown>(
 		phase,
 		args: options.args,
 		cwd: options.cwd ?? process.cwd(),
-		process: Object.freeze({ cwd: hardenCallable(() => options.cwd ?? process.cwd()) }),
+		process: { cwd: () => options.cwd ?? process.cwd() },
 		budget,
-		console: Object.freeze({
-			log: hardenCallable((message: unknown) => log(String(message))),
-			info: hardenCallable((message: unknown) => log(String(message))),
-			warn: hardenCallable((message: unknown) => log(`[warn] ${String(message)}`)),
-			error: hardenCallable((message: unknown) => log(`[error] ${String(message)}`)),
-		}),
+		console: {
+			log: (message: unknown) => log(String(message)),
+			info: (message: unknown) => log(String(message)),
+			warn: (message: unknown) => log(`[warn] ${String(message)}`),
+			error: (message: unknown) => log(`[error] ${String(message)}`),
+		},
 	});
 
 	const wrapped = `(async () => {\n${body}\n})()`;
@@ -241,10 +292,6 @@ export async function runWorkflow<T = unknown>(
 }
 
 export function parseWorkflowScript(script: string): { meta: WorkflowMeta; body: string } {
-	if (DETERMINISM_BLOCKLIST.test(script)) {
-		throw new Error("Workflow scripts must be deterministic: Date.now()/Math.random()/new Date() are unavailable");
-	}
-
 	const ast = parse(script, {
 		ecmaVersion: "latest",
 		sourceType: "module",
@@ -274,7 +321,7 @@ export function parseWorkflowScript(script: string): { meta: WorkflowMeta; body:
 
 	const meta = evaluateLiteral(declarator.init, "meta");
 	validateMeta(meta);
-
+	validateWorkflowBody(ast, first);
 	return {
 		meta,
 		body: script.slice(0, first.start) + script.slice(first.end),
@@ -344,17 +391,153 @@ function validateMeta(meta: unknown): asserts meta is WorkflowMeta {
 	}
 }
 
+function validateWorkflowBody(ast: AnyNode, metaExport: AnyNode): void {
+	for (const statement of ast.body as AnyNode[]) {
+		if (statement === metaExport) continue;
+		validateWorkflowNode(statement);
+	}
+}
+
+function validateWorkflowNode(node: AnyNode): void {
+	if (DISALLOWED_LOOP_TYPES.has(node.type)) {
+		throw new Error("Workflow scripts cannot use synchronous loops; use parallel() or pipeline() instead");
+	}
+	if (node.type === "Identifier" && DISALLOWED_GLOBALS.has(node.name)) {
+		throw new Error(`Workflow scripts must be deterministic: ${node.name} is unavailable`);
+	}
+	if (node.type === "MemberExpression") {
+		const property = staticMemberProperty(node);
+		if (isIdentifierNode(node.object, "Date") && property === "now") {
+			throw new Error("Workflow scripts must be deterministic: Date.now() is unavailable");
+		}
+		if (isIdentifierNode(node.object, "Math") && property === "random") {
+			throw new Error("Workflow scripts must be deterministic: Math.random() is unavailable");
+		}
+	}
+
+	for (const [key, value] of Object.entries(node)) {
+		if (key === "start" || key === "end" || key === "loc" || key === "range") continue;
+		if (node.type === "Property" && key === "key" && !node.computed) continue;
+		if (node.type === "MemberExpression" && key === "property" && !node.computed) continue;
+		if (Array.isArray(value)) {
+			for (const item of value) {
+				if (isAstNode(item)) validateWorkflowNode(item);
+			}
+			continue;
+		}
+		if (isAstNode(value)) validateWorkflowNode(value);
+	}
+}
+
+function isAstNode(value: unknown): value is AnyNode {
+	return !!value && typeof value === "object" && typeof (value as { type?: unknown }).type === "string";
+}
+
+function isIdentifierNode(value: unknown, name: string): boolean {
+	return isAstNode(value) && value.type === "Identifier" && value.name === name;
+}
+
+function staticMemberProperty(node: AnyNode): string | null {
+	const property = node.property as AnyNode | undefined;
+	if (!property) return null;
+	if (!node.computed && property.type === "Identifier") return property.name;
+	if (property.type === "Literal" && (typeof property.value === "string" || typeof property.value === "number")) {
+		return String(property.value);
+	}
+	return null;
+}
+
 function createWorkflowContext(globals: Record<string, unknown>): vm.Context {
 	const context = vm.createContext(Object.create(null), {
 		codeGeneration: { strings: false, wasm: false },
 	});
+	new vm.Script(BOOTSTRAP_CONTEXT_SCRIPT, { filename: "workflow-bootstrap.js" }).runInContext(context, {
+		timeout: 100,
+	});
 	for (const [key, value] of Object.entries(globals)) {
-		context[key] = typeof value === "function" ? hardenCallable(value) : value;
+		installWorkflowGlobal(context, key, value);
 	}
-	new vm.Script(HARDEN_INTRINSICS_SCRIPT, { filename: "workflow-intrinsics.js" }).runInContext(context, {
+	new vm.Script(FINALIZE_CONTEXT_SCRIPT, { filename: "workflow-finalize.js" }).runInContext(context, {
 		timeout: 100,
 	});
 	return context;
+}
+
+function installWorkflowGlobal(context: vm.Context, key: string, value: unknown): void {
+	switch (key) {
+		case "args":
+		case "cwd":
+			installJsonGlobal(context, key, value);
+			return;
+		case "budget": {
+			const budget = value as { total: unknown; spent: () => number; remaining: () => number };
+			context.__workflowBudgetSpent = hardenCallable(budget.spent);
+			context.__workflowBudgetRemaining = hardenCallable(budget.remaining);
+			installJsonGlobal(context, "__workflowBudgetTotal", budget.total);
+			new vm.Script(
+				`globalThis.budget = __workflowDeepFreeze(Object.assign(Object.create(null), {
+					total: __workflowBudgetTotal,
+					spent() { return __workflowBudgetSpent(); },
+					remaining() { return __workflowBudgetRemaining(); },
+				}));
+				delete globalThis.__workflowBudgetTotal;
+				delete globalThis.__workflowBudgetSpent;
+				delete globalThis.__workflowBudgetRemaining;`,
+				{ filename: "workflow-budget.js" },
+			).runInContext(context, { timeout: 100 });
+			return;
+		}
+		case "process": {
+			const processShim = value as { cwd: () => string };
+			context.__workflowProcessCwd = hardenCallable(processShim.cwd);
+			new vm.Script(
+				`globalThis.process = __workflowDeepFreeze(Object.assign(Object.create(null), {
+					cwd() { return __workflowProcessCwd(); },
+				}));
+				delete globalThis.__workflowProcessCwd;`,
+				{ filename: "workflow-process.js" },
+			).runInContext(context, { timeout: 100 });
+			return;
+		}
+		case "console": {
+			const consoleShim = value as Record<string, (message: unknown) => void>;
+			context.__workflowConsoleLog = hardenCallable(consoleShim.log);
+			context.__workflowConsoleInfo = hardenCallable(consoleShim.info);
+			context.__workflowConsoleWarn = hardenCallable(consoleShim.warn);
+			context.__workflowConsoleError = hardenCallable(consoleShim.error);
+			new vm.Script(
+				`globalThis.console = __workflowDeepFreeze(Object.assign(Object.create(null), {
+					log(message) { return __workflowConsoleLog(message); },
+					info(message) { return __workflowConsoleInfo(message); },
+					warn(message) { return __workflowConsoleWarn(message); },
+					error(message) { return __workflowConsoleError(message); },
+				}));
+				delete globalThis.__workflowConsoleLog;
+				delete globalThis.__workflowConsoleInfo;
+				delete globalThis.__workflowConsoleWarn;
+				delete globalThis.__workflowConsoleError;`,
+				{ filename: "workflow-console.js" },
+			).runInContext(context, { timeout: 100 });
+			return;
+		}
+		default:
+			context[key] = typeof value === "function" ? hardenCallable(value) : value;
+	}
+}
+
+function installJsonGlobal(context: vm.Context, key: string, value: unknown): void {
+	if (value === undefined) {
+		context[key] = undefined;
+		return;
+	}
+	const json = JSON.stringify(value);
+	if (json === undefined) {
+		context[key] = undefined;
+		return;
+	}
+	new vm.Script(`globalThis[${JSON.stringify(key)}] = __workflowDeepFreeze(JSON.parse(${JSON.stringify(json)}));`, {
+		filename: "workflow-json-global.js",
+	}).runInContext(context, { timeout: 100 });
 }
 
 function hardenCallable<T>(fn: T): T {

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Settings } from "../../config/settings";
 import { SETTINGS_SCHEMA, type SettingPath } from "../../config/settings-schema";
 import type { CustomTool } from "../../extensibility/custom-tools/types";
+import { createMCPProxyTools } from "../../mcp/proxy-tools";
 import workflowSubagentPrompt from "../../prompts/system/workflow-subagent-prompt.md" with { type: "text" };
 import { type CreateAgentSessionOptions, createAgentSession } from "../../sdk";
 import type { AgentSession } from "../../session/agent-session";
@@ -97,7 +98,7 @@ export class WorkflowAgent {
 		const capture: StructuredOutputCapture = { called: false, value: undefined };
 		const customTools: CustomTool[] = [...this.#baseTools, ...(options.tools ?? [])];
 
-		if (options.schema) {
+		if (options.schema !== undefined) {
 			customTools.push(createStructuredOutputTool(capture, options.schema));
 		}
 
@@ -105,19 +106,22 @@ export class WorkflowAgent {
 		const agentDisplayName = options.label ?? `workflow agent ${runIndex}`;
 		const parentTaskPrefix = this.#sessionOptions.parentTaskPrefix;
 		const agentId = `${parentTaskPrefix ? `${parentTaskPrefix}-` : ""}${sanitizeAgentId(agentDisplayName, runIndex)}`;
+		const inheritedCustomTools = this.#sessionOptions.customTools ?? [];
 
+		const mcpProxyTools = this.#sessionOptions.mcpManager ? createMCPProxyTools(this.#sessionOptions.mcpManager) : [];
 		const { session } = await createAgentSession({
 			...this.#sessionOptions,
 			cwd: this.#cwd,
 			settings: createSubagentSettings(this.#sessionOptions.settings),
 			sessionManager: SessionManager.inMemory(),
-			customTools,
+			customTools: [...mcpProxyTools, ...inheritedCustomTools, ...customTools],
 			requireYieldTool: true,
 			taskDepth: this.#sessionOptions.taskDepth ?? 0,
 			hasUI: false,
 			parentTaskPrefix,
 			agentId,
 			agentDisplayName,
+			enableMCP: !this.#sessionOptions.mcpManager,
 			telemetry: createWorkflowSubagentTelemetry(this.#sessionOptions.telemetry, {
 				id: agentId,
 				name: agentDisplayName,
@@ -148,16 +152,17 @@ export class WorkflowAgent {
 					taskInstructions: options.instructions,
 					label: options.label,
 					prompt: promptText,
-					structured: Boolean(options.schema),
+					structured: options.schema !== undefined,
 				}),
 			);
 			await session.waitForIdle();
 
 			if (options.signal?.aborted) throw new Error("Subagent was aborted");
 
-			const result = options.schema
-				? this.#structuredOutputValue(capture)
-				: this.#lastAssistantText(session.messages);
+			const result =
+				options.schema !== undefined
+					? this.#structuredOutputValue(capture)
+					: this.#lastAssistantText(session.messages);
 			emitLifecycle(this.#sessionOptions, {
 				id: agentId,
 				agent: agentDisplayName,

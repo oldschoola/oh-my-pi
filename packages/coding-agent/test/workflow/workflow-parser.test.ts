@@ -82,15 +82,31 @@ describe("parseWorkflowScript", () => {
 	});
 
 	test("rejects nondeterministic APIs", () => {
+		for (const body of [
+			"return Date()",
+			"return Date.now()",
+			"return Date['now']()",
+			"return Math.random()",
+			"return Math['random']()",
+			"return globalThis.Date()",
+			"return globalThis.Math.random()",
+			"return new Date()",
+		]) {
+			expect(() =>
+				parseWorkflowScript(`export const meta = { name: 'demo', description: 'desc' }\n${body}`),
+			).toThrow(/must be deterministic/);
+		}
+	});
+
+	test("rejects synchronous loops before they can run after awaits", () => {
 		expect(() =>
-			parseWorkflowScript("export const meta = { name: 'demo', description: 'desc' }\nreturn Date.now()"),
-		).toThrow(/must be deterministic/);
+			parseWorkflowScript("export const meta = { name: 'demo', description: 'desc' }\nwhile (true) {}"),
+		).toThrow(/cannot use synchronous loops/);
 		expect(() =>
-			parseWorkflowScript("export const meta = { name: 'demo', description: 'desc' }\nreturn Math.random()"),
-		).toThrow(/must be deterministic/);
-		expect(() =>
-			parseWorkflowScript("export const meta = { name: 'demo', description: 'desc' }\nreturn new Date()"),
-		).toThrow(/must be deterministic/);
+			parseWorkflowScript(
+				"export const meta = { name: 'demo', description: 'desc' }\nawait agent('ok')\nwhile (true) {}",
+			),
+		).toThrow(/cannot use synchronous loops/);
 	});
 });
 
@@ -130,15 +146,12 @@ describe("runWorkflow", () => {
 				scriptTimeoutMs: 100,
 			}),
 		).rejects.toThrow(/Code generation from strings disallowed|not defined/);
-	});
-
-	test("bounds synchronous script execution", async () => {
 		await expect(
-			runWorkflow(script("while (true) {}"), {
+			runWorkflow(script("return budget.constructor.constructor('return process')()"), {
 				agent: { run: async () => "unused" },
-				scriptTimeoutMs: 10,
+				scriptTimeoutMs: 100,
 			}),
-		).rejects.toThrow(/Script execution timed out|timed out/);
+		).rejects.toThrow(/undefined|null/);
 	});
 });
 
