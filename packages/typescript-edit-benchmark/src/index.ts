@@ -54,11 +54,9 @@ function rateColor(percent: number): string {
 }
 
 function parseThinkingLevel(value: string | null | undefined): ResolvedThinkingLevel | undefined {
-	return value !== undefined &&
-		value !== null &&
-		[ThinkingLevel.Off, ...THINKING_EFFORTS].includes(value as ResolvedThinkingLevel)
-		? (value as ResolvedThinkingLevel)
-		: undefined;
+	if (value === undefined || value === null) return undefined;
+	const valid: readonly ResolvedThinkingLevel[] = [ThinkingLevel.Off, ...THINKING_EFFORTS];
+	return valid.includes(value as ResolvedThinkingLevel) ? (value as ResolvedThinkingLevel) : undefined;
 }
 
 function generateReportFilename(config: BenchmarkConfig, format: "markdown" | "json"): string {

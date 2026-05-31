@@ -5,8 +5,9 @@
  */
 
 import path from "node:path";
-import type { AgentEvent, AgentIdentity, AgentTelemetryConfig, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
-import { recordHandoff, resolveTelemetry } from "@oh-my-pi/pi-agent-core";
+import type { AgentEvent, AgentIdentity, AgentTelemetryConfig } from "@oh-my-pi/pi-agent-core";
+import { recordHandoff, resolveTelemetry, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
+import { Effort } from "@oh-my-pi/pi-ai";
 import { logger, prompt, untilAborted } from "@oh-my-pi/pi-utils";
 import { ModelRegistry } from "../config/model-registry";
 import { resolveModelOverrideWithAuthFallback } from "../config/model-resolver";
@@ -523,13 +524,32 @@ function createMCPProxyTools(mcpManager: MCPManager): CustomTool[] {
 	});
 }
 
-function createSubagentSettings(baseSettings: Settings): Settings {
+/**
+ * Build the {@link Settings} bag that backs a subagent {@link AgentSession}.
+ * Exported so the adaptive-thinking regression test (`createSubagentSettings`
+ * never propagates the `"adaptive"` selector — see roboomp #1530) can audit
+ * the bag without spawning a real subagent.
+ */
+export function createSubagentSettings(baseSettings: Settings): Settings {
 	const snapshot: Partial<Record<SettingPath, unknown>> = {};
 	for (const key of Object.keys(SETTINGS_SCHEMA) as SettingPath[]) {
 		snapshot[key] = baseSettings.get(key);
 	}
+	// roboomp #1530: never inherit the parent's `"adaptive"` thinking selector.
+	// Adaptive mode is a per-session contract between the agent and the model —
+	// the `set_thinking_level` tool, the adaptive prompt block, and the
+	// per-turn override restore at `agent_end` are all scoped to whichever
+	// session is driving the conversation. Subagents run headless and never
+	// touch the parent's `#adaptiveEffort`, so leaking the selector into a
+	// subagent would either deadlock (no UI to surface the tool's effect) or
+	// silently bypass the parent's baseline. Down-shift to `Effort.Medium`
+	// (the same bootstrap baseline `AgentSession.setThinkingLevel` seeds for
+	// adaptive mode) so the subagent inherits a concrete, non-adaptive effort.
+	const parentDefault = snapshot.defaultThinkingLevel;
+	const defaultThinkingLevel = parentDefault === ThinkingLevel.Adaptive ? Effort.Medium : parentDefault;
 	return Settings.isolated({
 		...snapshot,
+		defaultThinkingLevel,
 		"async.enabled": false,
 		"bash.autoBackground.enabled": false,
 

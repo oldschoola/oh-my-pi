@@ -8,8 +8,15 @@
  * returns `null` outside adaptive mode — so the registration is inert and the
  * model never sees the schema unless adaptive is currently active.
  *
+ * The schema's `level` enum and the rendered description are computed from the
+ * **current session model's** supported efforts at construction time. This way
+ * the model receives a tight, provider-accurate set rather than a free-form
+ * string; the runtime check in `execute` is still the source of truth so a
+ * model that ignores the enum still gets a clear error.
+ *
  * `persist=false` (default): apply for this turn only; restored to the adaptive
- *   baseline at `agent_end` by the session.
+ *   baseline at `agent_end` by the session — including aborted/error
+ *   completions (see `AgentSession.#handleAgentEvent`).
  * `persist=true`: replaces the adaptive baseline for the rest of the session.
  *
  * The tool intentionally returns *plain text* on every failure mode (not active,
@@ -18,21 +25,44 @@
  */
 import type { AgentTool, AgentToolContext, AgentToolResult, AgentToolUpdateCallback } from "@oh-my-pi/pi-agent-core";
 import type { Effort } from "@oh-my-pi/pi-ai";
+import { prompt } from "@oh-my-pi/pi-utils";
 import * as z from "zod/v4";
+import setThinkingLevelDescriptionTemplate from "../prompts/tools/set-thinking-level.md" with { type: "text" };
 import type { ToolSession } from ".";
 
-const setThinkingLevelSchema = z.object({
-	level: z
-		.string()
-		.min(1)
-		.describe("Target effort supported by the current model (e.g. minimal, low, medium, high, xhigh)"),
-	persist: z
-		.boolean()
-		.optional()
-		.describe("false (default) applies for this turn only; true updates the session baseline"),
+const persistSchema = z
+	.boolean()
+	.optional()
+	.describe("false (default) applies for this turn only; true updates the session baseline");
+
+/**
+ * Schema variant used when the current model exposes no supported efforts —
+ * e.g. the tool is constructed before the session model is wired or the model
+ * lost its reasoning metadata mid-session. Should not be reachable in practice
+ * because {@link SetThinkingLevelTool.createIf} gates on adaptive mode, which
+ * itself requires reasoning support, but we keep the fallback so a stale
+ * call site can't crash the tool registry.
+ */
+const setThinkingLevelSchemaString = z.object({
+	level: z.string().min(1).describe("Target effort supported by the current model"),
+	persist: persistSchema,
 });
 
-type SetThinkingLevelParams = z.infer<typeof setThinkingLevelSchema>;
+function buildSetThinkingLevelSchema(supported: readonly Effort[]): typeof setThinkingLevelSchemaString {
+	if (supported.length === 0) {
+		return setThinkingLevelSchemaString;
+	}
+	// `z.enum` requires a non-empty tuple. The literal cast is safe because we
+	// guarded on `length === 0` above; the model sees only the exact supported
+	// strings.
+	const levelEnum = z.enum([...supported] as [Effort, ...Effort[]]);
+	return z.object({
+		level: levelEnum.describe(`Target effort. Valid values: ${supported.join(", ")}`),
+		persist: persistSchema,
+	}) as unknown as typeof setThinkingLevelSchemaString;
+}
+
+type SetThinkingLevelParams = z.infer<typeof setThinkingLevelSchemaString>;
 
 export interface SetThinkingLevelDetails {
 	level: Effort;
@@ -40,21 +70,28 @@ export interface SetThinkingLevelDetails {
 	previous?: Effort;
 }
 
-export class SetThinkingLevelTool implements AgentTool<typeof setThinkingLevelSchema, SetThinkingLevelDetails> {
+export class SetThinkingLevelTool implements AgentTool<typeof setThinkingLevelSchemaString, SetThinkingLevelDetails> {
 	readonly name = "set_thinking_level";
 	readonly approval = "read" as const;
 	readonly label = "Set Thinking Level";
 	readonly summary = "Adjust the underlying reasoning effort while in adaptive thinking mode";
 	readonly loadMode = "essential";
-	readonly description =
-		"Change the underlying reasoning effort while operating in adaptive thinking mode. " +
-		"`persist=false` (default) applies for the current turn only; `persist=true` updates the session baseline.";
-	readonly parameters = setThinkingLevelSchema;
+	readonly description: string;
+	readonly parameters: typeof setThinkingLevelSchemaString;
 	readonly strict = true;
 	readonly intent = (args: Partial<SetThinkingLevelParams>) =>
 		args.level ? `thinking → ${args.level}` : "adjusting thinking level";
 
-	constructor(private readonly session: ToolSession) {}
+	constructor(private readonly session: ToolSession) {
+		// Bake the active model's supported effort set into the schema so the
+		// provider sees an exact enum, not a free-form string. The list is
+		// frozen at construction time; a mid-session model swap produces a new
+		// AgentSession-driven tool instance through `#applyActiveToolsByName`.
+		const supported = session.getSupportedThinkingEfforts?.() ?? [];
+		this.parameters = buildSetThinkingLevelSchema(supported);
+		const supportedList = supported.length > 0 ? supported.join(", ") : "(none — adaptive cannot be applied)";
+		this.description = prompt.render(setThinkingLevelDescriptionTemplate, { supportedList });
+	}
 
 	/**
 	 * Built-in tool factory hook. Only constructs the tool when the session is
