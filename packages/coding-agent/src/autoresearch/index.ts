@@ -545,14 +545,13 @@ export const createAutoresearchExtension: ExtensionFactory = api => {
 	}
 };
 
-const LEGACY_ARTIFACTS = [
-	"autoresearch.md",
-	"autoresearch.sh",
-	"autoresearch.checks.sh",
-	"autoresearch.program.md",
-	"autoresearch.ideas.md",
-	".autoresearch",
-];
+/**
+ * Files/dirs we own outright and remove on `/autoresearch clear`. Files the
+ * setup prompt invites the user to author (`autoresearch.md`,
+ * `autoresearch.checks.sh`, `autoresearch.ideas.md`) are intentionally NOT
+ * here — see prompt-setup.md.
+ */
+const LEGACY_ARTIFACTS = ["autoresearch.sh", "autoresearch.program.md", ".autoresearch"];
 
 function removeLegacyArtifacts(workDir: string): void {
 	for (const name of LEGACY_ARTIFACTS) {

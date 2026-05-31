@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { JSONL_FILENAME, readJsonlEntries, reconstructStateFromJsonl } from "./jsonl";
+import { findLatestConfigEntry, JSONL_FILENAME, readJsonlEntries, reconstructStateFromJsonl } from "./jsonl";
 import type { SessionSnapshot } from "./types";
 
 export function buildCompactionSummary(cwd: string): string | null {
@@ -76,7 +76,7 @@ export function compactJsonl(cwd: string): void {
 
 	// Write a compacted version: config + latest session + all runs
 	const compacted: unknown[] = [];
-	const configEntry = entries.find(e => e.type === "config");
+	const configEntry = findLatestConfigEntry(entries);
 	if (configEntry) compacted.push(configEntry);
 	compacted.push({
 		type: "session",

@@ -97,13 +97,29 @@ export function readJsonlEntries(cwd: string): JsonlEntry[] {
 	return entries;
 }
 
+export type ConfigJsonlEntry = JsonlEntry & { type: "config" };
+
+/**
+ * Return the most recent `config` entry from a JSONL history.
+ *
+ * The reconstruction path and the compaction path MUST agree on which config
+ * survives so reconstruct(compact(history)) is fixed-point. Centralizing the
+ * pick here is the only thing that keeps them in sync.
+ */
+export function findLatestConfigEntry(entries: readonly JsonlEntry[]): ConfigJsonlEntry | undefined {
+	let latest: ConfigJsonlEntry | undefined;
+	for (const entry of entries) {
+		if (entry.type === "config") latest = entry;
+	}
+	return latest;
+}
+
 export function reconstructStateFromJsonl(entries: JsonlEntry[]): SessionSnapshot | null {
-	const configEntries = entries.filter((e): e is JsonlEntry & { type: "config" } => e.type === "config");
 	const runEntries = entries.filter((e): e is JsonlEntry & { type: "run" } => e.type === "run");
 	const sessionEntries = entries.filter((e): e is JsonlEntry & { type: "session" } => e.type === "session");
 
 	const lastSession = sessionEntries[sessionEntries.length - 1];
-	const lastConfig = configEntries[configEntries.length - 1];
+	const lastConfig = findLatestConfigEntry(entries);
 
 	const results: ExperimentResult[] = [];
 	for (const run of runEntries) {

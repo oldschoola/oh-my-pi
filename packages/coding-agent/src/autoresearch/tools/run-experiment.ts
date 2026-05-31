@@ -176,24 +176,15 @@ export function createRunExperimentTool(
 
 			const passed = execution.exitCode === 0 && !execution.killed;
 
-			// Run backpressure checks if benchmark passed and checks script exists
+			// Run backpressure checks if benchmark passed and checks script exists.
 			let checksPassed: boolean | undefined;
 			let checksOutput: string | undefined;
 			if (passed) {
 				const checksPath = path.join(ctx.cwd, CHECKS_FILENAME);
 				if (fs.existsSync(checksPath)) {
-					try {
-						const checksProc = Bun.spawn(["bash", checksPath], {
-							cwd: ctx.cwd,
-							stdout: "pipe",
-							stderr: "pipe",
-						});
-						const checksExit = await checksProc.exited;
-						checksPassed = checksExit === 0;
-						checksOutput = (await new Response(checksProc.stdout).text()).slice(0, 4 * 1024);
-					} catch {
-						checksPassed = false;
-					}
+					const checksResult = await runChecksScript(ctx.cwd, checksPath);
+					checksPassed = checksResult.passed;
+					checksOutput = checksResult.output;
 				}
 			}
 
@@ -498,4 +489,42 @@ function isRunDetails(value: unknown): value is RunDetails {
 function isProgressDetails(value: unknown): value is RunExperimentProgressDetails {
 	if (typeof value !== "object" || value === null) return false;
 	return "phase" in value && (value as { phase: unknown }).phase === "running";
+}
+
+const CHECKS_OUTPUT_BUDGET = 4 * 1024;
+
+/**
+ * Spawn `bash <checksPath>` and return its pass/fail + captured output.
+ *
+ * Stdout AND stderr MUST be drained concurrently *before* awaiting the exit
+ * code. If we awaited `exited` first while only the stdout reader was active
+ * (the previous behaviour), any checks script that wrote more than the OS
+ * pipe buffer (typically 64 KiB on Linux, ~4 KiB on Windows) to stderr would
+ * block on the next write and the autoresearch loop would deadlock. Both
+ * buffers are capped after the read to keep error-summary output bounded.
+ */
+export async function runChecksScript(
+	cwd: string,
+	checksPath: string,
+	options: { bashCommand?: string } = {},
+): Promise<{ passed: boolean; output: string }> {
+	const bashCmd = options.bashCommand ?? "bash";
+	try {
+		const checksProc = Bun.spawn([bashCmd, checksPath], {
+			cwd,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const [outBuf, errBuf] = await Promise.all([
+			new Response(checksProc.stdout).text(),
+			new Response(checksProc.stderr).text(),
+		]);
+		const checksExit = await checksProc.exited;
+		const stdoutCapped = outBuf.slice(0, CHECKS_OUTPUT_BUDGET);
+		const stderrCapped = errBuf.slice(0, CHECKS_OUTPUT_BUDGET).trim();
+		const output = stderrCapped.length > 0 ? `${stdoutCapped}\n[stderr] ${stderrCapped}` : stdoutCapped;
+		return { passed: checksExit === 0, output };
+	} catch {
+		return { passed: false, output: "" };
+	}
 }

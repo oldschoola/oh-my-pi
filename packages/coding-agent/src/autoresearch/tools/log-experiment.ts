@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { Text } from "@oh-my-pi/pi-tui";
+import { logger } from "@oh-my-pi/pi-utils";
 import * as z from "zod/v4";
 import type { ToolDefinition } from "../../extensibility/extensions";
 import type { Theme } from "../../modes/theme/theme";
@@ -39,6 +40,7 @@ import type {
 	ExperimentResult,
 	ExperimentState,
 	HookPayload,
+	HookResult,
 	LogDetails,
 	NumericMetricMap,
 } from "../types";
@@ -97,7 +99,10 @@ export function createLogExperimentTool(
 
 			const runtime = options.getRuntime(ctx);
 
-			// Fire before_log hooks
+			// Fire before_log hooks. A hook that exits non-zero blocks the log:
+			// we abandon the pending run, revert any worktree changes as if the
+			// agent had called discard, and surface an actionable error so the
+			// agent can adjust and try again.
 			const preLogState = buildExperimentState(session, storage.listLoggedRuns(session.id));
 			const beforeHookPayload: HookPayload = {
 				event: "before_log",
@@ -105,7 +110,37 @@ export function createLogExperimentTool(
 				cwd: ctx.cwd,
 				timestamp: Date.now(),
 			};
-			await runHooksForEvent(ctx.cwd, "before_log", beforeHookPayload);
+			const beforeHookResults = await runHooksForEvent(ctx.cwd, "before_log", beforeHookPayload);
+			const blockingHook = beforeHookResults.find(r => !r.allowed);
+			if (blockingHook) {
+				const onBranch = (await getCurrentAutoresearchBranch(options.pi, ctx.cwd)) !== null;
+				storage.abandonPendingRuns(session.id);
+				const revertResult = await revertFailedExperiment(ctx.cwd, pendingRun.preRunDirtyPaths, onBranch);
+				runtime.runningExperiment = null;
+				runtime.lastRunSummary = null;
+				runtime.lastRunDuration = null;
+				runtime.lastRunAsi = null;
+				runtime.lastRunArtifactDir = null;
+				runtime.lastRunNumber = null;
+				options.dashboard.updateWidget(ctx, runtime);
+				options.dashboard.requestRender();
+				const reason = blockingHook.message?.trim().length
+					? blockingHook.message.trim()
+					: blockingHook.stderr.trim() || `exit ${blockingHook.exitCode}`;
+				const revertNote = revertResult.error
+					? `; revert failed: ${revertResult.error}`
+					: revertResult.note
+						? `; ${revertResult.note}`
+						: "";
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Error: before_log hook blocked logging (${reason}). Pending run reverted${revertNote}.`,
+						},
+					],
+				};
+			}
 
 			const flaggedRuns: LogDetails["flaggedRuns"] = [];
 			for (const flag of params.flag_runs ?? []) {
@@ -270,14 +305,21 @@ export function createLogExperimentTool(
 				}
 			}
 
-			// Fire after_log hooks
+			// Fire after_log hooks. These are observational — we never roll back
+			// the run that just persisted, but a blocked hook is still surfaced
+			// in the logger so the operator sees it.
 			const afterHookPayload: HookPayload = {
 				event: "after_log",
 				state: finalState,
 				cwd: ctx.cwd,
 				timestamp: Date.now(),
 			};
-			await runHooksForEvent(ctx.cwd, "after_log", afterHookPayload);
+			const afterHookResults = await runHooksForEvent(ctx.cwd, "after_log", afterHookPayload);
+			for (const result of afterHookResults) {
+				if (!result.allowed) {
+					afterLogHookBlocked(result, tentativeRun.id);
+				}
+			}
 
 			// Commit kept experiment after metadata writes so autoresearch files are included
 			if (params.status === "keep" && onAutoresearchBranch && allModified.length > 0) {
@@ -377,7 +419,7 @@ async function commitKeptExperiment(
 ): Promise<KeepCommitResult> {
 	if (files.length === 0) return { note: "nothing to commit" };
 	try {
-		await git.stage.files(cwd, []);
+		await git.stage.files(cwd, files);
 	} catch (err) {
 		return { error: `git add failed: ${err instanceof Error ? err.message : String(err)}` };
 	}
@@ -411,20 +453,15 @@ async function revertFailedExperiment(
 		// rewinds prior `keep` commits. Reset to HEAD so any kept improvements
 		// already on the branch survive.
 		try {
-			// Backup autoresearch metadata files
-			const autoresearchFiles = fs
-				.readdirSync(cwd)
-				.filter(name => name.startsWith("autoresearch.") && !fs.statSync(path.join(cwd, name)).isDirectory());
-			const backups: { filePath: string; content: Buffer }[] = [];
-			for (const fileName of autoresearchFiles) {
-				const filePath = path.join(cwd, fileName);
-				backups.push({ filePath, content: fs.readFileSync(filePath) });
-			}
+			// Snapshot every `autoresearch.*` path (files AND directories such as
+			// `autoresearch.hooks/`, `.autoresearch/`-style state etc.) before
+			// the destructive reset, then restore in place so user-authored
+			// hooks and metadata survive a discard.
+			const backups = collectAutoresearchSnapshots(cwd);
 			await git.reset(cwd, { hard: true, target: "HEAD" });
 			await git.clean(cwd);
-			// Restore autoresearch metadata files
 			for (const backup of backups) {
-				fs.writeFileSync(backup.filePath, backup.content);
+				restoreAutoresearchSnapshot(backup, cwd);
 			}
 			return { note: "worktree reset to HEAD (autoresearch files preserved)" };
 		} catch (err) {
@@ -593,4 +630,99 @@ function renderSummary(details: LogDetails, theme: Theme): string {
 		summary += ` ${theme.fg("warning", `deviations:${details.scopeDeviations.length}`)}`;
 	}
 	return summary;
+}
+
+interface AutoresearchPathSnapshot {
+	relPath: string;
+	files: Array<{ relPath: string; content: Buffer; mode: number }>;
+	dirs: string[];
+}
+
+function collectAutoresearchSnapshots(cwd: string): AutoresearchPathSnapshot[] {
+	const snapshots: AutoresearchPathSnapshot[] = [];
+	let entries: string[];
+	try {
+		entries = fs.readdirSync(cwd);
+	} catch {
+		return snapshots;
+	}
+	for (const name of entries) {
+		if (!name.startsWith("autoresearch.")) continue;
+		const absRoot = path.join(cwd, name);
+		let rootStat: fs.Stats;
+		try {
+			rootStat = fs.statSync(absRoot);
+		} catch {
+			continue;
+		}
+		const snapshot: AutoresearchPathSnapshot = { relPath: name, files: [], dirs: [] };
+		if (rootStat.isDirectory()) {
+			snapshot.dirs.push(name);
+			walkAutoresearchDir(absRoot, name, snapshot);
+		} else if (rootStat.isFile()) {
+			try {
+				snapshot.files.push({ relPath: name, content: fs.readFileSync(absRoot), mode: rootStat.mode });
+			} catch {
+				// best effort
+			}
+		}
+		snapshots.push(snapshot);
+	}
+	return snapshots;
+}
+
+function walkAutoresearchDir(absDir: string, relDir: string, snapshot: AutoresearchPathSnapshot): void {
+	let entries: fs.Dirent[];
+	try {
+		entries = fs.readdirSync(absDir, { withFileTypes: true });
+	} catch {
+		return;
+	}
+	for (const entry of entries) {
+		const absChild = path.join(absDir, entry.name);
+		const relChild = path.posix.join(relDir.split(path.sep).join("/"), entry.name);
+		if (entry.isDirectory()) {
+			snapshot.dirs.push(relChild);
+			walkAutoresearchDir(absChild, relChild, snapshot);
+		} else if (entry.isFile()) {
+			try {
+				const stat = fs.statSync(absChild);
+				snapshot.files.push({ relPath: relChild, content: fs.readFileSync(absChild), mode: stat.mode });
+			} catch {
+				// best effort
+			}
+		}
+	}
+}
+
+function restoreAutoresearchSnapshot(snapshot: AutoresearchPathSnapshot, cwd: string): void {
+	// Recreate directories first so file writes find their parents.
+	for (const relDir of snapshot.dirs) {
+		try {
+			fs.mkdirSync(path.join(cwd, ...relDir.split("/")), { recursive: true });
+		} catch {
+			// best effort
+		}
+	}
+	for (const file of snapshot.files) {
+		const dest = path.join(cwd, ...file.relPath.split("/"));
+		try {
+			fs.mkdirSync(path.dirname(dest), { recursive: true });
+			fs.writeFileSync(dest, file.content);
+			try {
+				fs.chmodSync(dest, file.mode);
+			} catch {
+				// chmod is best-effort (no-op on Windows for some modes).
+			}
+		} catch {
+			// best effort
+		}
+	}
+}
+
+function afterLogHookBlocked(result: HookResult, runId: number): void {
+	const reason = result.message?.trim().length
+		? result.message.trim()
+		: result.stderr.trim() || `exit ${result.exitCode}`;
+	logger.warn("after_log hook reported failure", { runId, reason });
 }
