@@ -87,9 +87,10 @@ import type { HindsightSessionState } from "./hindsight/state";
 import { LocalProtocolHandler, type LocalProtocolOptions } from "./internal-urls";
 import { LSP_STARTUP_EVENT_CHANNEL, type LspStartupEvent } from "./lsp/startup-events";
 import { discoverAndLoadMCPTools, MCPManager, type MCPToolsLoadResult } from "./mcp";
+
 import { resolveMemoryBackend } from "./memory-backend";
 import { getMnemopiSessionState, type MnemopiSessionState } from "./mnemopi/state";
-import { isKimiClassModel } from "./model-families";
+import { isGlmModel, isKimiClassModel } from "./model-families";
 import asyncResultTemplate from "./prompts/tools/async-result.md" with { type: "text" };
 import { AgentRegistry, MAIN_AGENT_ID } from "./registry/agent-registry";
 import {
@@ -681,11 +682,48 @@ function resolveAppendOnlyMode(setting: "auto" | "on" | "off" | undefined, provi
  */
 function buildModelBehavioralAddendum(m: Model | undefined): string | null {
 	if (!isKimiClassModel(m)) return null;
-	return [
-		"## Output discipline",
-		"",
+	const bullets: string[] = [
 		"- Do NOT emit `<thinking>` or `</thinking>` tags in your output. Plan internally; state only conclusions, decisions, and tool calls. Long inline `<thinking>` monologues blow past per-turn budgets.",
-	].join("\n");
+	];
+	// GLM-specific: the retry-context diff-direction hint empirically helps
+	// glm-5.x apply the expected change verbatim, but marginally regresses
+	// kimi-2.6 (which handles the `-`/`+` notation natively without prompting).
+	if (isGlmModel(m)) {
+		bullets.push(
+			"- If a `## Retry context` block shows a diff (lines prefixed with `-` and `+`), the `-` lines are the expected (correct) content and the `+` lines are what's wrong in the current file. Apply an edit that produces the `-` lines — do not re-derive a different fix.",
+		);
+	}
+	return ["## Output discipline", "", ...bullets].join("\n");
+}
+
+/**
+ * Kimi/GLM/Qwen-class non-thinking sampling defaults. Vendor docs converge on
+ * these values for coding-style benchmarks (z.ai GLM-5 SWE-Bench: temp=0.7,
+ * top_p=1.0; GLM-5.1 sweet spot: temp 0.60-0.80, top_p=0.95; Kimi 2.5 insta
+ * mode: temp=0.6, top_p=0.95, min_p=0.01). Provider defaults are tuned for
+ * conversational output and overshoot for coding tasks. Users with explicit
+ * `>= 0` settings keep their override; this only fills in the auto case.
+ *
+ * top_p=0.95 sits at GLM-5.1's "most coherent / stable" sweet spot per vendor;
+ * temperatures above 0.80 risk Chinese-character bleed and incoherence on
+ * GLM-5.1, and below 0.60 the model deterministically picks its most-likely
+ * (often wrong) line on coin-flip tasks (empirically validated at temp=0.3,
+ * see run #59-#60).
+ */
+const KIMI_CLASS_SAMPLING_DEFAULTS = {
+	temperature: 0.7,
+	topP: 0.95,
+	minP: 0.01,
+} as const;
+
+function resolveKimiClassSamplingDefault(
+	m: Model | undefined,
+	rawSetting: number,
+	key: keyof typeof KIMI_CLASS_SAMPLING_DEFAULTS,
+): number | undefined {
+	if (rawSetting >= 0) return rawSetting;
+	if (isKimiClassModel(m)) return KIMI_CLASS_SAMPLING_DEFAULTS[key];
+	return undefined;
 }
 
 function customToolToDefinition(tool: CustomTool): ToolDefinition {
@@ -1654,8 +1692,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const promptTools = buildSystemPromptToolMetadata(tools, {
 				search_tool_bm25: { description: renderSearchToolBm25Description(discoverableToolsForDesc) },
 			});
-			const memoryBackend = resolveMemoryBackend(settings);
-			const memoryInstructions = await memoryBackend.buildDeveloperInstructions(agentDir, settings, session);
+			const memoryInstructions = await resolveMemoryBackend(settings).buildDeveloperInstructions(
+				agentDir,
+				settings,
+				session,
+			);
 
 			// Build combined append prompt: memory instructions + MCP server instructions
 			const serverInstructions = mcpManager?.getServerInstructions();
@@ -1700,7 +1741,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				eagerTasks,
 				secretsEnabled,
 				workspaceTree: workspaceTreePromise,
-				memoryRootEnabled: memoryBackend.id === "local",
 			});
 
 			if (options.systemPrompt === undefined) {
@@ -1952,10 +1992,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			followUpMode: settings.get("followUpMode") ?? "one-at-a-time",
 			interruptMode: settings.get("interruptMode") ?? "immediate",
 			thinkingBudgets: settings.getGroup("thinkingBudgets"),
-			temperature: settings.get("temperature") >= 0 ? settings.get("temperature") : undefined,
-			topP: settings.get("topP") >= 0 ? settings.get("topP") : undefined,
+			temperature: resolveKimiClassSamplingDefault(model, settings.get("temperature"), "temperature"),
+			topP: resolveKimiClassSamplingDefault(model, settings.get("topP"), "topP"),
 			topK: settings.get("topK") >= 0 ? settings.get("topK") : undefined,
-			minP: settings.get("minP") >= 0 ? settings.get("minP") : undefined,
+			minP: resolveKimiClassSamplingDefault(model, settings.get("minP"), "minP"),
 			presencePenalty: settings.get("presencePenalty") >= 0 ? settings.get("presencePenalty") : undefined,
 			repetitionPenalty: settings.get("repetitionPenalty") >= 0 ? settings.get("repetitionPenalty") : undefined,
 			serviceTier: initialServiceTier,

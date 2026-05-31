@@ -31,3 +31,17 @@ export function isKimiClassModelString(id: string | undefined | null): boolean {
 	if (!id) return false;
 	return KIMI_CLASS_MODEL_REGEX.test(id);
 }
+
+/**
+ * GLM-specific predicate. Used for behaviors that empirically help glm-5.x but
+ * regress kimi (e.g. the retry-context diff-direction addendum bullet — glm
+ * benefits from explicit `-`/`+` interpretation while kimi handles it natively).
+ * Strict subset of `isKimiClassModel`.
+ */
+const GLM_MODEL_REGEX = /(?:^|\/)glm-/i;
+
+/** True when the given resolved model belongs to the GLM family specifically. */
+export function isGlmModel(m: Model | undefined): boolean {
+	if (!m) return false;
+	return GLM_MODEL_REGEX.test(m.id);
+}
