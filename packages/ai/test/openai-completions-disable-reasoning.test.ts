@@ -177,3 +177,60 @@ describe("OpenAI completions reasoning enabled with extraBody", () => {
 		});
 	}
 });
+
+describe("OpenAI completions extraBody precedence", () => {
+	// Behavioural regression for the "skip keys already set" extraBody apply on
+	// non-DeepSeek providers. The DeepSeek disable path relies on this so its
+	// `extraBody: { thinking: { type: "enabled" } }` default cannot clobber an
+	// explicit `thinking: { type: "disabled" }` set by `nativeReasoningDisable`.
+	// These tests pin the cross-provider contract roboomp asked about
+	// (`extraBody:` references across the codebase rely on this precedence
+	// being consistent for `temperature`/`top_p`-shaped fields too).
+
+	function createCustomModelWithExtraBody(extraBody: Record<string, unknown>): Model<"openai-completions"> {
+		return {
+			id: "non-deepseek-model",
+			name: "Non-DeepSeek Model",
+			api: "openai-completions",
+			provider: "custom",
+			baseUrl: "https://proxy.example.com/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128_000,
+			maxTokens: 16_384,
+			compat: { extraBody },
+		};
+	}
+
+	it("descriptor extraBody.temperature reaches the wire when caller omits temperature", async () => {
+		const payload = await captureStreamPayload(createCustomModelWithExtraBody({ temperature: 0.42 }), {
+			apiKey: "test-key",
+		});
+
+		expect(payload.temperature).toBe(0.42);
+	});
+
+	it("caller-supplied temperature wins over descriptor extraBody.temperature", async () => {
+		const payload = await captureStreamPayload(createCustomModelWithExtraBody({ temperature: 0.42 }), {
+			apiKey: "test-key",
+			temperature: 0.7,
+		});
+
+		// The "skip keys already set" guard means extraBody never clobbers a
+		// param the buildParams chain already populated from the caller's options.
+		expect(payload.temperature).toBe(0.7);
+	});
+
+	it("descriptor extraBody augments unrelated fields even when caller sets temperature", async () => {
+		const payload = await captureStreamPayload(
+			createCustomModelWithExtraBody({ temperature: 0.42, custom_routing: "fast" }),
+			{ apiKey: "test-key", temperature: 0.7 },
+		);
+
+		// Caller wins on `temperature`, but descriptor still gets to inject
+		// arbitrary keys that the buildParams chain doesn't touch.
+		expect(payload.temperature).toBe(0.7);
+		expect(payload.custom_routing).toBe("fast");
+	});
+});

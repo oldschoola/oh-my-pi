@@ -83,11 +83,13 @@ export function detectOpenAICompat(model: Model<"openai-completions">, resolvedB
 	// 400s come from DeepSeek and require exact reasoning_content replay.
 	const isOpenCodeDeepseekAlias =
 		provider === "opencode-zen" && (lowerId === "big-pickle" || lowerName === "big pickle");
+	// Prefix-anchored: matches `deepseek-*` and `vendor/deepseek-*` ids but not
+	// hybrids like `mistral-deepseek-merge` that merely embed the substring.
 	const isDeepseekFamily =
 		provider === "deepseek" ||
 		baseUrl.includes("deepseek.com") ||
-		lowerId.includes("deepseek") ||
-		lowerName.includes("deepseek") ||
+		/^(?:.*\/)?deepseek/i.test(model.id) ||
+		/^(?:.*\/)?deepseek/i.test(model.name ?? "") ||
 		isOpenCodeDeepseekAlias;
 	const isDirectDeepseekApi = provider === "deepseek" || baseUrl.includes("api.deepseek.com");
 	const isDirectDeepseekReasoning = isDirectDeepseekApi && isDeepseekFamily && Boolean(model.reasoning);
