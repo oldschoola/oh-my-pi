@@ -1,10 +1,12 @@
 import type { AssistantMessage, TextContent } from "@oh-my-pi/pi-ai";
-import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
-import { createAgentSession, type CreateAgentSessionOptions } from "../../sdk";
-import { SessionManager } from "../../session/session-manager";
-import { Settings } from "../../config/settings";
-import type { CustomTool } from "../../extensibility/custom-tools/types";
+import { prompt } from "@oh-my-pi/pi-utils";
 import { z } from "zod";
+import { Settings } from "../../config/settings";
+import { SETTINGS_SCHEMA, type SettingPath } from "../../config/settings-schema";
+import type { CustomTool } from "../../extensibility/custom-tools/types";
+import workflowSubagentPrompt from "../../prompts/system/workflow-subagent-prompt.md" with { type: "text" };
+import { type CreateAgentSessionOptions, createAgentSession } from "../../sdk";
+import { SessionManager } from "../../session/session-manager";
 
 export interface WorkflowAgentOptions {
 	cwd?: string;
@@ -48,12 +50,26 @@ function createStructuredOutputTool(capture: StructuredOutputCapture): CustomToo
 	};
 }
 
+function createSubagentSettings(baseSettings: Settings | undefined): Settings {
+	if (!baseSettings) return Settings.isolated({ "compaction.enabled": false });
+	const snapshot: Partial<Record<SettingPath, unknown>> = {};
+	for (const key of Object.keys(SETTINGS_SCHEMA) as SettingPath[]) {
+		snapshot[key] = baseSettings.get(key);
+	}
+	return Settings.isolated({
+		...snapshot,
+		"async.enabled": false,
+		"bash.autoBackground.enabled": false,
+		"tools.approvalMode": "yolo",
+		"compaction.enabled": false,
+	});
+}
+
 export class WorkflowAgent {
 	readonly #cwd: string;
 	readonly #baseTools: CustomTool[];
 	readonly #sessionOptions: Partial<CreateAgentSessionOptions>;
 	readonly #instructions?: string;
-
 	constructor(options: WorkflowAgentOptions = {}) {
 		this.#cwd = options.cwd ?? process.cwd();
 		this.#baseTools = options.tools ?? [];
@@ -61,7 +77,7 @@ export class WorkflowAgent {
 		this.#instructions = options.instructions;
 	}
 
-	async run(prompt: string, options: AgentRunOptions = {}): Promise<AgentRunResult> {
+	async run(promptText: string, options: AgentRunOptions = {}): Promise<AgentRunResult> {
 		const capture: StructuredOutputCapture = { called: false, value: undefined };
 		const customTools: CustomTool[] = [...this.#baseTools, ...(options.tools ?? [])];
 
@@ -71,11 +87,11 @@ export class WorkflowAgent {
 
 		const { session } = await createAgentSession({
 			cwd: this.#cwd,
-			settings: Settings.isolated({
-				"compaction.enabled": false,
-			}),
+			settings: createSubagentSettings(this.#sessionOptions.settings),
 			sessionManager: SessionManager.inMemory(),
 			customTools,
+			requireYieldTool: true,
+			taskDepth: this.#sessionOptions.taskDepth ?? 0,
 			...this.#sessionOptions,
 		});
 
@@ -88,7 +104,15 @@ export class WorkflowAgent {
 				removeAbortListener = () => options.signal?.removeEventListener("abort", onAbort);
 			}
 
-			await session.prompt(this.#buildPrompt(prompt, options, Boolean(options.schema)));
+			await session.prompt(
+				prompt.render(workflowSubagentPrompt, {
+					instructions: this.#instructions,
+					taskInstructions: options.instructions,
+					label: options.label,
+					prompt: promptText,
+					structured: Boolean(options.schema),
+				}),
+			);
 			await session.waitForIdle();
 
 			if (options.signal?.aborted) throw new Error("Subagent was aborted");
@@ -107,36 +131,13 @@ export class WorkflowAgent {
 		}
 	}
 
-	#buildPrompt(prompt: string, options: AgentRunOptions, structured: boolean): string {
-		const parts = [
-			this.#instructions,
-			options.instructions,
-			options.label ? `Task label: ${options.label}` : undefined,
-			prompt,
-		].filter(Boolean);
-
-		if (structured) {
-			parts.push(
-				[
-					"Final output contract:",
-					"- Your final action MUST be a structured_output tool call.",
-					"- The structured_output arguments are the return value of this subagent.",
-					"- Do not emit a prose final answer instead of structured_output.",
-					"- If you need to inspect files or run commands first, do so, then call structured_output exactly once.",
-				].join("\n"),
-			);
-		}
-
-		return parts.join("\n\n");
-	}
-
 	#lastAssistantText(messages: unknown[]): string {
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const message = messages[i] as Partial<AssistantMessage> | undefined;
 			if (message?.role !== "assistant" || !Array.isArray(message.content)) continue;
 			const text = message.content
 				.filter((part): part is TextContent => part.type === "text")
-				.map((part) => part.text)
+				.map(part => part.text)
 				.join("");
 			if (text.trim()) return text;
 		}

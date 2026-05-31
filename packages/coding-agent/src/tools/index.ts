@@ -52,9 +52,9 @@ import { SearchTool } from "./search";
 import { SearchToolBm25Tool } from "./search-tool-bm25";
 import { loadSshTool } from "./ssh";
 import { type TodoPhase, TodoWriteTool } from "./todo-write";
+import { WorkflowTool } from "./workflow";
 import { WriteTool } from "./write";
 import { YieldTool } from "./yield";
-import { WorkflowTool } from "./workflow";
 
 // Exa MCP tools (22 tools)
 
@@ -95,9 +95,9 @@ export * from "./search-tool-bm25";
 export * from "./ssh";
 export * from "./todo-write";
 export * from "./tts";
+export * from "./workflow";
 export * from "./write";
 export * from "./yield";
-export * from "./workflow";
 
 /** Tool type (AgentTool from pi-ai) */
 export type Tool = AgentTool<any, any, any>;

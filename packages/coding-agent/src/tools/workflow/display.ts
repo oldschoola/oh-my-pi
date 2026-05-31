@@ -48,7 +48,7 @@ export function createWorkflowSnapshot(meta: WorkflowMeta): WorkflowSnapshot {
 	return {
 		name: meta.name,
 		description: meta.description,
-		phases: meta.phases?.map((phase) => phase.title) ?? [],
+		phases: meta.phases?.map(phase => phase.title) ?? [],
 		logs: [],
 		agents: [],
 		agentCount: 0,
@@ -59,9 +59,9 @@ export function createWorkflowSnapshot(meta: WorkflowMeta): WorkflowSnapshot {
 }
 
 export function recomputeWorkflowSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {
-	const runningCount = snapshot.agents.filter((agent) => agent.status === "running").length;
-	const doneCount = snapshot.agents.filter((agent) => agent.status === "done").length;
-	const errorCount = snapshot.agents.filter((agent) => agent.status === "error").length;
+	const runningCount = snapshot.agents.filter(agent => agent.status === "running").length;
+	const doneCount = snapshot.agents.filter(agent => agent.status === "done").length;
+	const errorCount = snapshot.agents.filter(agent => agent.status === "error").length;
 	return { ...snapshot, agentCount: snapshot.agents.length, runningCount, doneCount, errorCount };
 }
 
@@ -107,16 +107,16 @@ export function renderWorkflowLines(snapshot: WorkflowSnapshot, options: Workflo
 
 	const phaseNames = snapshot.phases.length
 		? snapshot.phases
-		: unique(snapshot.agents.map((agent) => agent.phase).filter(Boolean) as string[]);
+		: unique(snapshot.agents.map(agent => agent.phase).filter(Boolean) as string[]);
 	const rendered = new Set<WorkflowAgentSnapshot>();
 
 	for (const phase of phaseNames) {
-		const agents = snapshot.agents.filter((agent) => agent.phase === phase);
+		const agents = snapshot.agents.filter(agent => agent.phase === phase);
 		for (const agent of agents) rendered.add(agent);
-		const done = agents.filter((agent) => agent.status === "done").length;
-		const running = agents.filter((agent) => agent.status === "running").length;
-		const errors = agents.filter((agent) => agent.status === "error").length;
-		const skipped = agents.filter((agent) => agent.status === "skipped").length;
+		const done = agents.filter(agent => agent.status === "done").length;
+		const running = agents.filter(agent => agent.status === "running").length;
+		const errors = agents.filter(agent => agent.status === "error").length;
+		const skipped = agents.filter(agent => agent.status === "skipped").length;
 		const complete = agents.length > 0 && done + errors + skipped === agents.length;
 		const marker = running > 0 || (!complete && snapshot.currentPhase === phase) ? "▶" : complete ? "✓" : " ";
 		lines.push(
@@ -133,7 +133,7 @@ export function renderWorkflowLines(snapshot: WorkflowSnapshot, options: Workflo
 			lines.push(`    … ${agents.length - visibleAgents.length} earlier agents`);
 	}
 
-	const unphased = snapshot.agents.filter((agent) => !rendered.has(agent));
+	const unphased = snapshot.agents.filter(agent => !rendered.has(agent));
 	if (unphased.length) {
 		lines.push("  Unphased");
 		for (const agent of unphased.slice(-maxAgents)) {

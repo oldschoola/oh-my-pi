@@ -1,9 +1,4 @@
-import type {
-	AgentTool,
-	AgentToolContext,
-	AgentToolResult,
-	AgentToolUpdateCallback,
-} from "@oh-my-pi/pi-agent-core";
+import type { AgentTool, AgentToolContext, AgentToolResult, AgentToolUpdateCallback } from "@oh-my-pi/pi-agent-core";
 import { Text } from "@oh-my-pi/pi-tui";
 import { z } from "zod";
 import type { RenderResultOptions } from "../../extensibility/custom-tools/types";
@@ -15,10 +10,10 @@ import {
 	preview,
 	recomputeWorkflowSnapshot,
 	renderWorkflowComponent,
-	renderWorkflowText,
 	type WorkflowSnapshot,
 } from "./display.js";
 import { parseWorkflowScript, runWorkflow, type WorkflowRunResult } from "./workflow.js";
+
 const workflowSchema = z.object({
 	script: z
 		.string()
@@ -41,7 +36,7 @@ export interface WorkflowToolDetails {
 	logs: string[];
 	result: unknown;
 	durationMs: number;
-	[ key: string ]: unknown;
+	[key: string]: unknown;
 }
 
 export class WorkflowTool implements AgentTool<typeof workflowSchema, WorkflowToolDetails, Theme> {
@@ -108,6 +103,12 @@ export class WorkflowTool implements AgentTool<typeof workflowSchema, WorkflowTo
 				cwd: this.#session.cwd,
 				args: params.args,
 				signal,
+				session: {
+					settings: this.#session.settings,
+					authStorage: this.#session.authStorage,
+					modelRegistry: this.#session.modelRegistry,
+					taskDepth: (this.#session.taskDepth ?? 0) + 1,
+				},
 				onLog(message) {
 					snapshot.logs.push(message);
 					update();
@@ -131,9 +132,10 @@ export class WorkflowTool implements AgentTool<typeof workflowSchema, WorkflowTo
 				onAgentEnd(event) {
 					const agent = [...snapshot.agents]
 						.reverse()
-						.find((item) => item.label === event.label && item.status === "running");
+						.find(item => item.label === event.label && item.status === "running");
 					if (agent) {
-						agent.status = event.result === null ? "error" : "done";
+						agent.status = event.error ? "error" : "done";
+						if (event.error) agent.error = event.error;
 						agent.resultPreview = preview(event.result);
 					}
 					update();
@@ -183,15 +185,11 @@ export class WorkflowTool implements AgentTool<typeof workflowSchema, WorkflowTo
 		};
 	}
 
-	renderCall(args: WorkflowToolInput, _options: RenderResultOptions, theme: Theme) {
+	renderCall(_args: WorkflowToolInput, _options: RenderResultOptions, theme: Theme) {
 		return new Text(theme.fg("toolTitle", theme.bold("workflow")), 0, 0);
 	}
 
-	renderResult(
-		result: AgentToolResult<WorkflowToolDetails>,
-		options: RenderResultOptions,
-		_theme: Theme,
-	) {
+	renderResult(result: AgentToolResult<WorkflowToolDetails>, options: RenderResultOptions, _theme: Theme) {
 		const snapshot = result.details as WorkflowSnapshot | undefined;
 		if (snapshot?.name) {
 			return renderWorkflowComponent(snapshot, !options.isPartial);

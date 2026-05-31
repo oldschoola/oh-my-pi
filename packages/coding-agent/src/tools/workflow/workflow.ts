@@ -1,7 +1,7 @@
 import vm from "node:vm";
 import type { Node } from "acorn";
 import { parse } from "acorn";
-import type { WorkflowAgent, WorkflowAgentOptions } from "./agent.js";
+import { WorkflowAgent, type WorkflowAgentOptions } from "./agent.js";
 export interface WorkflowMetaPhase {
 	title: string;
 	detail?: string;
@@ -24,7 +24,7 @@ export interface WorkflowRunOptions extends WorkflowAgentOptions {
 	onLog?: (message: string) => void;
 	onPhase?: (title: string) => void;
 	onAgentStart?: (event: { label: string; phase?: string; prompt: string }) => void;
-	onAgentEnd?: (event: { label: string; phase?: string; result: unknown }) => void;
+	onAgentEnd?: (event: { label: string; phase?: string; result: unknown; error?: string }) => void;
 }
 
 export interface WorkflowRunResult<T = unknown> {
@@ -64,7 +64,7 @@ export async function runWorkflow<T = unknown>(
 	const started = Date.now();
 	const { meta, body } = parseWorkflowScript(script);
 	const state: RuntimeState = { logs: [], phases: [], agentCount: 0, spent: 0 };
-	const agentRunner = options.agent ?? new (await import("./agent.js")).WorkflowAgent(options);
+	const agentRunner = options.agent ?? new WorkflowAgent(options);
 	const concurrency = Math.max(
 		1,
 		Math.min(options.concurrency ?? Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 8) - 2), 16),
@@ -116,8 +116,9 @@ export async function runWorkflow<T = unknown>(
 				return result;
 			} catch (error) {
 				if (options.signal?.aborted) throw error;
-				log(`agent ${label} failed: ${error instanceof Error ? error.message : String(error)}`);
-				options.onAgentEnd?.({ label, phase: assignedPhase, result: null });
+				const errorMessage = error instanceof Error ? error.message : String(error);
+				log(`agent ${label} failed: ${errorMessage}`);
+				options.onAgentEnd?.({ label, phase: assignedPhase, result: null, error: errorMessage });
 				return null;
 			}
 		});
@@ -126,8 +127,10 @@ export async function runWorkflow<T = unknown>(
 	const parallel = async (thunks: Array<() => Promise<unknown>>) => {
 		throwIfAborted();
 		if (!Array.isArray(thunks)) throw new TypeError("parallel() expects an array of functions");
-		if (thunks.some((thunk) => typeof thunk !== "function")) {
-			throw new TypeError("parallel() expects an array of functions, not promises. Wrap each call: () => agent(...)");
+		if (thunks.some(thunk => typeof thunk !== "function")) {
+			throw new TypeError(
+				"parallel() expects an array of functions, not promises. Wrap each call: () => agent(...)",
+			);
 		}
 		return Promise.all(
 			thunks.map(async (thunk, index) => {
@@ -148,7 +151,7 @@ export async function runWorkflow<T = unknown>(
 	) => {
 		throwIfAborted();
 		if (!Array.isArray(items)) throw new TypeError("pipeline() expects an array as the first argument");
-		if (stages.some((stage) => typeof stage !== "function")) {
+		if (stages.some(stage => typeof stage !== "function")) {
 			throw new TypeError("pipeline() stages must be functions: pipeline(items, item => ..., result => ...)");
 		}
 		return Promise.all(
@@ -322,7 +325,7 @@ function createLimiter(limit: number) {
 		queue.shift()?.();
 	};
 	return async <T>(fn: () => Promise<T>): Promise<T> => {
-		if (active >= limit) await new Promise<void>((resolve) => queue.push(resolve));
+		if (active >= limit) await new Promise<void>(resolve => queue.push(resolve));
 		active++;
 		try {
 			return await fn();

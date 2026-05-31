@@ -2301,7 +2301,11 @@ export const SETTINGS_SCHEMA = {
 	"workflow.enabled": {
 		type: "boolean",
 		default: true,
-		ui: { tab: "tools", label: "Workflow", description: "Enable the workflow tool for dynamic multi-agent orchestration" },
+		ui: {
+			tab: "tools",
+			label: "Workflow",
+			description: "Enable the workflow tool for dynamic multi-agent orchestration",
+		},
 	},
 
 	"browser.enabled": {

@@ -29,9 +29,9 @@ describe("parseWorkflowScript", () => {
 	});
 
 	test("requires meta export first", () => {
-		expect(() => parseWorkflowScript("const x = 1\nexport const meta = { name: 'demo', description: 'desc' }")).toThrow(
-			/must be the first statement/,
-		);
+		expect(() =>
+			parseWorkflowScript("const x = 1\nexport const meta = { name: 'demo', description: 'desc' }"),
+		).toThrow(/must be the first statement/);
 	});
 
 	test("requires name and description", () => {
@@ -55,9 +55,9 @@ describe("parseWorkflowScript", () => {
 		expect(() => parseWorkflowScript("export const meta = { ...base, name: 'demo', description: 'desc' }")).toThrow(
 			/spread not allowed/,
 		);
-		expect(() =>
-			parseWorkflowScript("export const meta = { ['name']: 'demo', description: 'desc' }"),
-		).toThrow(/computed keys not allowed/);
+		expect(() => parseWorkflowScript("export const meta = { ['name']: 'demo', description: 'desc' }")).toThrow(
+			/computed keys not allowed/,
+		);
 		expect(() =>
 			parseWorkflowScript("export const meta = { __proto__: {}, name: 'demo', description: 'desc' }"),
 		).toThrow(/reserved key name/);
@@ -76,9 +76,9 @@ describe("parseWorkflowScript", () => {
 	});
 
 	test("rejects template interpolation", () => {
-		expect(() =>
-			parseWorkflowScript("export const meta = { name: `demo_${id}`, description: 'desc' }"),
-		).toThrow(/template interpolation not allowed/);
+		expect(() => parseWorkflowScript("export const meta = { name: `demo_${id}`, description: 'desc' }")).toThrow(
+			/template interpolation not allowed/,
+		);
 	});
 
 	test("rejects nondeterministic APIs", () => {
