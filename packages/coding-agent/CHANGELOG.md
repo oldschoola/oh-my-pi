@@ -4,15 +4,37 @@
 
 ### Added
 - Added a `workflow` tool that lets the model write deterministic JavaScript scripts to orchestrate multiple subagents with `agent()`, `parallel()`, `pipeline()`, `phase()`, and `log()` primitives. Scripts are sandboxed in `node:vm` and validated with `acorn` AST parsing. The tool is discoverable (`loadMode: discoverable`) and gated by the `workflow.enabled` setting (default true). ([#1544](https://github.com/can1357/oh-my-pi/issues/1544))
+
+## [15.7.0] - 2026-05-31
+
+### Added
+- Added a `Web search` setup tab that lets users choose the preferred `providers.webSearch` provider during onboarding
+- Added manual authorization-code/redirect URL prompts for OAuth providers that require non-callback login in the setup wizard
 - Added an `omp completions <bash|zsh|fish>` command that prints a shell completion script generated from the live command/flag metadata, so completions never drift from the actual CLI. Subcommands, flags, and enum values complete statically; `--model`/`--smol`/`--slow`/`--plan` resolve against the bundled model catalog and `--resume` against on-disk sessions via a hidden `__complete` helper.
+- Added a `/switch` slash command that opens the temporary model selector for the current session, mirroring the `alt+p` keybinding.
+- Added `replace block N:` and `delete block N` operators to the `edit` tool: they resolve the syntactic block beginning on line N via tree-sitter (native `blockRangeAt`) and replace or delete its full line span, so a construct can be rewritten or removed without counting its closing line. Unresolvable blocks (unsupported language, blank/closing-delimiter line, or a parse error) are rejected with guidance to use an explicit `replace N..M:` / `delete N..M` range.
+- Added an animated pending border for `bash` and `eval` execution blocks: while a command/cell is running, a single dark segment glides clockwise around the block's outer edge (top → right → bottom → left), replacing the previous static accent border. Motion is eased per edge (decelerating into each corner) and timed against a fixed lap duration mapped onto the live perimeter, so streaming a new output line or resizing the terminal nudges the segment proportionally instead of resetting its position. Driven by the existing spinner cadence and gated on the `display.shimmer` setting (no motion when `disabled`).
+- Added `providers.tinyModelDevice` and `providers.tinyModelDtype` settings (Providers tab) controlling local tiny-model acceleration for session titles and Mnemosyne memory tasks. `providers.tinyModelDevice` selects the ONNX execution provider (`default` keeps the platform pick — DirectML on Windows, CUDA on Linux x64, CPU elsewhere); `providers.tinyModelDtype` selects quantization/precision (`default` keeps each model's shipped `q4`, e.g. `fp16` trades speed for fidelity). The `PI_TINY_DEVICE` / `PI_TINY_DTYPE` env vars override the matching setting. Also added `PI_TINY_DTYPE` as the env counterpart to `PI_TINY_DEVICE`; an unrecognized device/precision fails loudly at worker startup instead of silently loading a different one.
+- Added a bundled set of default rules shipped with the agent (TypeScript/Rust convention rules registered as TTSR conditions). They load via the new lowest-priority `builtin-defaults` discovery provider, so any user/project/tool rule of the same name overrides the bundled copy. Disable the whole set with `ttsr.builtinRules: false`, or drop individual rules (bundled or your own) by name via `ttsr.disabledRules`.
+
+### Changed
+- Changed setup onboarding to a tabbed `Set up your providers` scene with dedicated `Sign in` and `Web search` panels
+- Changed the glyph mode picker to preselect the currently configured symbol preset instead of always defaulting to Unicode and to show live glyph samples in the picker rows
+- Changed OAuth sign-in flow in the setup wizard so users can authenticate multiple providers before leaving with Escape
+- Changed the plan-approval model-tier slider and the `ctrl+p`/`alt+p` role-cycle status to share one status-line-style chip track: each tier renders in its own role color and the active tier is filled as a powerline chip with a luminance-matched label. The role-cycle status now shows only the chip track — the resolved model and thinking level already live on the status line — instead of the verbose `Switched to <role>: <model> (cycle: …)` line.
+- Changed the in-flight `bash` tool-call preview to render as a full bordered block as soon as the call appears, instead of a one-line `Bash: $ …` status that only expanded into a block once the command produced its first output chunk. Silent commands (e.g. `sleep 30`) now show the framed command block — with the animated pending border — for their whole runtime.
+- Changed local tiny-model inference to request a worker-safe accelerated ONNX execution provider where available (DirectML on Windows, CUDA on Linux x64), with CPU retry if acceleration cannot initialize. `PI_TINY_DEVICE=cpu` restores CPU-only behavior; `PI_TINY_DEVICE=metal` is accepted as a WebGPU alias but guarded back to CPU in the production macOS worker because WebGPU currently hard-crashes Bun on worker teardown.
 
 ### Fixed
-
+- Used the native block resolver for hashline operations so `replace block` edits now derive block ranges from file-aware parsing
+- Fixed OAuth login handling to cancel cleanly when users press Esc or Ctrl+C during authentication
 - Fixed the `read` tool description advertising `inspect_image` ("for visual analysis, call `inspect_image`") even when the `inspect_image` tool was disabled, which left the model hunting for a tool absent from its function list. The image section is now gated on `inspect_image.enabled`: when disabled it instead states that reading an image path returns the decoded image inline.
-
-### Fixed
-
+- Fixed session-title generation latching onto literal text inside fenced code blocks — a pasted UI mockup containing "Welcome to Claude Code v2.1.158" titled the session "Setup Screen for Claude Code v2.1.158" instead of capturing the actual request. The first user message now has fenced code blocks stripped before titling (both the online `pi/smol` and local on-device model paths share the same preprocessing), with a fallback to the original message when stripping would leave too little to title from (e.g. a message that is essentially just a code block).
 - Fixed slash-command autocomplete repaint requests so Windows Terminal sessions with unknown native viewport state keep updating the input box and candidate list. ([#1550](https://github.com/can1357/oh-my-pi/issues/1550))
+- Fixed Python `eval` failing the whole session when the managed `~/.omp/python-env` interpreter exists on disk but no longer runs (e.g. a stale `uv`-managed Python that was removed or upgraded). Availability resolution now enumerates every candidate — active/project venv, the managed env, then the system interpreter — and probes each in priority order, falling through to the first that actually executes instead of failing fast on the first resolved path. The kernel spawns whichever interpreter the probe selected, so a working system Python takes over transparently.
+
+### Removed
+- Removed the `recipe` tool and its `recipe.enabled` setting. Task-runner targets (just/package.json/Cargo/make/Taskfile) are invoked directly through `bash`.
 
 ## [15.6.0] - 2026-05-30
 ### Added
