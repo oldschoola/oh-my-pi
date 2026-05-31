@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Searches files using powerful regex matching.
 <instruction>
 Supports Rust regex syntax (RE2-style — no lookaround or backreferences). Use line anchors or post-filters instead of (?!…)/(?<!…)

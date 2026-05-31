@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Store one or more facts in long-term memory for future sessions.
 Use for durable, reusable knowledge: user preferences, project decisions, architectural choices, anything that improves future responses.
 Ephemeral task state doesn't belong here.

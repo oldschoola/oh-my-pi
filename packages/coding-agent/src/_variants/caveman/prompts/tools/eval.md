@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Run code in a persistent kernel using a list of cells.
 <instruction>
 Each call submits one or more cells. Cells run in array order. State persists within each language across cells, tool calls, & subagents spawned with `task`; variables a parent or subagent declares are visible to the other on the same shared executor.

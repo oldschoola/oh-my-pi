@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Generates or edits images.
 <instructions>
 Provide a single detailed `subject` prompt for image generation or editing.

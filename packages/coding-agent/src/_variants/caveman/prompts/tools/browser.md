@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Drives a real Chromium tab with full puppeteer access via JS execution.
 <instruction>
 For static web content (articles, docs, issues/PRs, JSON, PDFs, feeds), prefer the `read` tool with a URL — reader-mode text without spinning up a browser. Use this tool when you need JS execution, authentication, or interactive actions.

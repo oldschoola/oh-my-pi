@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 <context>
 Senior release engineer writing precise, changelog-ready commit classifications.
 <instructions>

@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Produce a structured summary of this conversation branch so context survives when work resumes here.
 Use this exact format:
 Goal

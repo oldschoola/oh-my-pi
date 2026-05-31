@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Sends short text messages to other live agents in this process & receives their prose replies.
 <instruction>
 The main agent is addressable as `0-Main`. Subagents reuse their task id (e.g. `0-AuthLoader`).

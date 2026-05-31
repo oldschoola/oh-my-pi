@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 <critical>
 Keep going until the current branch CI is green. A single fix attempt usually isn't enough — iterate.
 <instruction>

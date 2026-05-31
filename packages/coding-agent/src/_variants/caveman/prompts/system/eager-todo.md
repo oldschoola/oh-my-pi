@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 <system-reminder>
 Before substantive work, a phased todo list helps both of us track what's actually planned.
 Please call `todo_write` first in this turn, with a single `init` op that covers the full request — investigation, implementation, & verification, not just the immediate next step.

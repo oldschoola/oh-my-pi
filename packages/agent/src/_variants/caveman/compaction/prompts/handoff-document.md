@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 <critical>
 Write a handoff document for another instance of yourself.
 It needs to be enough for seamless continuation without access to this conversation.

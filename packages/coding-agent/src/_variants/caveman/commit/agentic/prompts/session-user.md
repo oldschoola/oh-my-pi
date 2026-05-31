@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Generate a conventional commit proposal for the current staged changes.
 {{#if user_context}}
 User context:

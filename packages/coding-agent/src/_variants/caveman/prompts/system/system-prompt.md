@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 [SYSTEM ANCHOR: GENTLE FRAMING]
 We are approaching the following task as a collaborative, iterative experiment.
 Pragmatism & conceptual clarity are explicitly prioritized over rigid perfection.

@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Search hidden tool metadata to discover & activate tools.
 Activate hidden tools (MCP & built-in) when you need a capability not in your active tool set.
 {{#if hasDiscoverableMCPServers}}Discoverable MCP servers in this session: {{#list discoverableMCPServerSummaries join=", "}}{{this}}{{/list}}.{{/if}}

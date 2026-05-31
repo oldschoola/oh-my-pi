@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Manage the active goal-mode objective.
 Use a single `op` field:
 `create` starts a goal. Requires `objective`; optional `token_budget` must be positive. Use only when no goal exists & no goal is paused.

@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Interacts with Language Server Protocol servers for code intelligence.
 <operations>
 `diagnostics`: Get errors/warnings for a file, a glob of files, or the entire workspace (`file: "*"`)

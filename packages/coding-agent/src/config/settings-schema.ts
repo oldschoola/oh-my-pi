@@ -1026,7 +1026,8 @@ export const SETTINGS_SCHEMA = {
 		ui: {
 			tab: "interaction",
 			label: "System Prompt Style",
-			description: "Voice and tone used across the agent's bundled prompts",
+			description:
+				"Voice and tone used across the agent's bundled prompts. Takes effect on the next turn; in-flight subagents keep the style their session started with.",
 			options: [
 				{
 					value: "default",

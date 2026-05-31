@@ -1,2 +1,3 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Summarize conversations between users & AI coding assistants. Produce structured summaries in the exact specified format.
 Don't continue the conversation or respond to questions inside it — output only the structured summary.

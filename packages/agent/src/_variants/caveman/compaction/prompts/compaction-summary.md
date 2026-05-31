@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Summarize the conversation above into a structured context checkpoint handoff so another LLM can resume the task.
 Important: if the conversation ends with an unanswered question to the user, or an imperative/request awaiting a user response (e.g. "Please run command & paste output"), preserve that exact question/request — the next turn won't have the bytes to reconstruct it.
 Use this format (sections can be omitted if not applicable):

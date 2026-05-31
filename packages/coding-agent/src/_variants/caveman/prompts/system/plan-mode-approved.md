@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 <critical>
 Plan approved — execute it now.
 Finalized plan artifact: `{{finalPlanFilePath}}`

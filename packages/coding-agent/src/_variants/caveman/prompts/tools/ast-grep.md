@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Performs structural code search using AST matching via native ast-grep.
 <instruction>
 Use when syntax shape matters more than raw text (calls, declarations, specific language constructs)

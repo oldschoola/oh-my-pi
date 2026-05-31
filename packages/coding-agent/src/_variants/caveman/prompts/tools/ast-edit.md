@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Performs structural AST-aware rewrites via native ast-grep.
 <instruction>
 Use for codemods & structural rewrites where plain text replace is unsafe

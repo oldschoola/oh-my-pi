@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 ---
 name: oracle
 description: Wise senior engineer to consult or delegate work to — debugging, architecture, second opinions, & hands-on implementation when asked.

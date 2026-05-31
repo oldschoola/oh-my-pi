@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 [ROLE]
 {{agent}}
 {{#if context}}

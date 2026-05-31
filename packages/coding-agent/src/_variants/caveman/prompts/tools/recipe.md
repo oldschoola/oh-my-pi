@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Run a recipe / script / target from the project's task runners.
 <instruction>
 `op` is a single string: task name plus any args, e.g. `{op: "test"}` or `{op: "build --release"}`.

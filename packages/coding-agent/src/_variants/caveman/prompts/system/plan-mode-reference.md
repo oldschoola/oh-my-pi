@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Existing Plan
 Plan file from previous session: `{{planFilePath}}`
 <details>

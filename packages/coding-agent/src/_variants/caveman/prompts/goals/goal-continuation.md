@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 <!-- Hidden continuation steer. role=user, suppressed from visible transcript. -->
 Continue work on the active goal.
 <objective>

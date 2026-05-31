@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Executes bash command in shell session for terminal operations like git, bun, cargo, python.
 <instruction>
 Use `cwd` to set working directory rather than `cd dir && …`

@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Finds files & directories using fast pattern matching that works with any codebase size.
 <instruction>
 `paths` is required & accepts an array of globs, files, or directories

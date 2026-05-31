@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Searches the web for up-to-date information beyond knowledge cutoff.
 <instruction>
 Prefer primary sources (papers, official docs) & corroborate key claims with multiple sources

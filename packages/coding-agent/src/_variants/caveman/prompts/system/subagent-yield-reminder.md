@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 <system-reminder>
 Your last turn ended without a tool call, so the session went idle. This is a gentle nudge — reminder {{retryCount}} of {{maxRetries}}.
 Every turn ends with a tool call. Pick one of:

@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Inspects an image file with a vision-capable model & returns compact text analysis.
 <instruction>
 Use this for image understanding tasks (OCR, UI/screenshot debugging, scene/object questions)

@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Summarize what was done in this conversation, written like a pull request description.
 Shape:
 2-3 sentences max

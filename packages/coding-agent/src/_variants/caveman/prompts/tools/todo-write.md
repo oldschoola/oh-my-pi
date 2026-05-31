@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Tasks are referenced by their verbatim content string, not by any auto-generated ID. There is no "task-1"/"task-N" identifier — the tool never emits one. Pass the task's content text in the `task` field.
 Manages a phased task list. Pass `ops`: a flat array of operations.
 The next pending task is auto-promoted to `in_progress` after each completion.

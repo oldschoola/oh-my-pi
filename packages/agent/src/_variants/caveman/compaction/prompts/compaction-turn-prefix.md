@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.
 Summarize the prefix so the retained suffix has the context it needs:
 Original Request

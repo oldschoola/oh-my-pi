@@ -81,9 +81,23 @@ describe("prompt style resolver", () => {
 		expect(render("key")).toBe("C");
 	});
 
-	it("throws on conflicting re-registration for the same gentle key + style", () => {
-		registerPromptVariants([["key", { default: "D1" }]]);
+	it("treats identical re-registration as a no-op but still throws on conflicts after it", () => {
+		// Two halves of one contract the PR description claims: a generator
+		// (or any side-effect import) that runs twice must not throw when the
+		// repeated payload is byte-identical, yet a genuinely conflicting
+		// payload for the same (key, style) MUST still throw — the no-op path
+		// must not relax collision detection.
+		registerPromptVariants([["key", { default: "D1", caveman: "C1" }]]);
+		expect(() => registerPromptVariants([["key", { default: "D1", caveman: "C1" }]])).not.toThrow();
+		// Renders still resolve to the original (identical) text — the no-op
+		// did not corrupt the variant map.
+		setPromptStyle("default");
+		expect(render("key")).toBe("D1");
+		setPromptStyle("caveman");
+		expect(render("key")).toBe("C1");
+		// A subsequent conflicting re-registration on either style still throws.
 		expect(() => registerPromptVariants([["key", { default: "D2" }]])).toThrow(/collision/i);
+		expect(() => registerPromptVariants([["key", { caveman: "C2" }]])).toThrow(/collision/i);
 	});
 
 	it("passes Handlebars context through to the resolved variant", () => {

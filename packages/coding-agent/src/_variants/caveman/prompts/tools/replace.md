@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Performs string replacements in files with fuzzy whitespace matching.
 <instruction>
 Params are `{ path, edits }`; `path` is required at the top level & applies to every replacement

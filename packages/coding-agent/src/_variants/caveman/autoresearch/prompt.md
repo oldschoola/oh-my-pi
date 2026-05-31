@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 {{base_system_prompt}}
 Autoresearch Mode
 Autoresearch mode is active.

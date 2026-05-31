@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 ---
 name: explore
 description: Fast read-only codebase scout returning compressed context for handoff

@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 <system-reminder>
 Plan mode turn ended without a required tool call.
 Pick exactly one next action now:

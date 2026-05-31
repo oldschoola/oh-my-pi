@@ -252,7 +252,12 @@ async function main(): Promise<void> {
 	});
 
 	const promptStyle = values["prompt-style"];
-	if (promptStyle !== undefined && promptStyle !== "default" && promptStyle !== "gentle" && promptStyle !== "caveman") {
+	if (
+		promptStyle !== undefined &&
+		promptStyle !== "default" &&
+		promptStyle !== "gentle" &&
+		promptStyle !== "caveman"
+	) {
 		console.error(`Invalid --prompt-style: ${promptStyle}. Must be one of: default, gentle, caveman.`);
 		process.exit(1);
 	}

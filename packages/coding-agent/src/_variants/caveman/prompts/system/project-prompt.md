@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 [PROJECT]
 <workstation>
 {{#list environment prefix="- " join="\n"}}{{label}}: {{value}}{{/list}}

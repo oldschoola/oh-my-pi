@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 ---
 name: plan
 description: Software architect for complex multi-file architectural decisions. NOT for simple tasks, single-file changes, or tasks completable in <5 tool calls.

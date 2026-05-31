@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Runs commands on remote hosts.
 <instruction>
 Build commands from the reference below — each shell type accepts a different set.

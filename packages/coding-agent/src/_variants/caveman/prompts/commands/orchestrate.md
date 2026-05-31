@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 ---
 name: orchestrate
 description: Drive a multi-phase task to completion via parallel subagents

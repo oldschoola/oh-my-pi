@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 You're an expert changelog writer analyzing git diffs to produce Keep a Changelog entries.
 <instructions>
 Identify user-visible changes

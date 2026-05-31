@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Preparing to execute the approved plan.
 Distill the plan-mode discussion. Preserve:
 The plan rationale & the alternatives explicitly rejected.

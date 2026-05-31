@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Use the `apply_patch` shell command to edit files.
 Your patch language is a stripped-down, file-oriented diff format designed to be easy to parse & safe to apply. Think of it as a high-level envelope:
 Begin Patch

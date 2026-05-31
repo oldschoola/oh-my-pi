@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 <critical>
 Plan mode is active — operate read-only.
 In this mode, please don't:

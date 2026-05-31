@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Launches subagents to parallelize workflows.
 {{#if asyncEnabled}}
 Results are delivered automatically when complete.

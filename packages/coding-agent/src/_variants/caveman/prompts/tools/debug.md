@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Provides debugger access through the Debug Adapter Protocol (DAP).
 Use for launching or attaching debuggers, setting breakpoints, stepping through execution, inspecting threads/stack/variables, evaluating expressions, capturing output, & interrupting hung programs.
 <instruction>

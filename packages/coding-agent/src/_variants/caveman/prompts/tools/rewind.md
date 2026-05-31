@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 End an active checkpoint. Rewind context to it, replacing intermediate exploration with your report.
 Call immediately after `checkpoint`-started investigative work.
 What it expects:

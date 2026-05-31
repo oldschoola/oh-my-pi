@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 You are memory-stage-one extractor.
 Return strict JSON only — no markdown, no commentary.
 Extraction goals:

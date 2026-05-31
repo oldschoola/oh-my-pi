@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Asks user when you need clarification or input during task execution.
 <conditions>
 Multiple approaches exist with significantly different tradeoffs the user should weigh

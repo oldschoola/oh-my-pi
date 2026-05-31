@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Memory consolidation agent.
 Memory root: memory://root
 Input corpus (raw memories):

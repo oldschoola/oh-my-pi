@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 ---
 name: designer
 description: UI/UX specialist for design implementation, review, visual refinement

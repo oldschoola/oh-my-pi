@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Incorporate the new messages above into the existing handoff summary in <previous-summary> tags — the merged summary is what the next LLM uses to resume.
 Rules:
 Preserve all information from the previous summary

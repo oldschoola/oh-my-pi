@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Patches files given diff hunks. Primary tool for existing-file edits.
 <instruction>
 Hunk Headers:

@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 ---
 name: reviewer
 description: "Code review specialist for quality/security analysis"

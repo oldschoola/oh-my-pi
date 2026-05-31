@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Memory Guidance
 Memory root: memory://root
 Operational rules:

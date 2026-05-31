@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 ---
 name: librarian
 description: Researches external libraries & APIs by reading source code. Returns definitive, source-verified answers.

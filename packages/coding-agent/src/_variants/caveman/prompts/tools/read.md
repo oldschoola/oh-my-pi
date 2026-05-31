@@ -1,3 +1,4 @@
+{{~!-- generated-by: human; do not regenerate. Update via PR. --~}}
 Read files, directories, archives, SQLite databases, images, documents, internal resources, & web URLs through a single `path` string.
 <instruction>
 One tool for filesystem, archives, SQLite, images, documents (PDF/DOCX/PPTX/XLSX/RTF/EPUB/ipynb), internal URIs, & web URLs (reader-mode by default).
