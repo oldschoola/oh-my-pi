@@ -1561,7 +1561,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		const getSessionContext = () => ({
 			sessionManager,
 			modelRegistry,
-			model: agent.state.model,
+			model: agent?.state.model ?? model,
 			isIdle: () => !session.isStreaming,
 			hasQueuedMessages: () => session.queuedMessageCount > 0,
 			abort: () => {
@@ -1699,7 +1699,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			// Append a small, narrow behavioral hint for model families that
 			// embed inline <thinking> text in their output (kimi/glm/qwen). For
 			// other families this is a no-op.
-			const modelAddendum = buildModelBehavioralAddendum(agent.state.model ?? model);
+			const modelAddendum = buildModelBehavioralAddendum(agent?.state.model ?? model);
 			if (modelAddendum) {
 				appendPrompt = appendPrompt ? `${appendPrompt}\n\n${modelAddendum}` : modelAddendum;
 			}
