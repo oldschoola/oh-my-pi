@@ -101,7 +101,7 @@ export type AnthropicHeaderOptions = {
  * "ghost" runs that look like agent failures.
  */
 const ANTHROPIC_GLM_STREAM_IDLE_TIMEOUT_MS = 600_000;
-const ANTHROPIC_GLM_MODEL_PATTERN = /^glm-5(?:[.-]|$)/i;
+const ANTHROPIC_GLM_MODEL_PATTERN = /(?:^|\.)(glm-5)/i;
 
 export function getAnthropicStreamIdleTimeoutFallbackMs(model: Model<"anthropic-messages">): number | undefined {
 	if (!ANTHROPIC_GLM_MODEL_PATTERN.test(model.id)) return undefined;

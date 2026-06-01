@@ -90,8 +90,10 @@ import { discoverAndLoadMCPTools, MCPManager, type MCPToolsLoadResult } from "./
 
 import { resolveMemoryBackend } from "./memory-backend";
 import { getMnemopiSessionState, type MnemopiSessionState } from "./mnemopi/state";
-import { isDeepseekModel, isGlmModel, isKimiClassModel } from "./model-families";
+import { isDeepseekModel, isGlmModel, isKimiClassModel, resolveDeepseekSamplingDefault, resolveKimiClassSamplingDefault } from "./model-families";
 import asyncResultTemplate from "./prompts/tools/async-result.md" with { type: "text" };
+import modelBehavioralAddendumTemplate from "./prompts/system/model-behavioral-addendum.md" with { type: "text" };
+import retryDiffReminderTemplate from "./prompts/system/retry-diff-reminder.md" with { type: "text" };
 import { AgentRegistry, MAIN_AGENT_ID } from "./registry/agent-registry";
 import {
 	collectEnvSecrets,
@@ -682,20 +684,9 @@ function resolveAppendOnlyMode(setting: "auto" | "on" | "off" | undefined, provi
  */
 function buildModelBehavioralAddendum(m: Model | undefined): string | null {
 	if (!isKimiClassModel(m)) return null;
-	const bullets: string[] = [
-		"- Do NOT emit `<thinking>` or `</thinking>` tags in your output. Plan internally; state only conclusions, decisions, and tool calls. Long inline `<thinking>` monologues blow past per-turn budgets.",
-		"- When the retry-context diff shows specific `-` (expected) and `+` (your wrong) lines: the diff is GROUND TRUTH — if it contradicts your reading of the task, follow the diff. Reproduce the `-` lines BYTE-EXACT including blank lines and indentation, and UNDO the `+` content from your prior edit. Do not stack a new edit on top of a rejected one.",
-	];
-	// GLM-specific: the retry-context diff-direction hint empirically helps
-	// glm-5.x apply the expected change verbatim, but marginally regresses
-	// kimi-2.6 (which handles the `-`/`+` notation natively without prompting).
-	if (isGlmModel(m)) {
-		bullets.push(
-			"- If a `## Retry context` block shows a diff (lines prefixed with `-` and `+`), the `-` lines are the expected (correct) content and the `+` lines are what's wrong in the current file. Apply an edit that produces the `-` lines — do not re-derive a different fix.",
-			"- When reading files, use a line range selector (e.g. `file.ts:50-100`). After making an edit, do NOT re-read the file or make additional edits to verify — the edit tool already reports success or failure. Move on. Do not revert your own edits. If the task says to change something, make the change once and move on — do not second-guess whether it is semantically meaningful.",
-		);
-	}
-	return ["## Output discipline", "", ...bullets].join("\n");
+	return prompt.render(modelBehavioralAddendumTemplate, {
+		IS_GLM_MODEL: isGlmModel(m),
+	});
 }
 
 /**
@@ -712,50 +703,6 @@ function buildModelBehavioralAddendum(m: Model | undefined): string | null {
  * (often wrong) line on coin-flip tasks (empirically validated at temp=0.3,
  * see run #59-#60).
  */
-const KIMI_CLASS_SAMPLING_DEFAULTS = {
-	temperature: 0.7,
-	topP: 0.95,
-	minP: 0.01,
-} as const;
-
-function resolveKimiClassSamplingDefault(
-	m: Model | undefined,
-	rawSetting: number,
-	key: keyof typeof KIMI_CLASS_SAMPLING_DEFAULTS,
-): number | undefined {
-	if (rawSetting >= 0) return rawSetting;
-	if (isKimiClassModel(m)) return KIMI_CLASS_SAMPLING_DEFAULTS[key];
-	return undefined;
-}
-
-/**
- * DeepSeek-family sampling defaults. DeepSeek's official coder profile
- * recommends `temperature=0.0` for code generation (deterministic decoding);
- * provider defaults sit around 1.0 which is conversational and empirically
- * over-noises tool-calling loops. `top_p=0.95` mirrors the kimi-class topP
- * value — DeepSeek lacks an explicit vendor recommendation but the value is
- * conservative enough to preserve enough probability mass for the dominant
- * decision while excluding far-tail noise. `minP` intentionally omitted: the
- * DeepSeek API does not surface a min_p control; passing it through is a
- * no-op on the backend.
- *
- * Layered with `resolveKimiClassSamplingDefault` via `??` at the call site;
- * the two predicates are disjoint by construction so order does not matter.
- */
-const DEEPSEEK_SAMPLING_DEFAULTS = {
-	temperature: 0.0,
-	topP: 0.95,
-} as const;
-
-function resolveDeepseekSamplingDefault(
-	m: Model | undefined,
-	rawSetting: number,
-	key: keyof typeof DEEPSEEK_SAMPLING_DEFAULTS,
-): number | undefined {
-	if (rawSetting >= 0) return rawSetting;
-	if (isDeepseekModel(m)) return DEEPSEEK_SAMPLING_DEFAULTS[key];
-	return undefined;
-}
 
 function customToolToDefinition(tool: CustomTool): ToolDefinition {
 	const definition: ToolDefinition & { [TOOL_DEFINITION_MARKER]: true } = {
@@ -1751,7 +1698,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			// Append a small, narrow behavioral hint for model families that
 			// embed inline <thinking> text in their output (kimi/glm/qwen). For
 			// other families this is a no-op.
-			const modelAddendum = buildModelBehavioralAddendum(model);
+			const modelAddendum = buildModelBehavioralAddendum(agent.state.model ?? model);
 			if (modelAddendum) {
 				appendPrompt = appendPrompt ? `${appendPrompt}\n\n${modelAddendum}` : modelAddendum;
 			}
@@ -1951,11 +1898,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		// before replay. They don't help the next turn reason and they bloat
 		// the prompt cache linearly across turns. Current turn is unaffected
 		// (it's the live stream, not the replay).
-		const shouldStripThinking = isKimiClassModel(model);
+		const shouldStripThinking = () => isKimiClassModel(agent.state.model);
 		const stripInlineThinking = (text: string): string =>
 			text.replace(/<thinking>[\s\S]*?<\/thinking>\n*/gi, "").replace(/<thinking>[\s\S]*$/i, "");
 		const stripThinkingFromMessages = (messages: Message[]): Message[] => {
-			if (!shouldStripThinking) return messages;
+			if (!shouldStripThinking()) return messages;
 			return messages.map(msg => {
 				if (msg.role !== "assistant") return msg;
 				const content = msg.content;
@@ -1980,16 +1927,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		// their prior task interpretation. Inline reminder at the diff site is
 		// the closest the prompt can get to ground truth without a full
 		// preprocessor pass.
-		const RETRY_REMINDER =
-			"[DIFF REMINDER]: `-` lines = EXPECTED content (must appear in your file). `+` lines = your PRIOR WRONG edit (must be removed). Follow the diff over any prior task interpretation.\n\n";
+		const RETRY_REMINDER = retryDiffReminderTemplate;
 		const annotateRetryText = (text: string): string => {
-			if (!shouldStripThinking) return text;
+			if (!shouldStripThinking()) return text;
 			if (!text.includes("## Retry context") || !text.includes("Diff (expected vs actual):")) return text;
 			if (text.includes("[DIFF REMINDER]")) return text;
 			return text.replace("Diff (expected vs actual):", `${RETRY_REMINDER}Diff (expected vs actual):`);
 		};
 		const annotateRetryContext = (messages: Message[]): Message[] => {
-			if (!shouldStripThinking) return messages;
+			if (!shouldStripThinking()) return messages;
 			return messages.map(msg => {
 				if (msg.role !== "user") return msg;
 				const content = msg.content;

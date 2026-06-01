@@ -155,7 +155,7 @@ import type { HindsightSessionState } from "../hindsight/state";
 import { type LocalProtocolOptions, resolveLocalUrlToPath } from "../internal-urls";
 import { resolveMemoryBackend } from "../memory-backend";
 import { getMnemopiSessionState, type MnemopiSessionState, setMnemopiSessionState } from "../mnemopi/state";
-import { isKimiClassModel } from "../model-families";
+import { isKimiClassModel, resolveDeepseekSamplingDefault, resolveKimiClassSamplingDefault } from "../model-families";
 import { containsOrchestrate, ORCHESTRATE_NOTICE } from "../modes/orchestrate";
 import { getCurrentThemeName, theme } from "../modes/theme/theme";
 import { parseTurnBudget } from "../modes/turn-budget";
@@ -6518,12 +6518,24 @@ export class AgentSession {
 		return candidate;
 	}
 
+	#syncSamplingDefaults(model: Model | undefined): void {
+		const settings = this.settings;
+		this.agent.temperature =
+			resolveDeepseekSamplingDefault(model, settings.get("temperature"), "temperature") ??
+			resolveKimiClassSamplingDefault(model, settings.get("temperature"), "temperature");
+		this.agent.topP =
+			resolveDeepseekSamplingDefault(model, settings.get("topP"), "topP") ??
+			resolveKimiClassSamplingDefault(model, settings.get("topP"), "topP");
+		this.agent.minP = resolveKimiClassSamplingDefault(model, settings.get("minP"), "minP");
+	}
+
 	#setModelWithProviderSessionReset(model: Model): void {
 		const currentModel = this.model;
 		if (currentModel) {
 			this.#closeProviderSessionsForModelSwitch(currentModel, model);
 		}
 		this.agent.setModel(model);
+		this.#syncSamplingDefaults(model);
 		this.#syncToolCallBatchCap(model);
 
 		// Re-evaluate append-only context mode — provider or setting may have changed

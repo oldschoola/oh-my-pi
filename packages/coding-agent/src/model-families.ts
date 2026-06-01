@@ -40,7 +40,7 @@ import type { Model } from "@oh-my-pi/pi-ai";
  *   qwen/qwq-32b, qwen/qwen3-32b, openrouter/kimi-k2,
  *   xiaomi/mimo-7b, mimo-coder-7b, crof/mimo-v2.5-pro.
  */
-const KIMI_CLASS_MODEL_REGEX = /(?:^|\/)(kimi[-_]|glm[-_]|qwen(?![a-z])|mimo(?![a-z]))/i;
+const KIMI_CLASS_MODEL_REGEX = /(?:^|\.|\/)(kimi[-_]|glm[-_]|qwen(?![a-z])|mimo(?![a-z]))/i;
 
 /** True when the given resolved model belongs to the kimi/glm/qwen/mimo family. */
 export function isKimiClassModel(m: Model | undefined): boolean {
@@ -60,7 +60,7 @@ export function isKimiClassModelString(id: string | undefined | null): boolean {
  * benefits from explicit `-`/`+` interpretation while kimi handles it natively).
  * Strict subset of `isKimiClassModel`.
  */
-const GLM_MODEL_REGEX = /(?:^|\/)glm-/i;
+const GLM_MODEL_REGEX = /(?:^|\.|\/)glm-/i;
 
 /** True when the given resolved model belongs to the GLM family specifically. */
 export function isGlmModel(m: Model | undefined): boolean {
@@ -87,4 +87,51 @@ const DEEPSEEK_MODEL_REGEX = /(?:^|\/)deepseek(?![a-z])/i;
 export function isDeepseekModel(m: Model | undefined): boolean {
 	if (!m) return false;
 	return DEEPSEEK_MODEL_REGEX.test(m.id);
+}
+
+/**
+ * Kimi/GLM/Qwen-class non-thinking sampling defaults. Vendor docs converge on
+ * these values for coding-style benchmarks (z.ai GLM-5 SWE-Bench: temp=0.7,
+ * top_p=1.0; GLM-5.1 sweet spot: temp 0.60-0.80, top_p=0.95; Kimi 2.5 insta
+ * mode: temp=0.6, top_p=0.95, min_p=0.01). Provider defaults are tuned for
+ * conversational output and overshoot for coding tasks. Users with explicit
+ * `>= 0` settings keep their override; this only fills in the auto case.
+ */
+export const KIMI_CLASS_SAMPLING_DEFAULTS = {
+	temperature: 0.7,
+	topP: 0.95,
+	minP: 0.01,
+} as const;
+
+export function resolveKimiClassSamplingDefault(
+	m: Model | undefined,
+	rawSetting: number,
+	key: keyof typeof KIMI_CLASS_SAMPLING_DEFAULTS,
+): number | undefined {
+	if (rawSetting >= 0) return rawSetting;
+	if (isKimiClassModel(m)) return KIMI_CLASS_SAMPLING_DEFAULTS[key];
+	return undefined;
+}
+
+/**
+ * DeepSeek-family sampling defaults. DeepSeek's official coder profile
+ * recommends `temperature=0.0` for code generation (deterministic decoding);
+ * provider defaults sit around 1.0 which is conversational and empirically
+ * over-noises tool-calling loops. `top_p=0.95` mirrors the kimi-class topP
+ * value. `minP` intentionally omitted: the DeepSeek API does not surface a
+ * min_p control.
+ */
+export const DEEPSEEK_SAMPLING_DEFAULTS = {
+	temperature: 0.0,
+	topP: 0.95,
+} as const;
+
+export function resolveDeepseekSamplingDefault(
+	m: Model | undefined,
+	rawSetting: number,
+	key: keyof typeof DEEPSEEK_SAMPLING_DEFAULTS,
+): number | undefined {
+	if (rawSetting >= 0) return rawSetting;
+	if (isDeepseekModel(m)) return DEEPSEEK_SAMPLING_DEFAULTS[key];
+	return undefined;
 }
