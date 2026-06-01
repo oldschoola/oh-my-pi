@@ -688,6 +688,11 @@ async function runLoopBody(
 			pendingMessages = followUpMessages;
 			continue;
 		}
+		// If a spiral cap set a forced tool choice for the next turn,
+		// continue the loop so the next turn consumes it.
+		if (forceNextToolChoice.value !== undefined) {
+			continue;
+		}
 
 		// No more messages, exit
 		break;
@@ -980,7 +985,8 @@ async function streamAssistantResponse(
 										!editingToolCallSeen.seen &&
 										contentCharCounter.count >= maxResponseContentChars &&
 										!toolCallCapAbortController?.signal.aborted &&
-										!contentCharCapAbortController?.signal.aborted
+										!contentCharCapAbortController?.signal.aborted &&
+										!forcedToolChoiceFromPrevCap
 									) {
 										cappedMessage = cloneAssistantMessageForToolCallCap(partialMessage);
 										// Tell the next assistant turn to force a tool call — kimi-class
@@ -1019,7 +1025,8 @@ async function streamAssistantResponse(
 									maxResponseContentChars !== undefined &&
 									contentCharCounter.count >= maxResponseContentChars &&
 									!toolCallCapAbortController?.signal.aborted &&
-									!contentCharCapAbortController?.signal.aborted
+									!contentCharCapAbortController?.signal.aborted &&
+									!forcedToolChoiceFromPrevCap
 								) {
 									cappedMessage = cloneAssistantMessageForToolCallCap(partialMessage);
 									contentCharCapAbortController?.abort();
@@ -1032,7 +1039,8 @@ async function streamAssistantResponse(
 									maxResponseContentChars !== undefined &&
 									contentCharCounter.count >= maxResponseContentChars &&
 									!toolCallCapAbortController?.signal.aborted &&
-									!contentCharCapAbortController?.signal.aborted
+									!contentCharCapAbortController?.signal.aborted &&
+									!forcedToolChoiceFromPrevCap
 								) {
 									// Text-only / read-only spiral safety net. The original gate was
 									// `completedToolCalls === 0` which catches text-before-any-toolcall
