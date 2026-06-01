@@ -692,6 +692,7 @@ function buildModelBehavioralAddendum(m: Model | undefined): string | null {
 	if (isGlmModel(m)) {
 		bullets.push(
 			"- If a `## Retry context` block shows a diff (lines prefixed with `-` and `+`), the `-` lines are the expected (correct) content and the `+` lines are what's wrong in the current file. Apply an edit that produces the `-` lines — do not re-derive a different fix.",
+			"- When reading files, use a line range selector (e.g. `file.ts:50-100`). After making an edit, do NOT re-read the file or make additional edits to verify — the edit tool already reports success or failure. Move on. Do not revert your own edits. If the task says to change something, make the change once and move on — do not second-guess whether it is semantically meaningful.",
 		);
 	}
 	return ["## Output discipline", "", ...bullets].join("\n");
