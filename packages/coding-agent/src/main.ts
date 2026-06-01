@@ -412,7 +412,7 @@ async function createSessionManager(
 			if (normalizedCwd !== normalizedMatchCwd) {
 				const shouldFork = await promptForkSession(match.session);
 				if (!shouldFork) {
-					throw new Error(`Session "${sessionArg}" is in another project (${match.session.cwd}).`);
+					return undefined;
 				}
 				return await SessionManager.forkFrom(match.session.path, cwd, parsed.sessionDir);
 			}
@@ -852,7 +852,12 @@ export async function runRootCommand(
 		cwd,
 		settingsInstance,
 	);
-
+	// User declined to fork a session from another project — exit gracefully
+	if (typeof parsedArgs.resume === "string" && !sessionManager) {
+		process.stdout.write(`${chalk.dim(`Resume cancelled: session is in another project.`)}
+`);
+		return;
+	}
 	// Handle --resume (no value): show session picker
 	if (parsedArgs.resume === true && !parsedArgs.fork) {
 		const sessions = await logger.time("SessionManager.list", SessionManager.list, cwd, parsedArgs.sessionDir);
