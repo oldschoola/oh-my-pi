@@ -9,6 +9,7 @@ import {
 	type ThinkingLevel,
 } from "@oh-my-pi/pi-agent-core";
 import {
+	type AssistantMessage,
 	type CredentialDisabledEvent,
 	isUsageLimitError,
 	type Message,
@@ -100,8 +101,7 @@ import {
 } from "./secrets";
 import { AgentSession } from "./session/agent-session";
 import { resolveAuthBrokerConfig } from "./session/auth-broker-config";
-import { AuthBrokerClient, AuthStorage, RemoteAuthCredentialStore } from "./session/auth-storage";
-import { type CustomMessage, convertToLlm } from "./session/messages";
+import { type CustomMessage, convertToLlm, sanitizeKimiClassAssistantMessage } from "./session/messages";
 import { SessionManager } from "./session/session-manager";
 import { closeAllConnections } from "./ssh/connection-manager";
 import { unmountAll } from "./ssh/sshfs-mount";
@@ -1899,7 +1899,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					mutated = true;
 					return { ...block, text: next };
 				});
-				return mutated ? { ...msg, content: nextContent } : msg;
+				const nextMsg = mutated ? { ...msg, content: nextContent } : msg;
+				// Also strip stray vacuous text blocks that kimi emits between
+				// thinking blocks and tool calls (e.g., a lone ".").
+				const sanitized = sanitizeKimiClassAssistantMessage(nextMsg as AssistantMessage);
+				return sanitized === nextMsg ? nextMsg : sanitized;
 			});
 		};
 

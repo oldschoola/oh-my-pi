@@ -363,6 +363,35 @@ export function sanitizeRehydratedOpenAIResponsesAssistantMessage(message: Assis
 	};
 }
 
+/**
+ * Kimi-class models occasionally emit a vacuous text block (containing only
+ * whitespace or a lone punctuation mark) between a thinking block and a
+ * tool call. This artifact pollutes session dumps and LLM replay context.
+ * Remove these stray text blocks while preserving all meaningful text.
+ */
+export function sanitizeKimiClassAssistantMessage(message: AssistantMessage): AssistantMessage {
+	const content = message.content;
+	if (content.length < 2) return message;
+	const nextContent = content.filter((block, index) => {
+		if (block.type !== "text") return true;
+		const trimmed = block.text.trim();
+		// Only consider vacuous text: empty or a single punctuation mark
+		if (trimmed.length > 0 && !/^[.!?…"']$/.test(trimmed)) return true;
+		const prev = content[index - 1];
+		const next = content[index + 1];
+		// Remove when sandwiched between thinking and toolCall,
+		// between two thinking blocks, or trailing after the last thinking block
+		if (prev?.type === "thinking") {
+			if (next === undefined || next.type === "toolCall" || next.type === "thinking") {
+				return false;
+			}
+		}
+		return true;
+	});
+	if (nextContent.length === content.length) return message;
+	return { ...message, content: nextContent };
+}
+
 /** Convert CustomMessageEntry to AgentMessage format */
 export function createCustomMessage(
 	customType: string,

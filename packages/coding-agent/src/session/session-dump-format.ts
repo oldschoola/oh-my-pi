@@ -4,6 +4,7 @@
 import type { AgentMessage, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import { INTENT_FIELD } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, Model } from "@oh-my-pi/pi-ai";
+import { isKimiClassModel } from "../model-families";
 import {
 	type BashExecutionMessage,
 	type BranchSummaryMessage,
@@ -14,6 +15,7 @@ import {
 	type HookMessage,
 	type PythonExecutionMessage,
 	pythonExecutionToText,
+	sanitizeKimiClassAssistantMessage,
 } from "./messages";
 
 /** Minimal tool shape for dump output (matches AgentTool fields used by formatSessionDumpText). */
@@ -112,7 +114,10 @@ export function formatSessionDumpText(options: FormatSessionDumpTextOptions): st
 			}
 			lines.push("\n");
 		} else if (msg.role === "assistant") {
-			const assistantMsg = msg as AssistantMessage;
+			let assistantMsg = msg as AssistantMessage;
+			if (isKimiClassModel(options.model ?? undefined)) {
+				assistantMsg = sanitizeKimiClassAssistantMessage(assistantMsg);
+			}
 			lines.push("## Assistant\n");
 
 			for (const c of assistantMsg.content) {
