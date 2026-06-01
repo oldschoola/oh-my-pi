@@ -40,7 +40,7 @@ import type { Model } from "@oh-my-pi/pi-ai";
  *   qwen/qwq-32b, qwen/qwen3-32b, openrouter/kimi-k2,
  *   xiaomi/mimo-7b, mimo-coder-7b, crof/mimo-v2.5-pro.
  */
-const KIMI_CLASS_MODEL_REGEX = /(?:^|\.|\/)(kimi[-_]|glm[-_]|qwen(?![a-z])|mimo(?![a-z]))/i;
+const KIMI_CLASS_MODEL_REGEX = /(?:^|\.|\/|-)(kimi[-_]|glm[-_]|qwen(?![a-z])|mimo(?![a-z]))/i;
 
 /** True when the given resolved model belongs to the kimi/glm/qwen/mimo family. */
 export function isKimiClassModel(m: Model | undefined): boolean {

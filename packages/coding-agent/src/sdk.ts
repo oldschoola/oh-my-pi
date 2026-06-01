@@ -1670,7 +1670,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const promptTools = buildSystemPromptToolMetadata(tools, {
 				search_tool_bm25: { description: renderSearchToolBm25Description(discoverableToolsForDesc) },
 			});
-			const memoryInstructions = await resolveMemoryBackend(settings).buildDeveloperInstructions(
+			const memoryBackend = resolveMemoryBackend(settings);
+			const memoryInstructions = await memoryBackend.buildDeveloperInstructions(
 				agentDir,
 				settings,
 				session,
@@ -1719,6 +1720,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				eagerTasks,
 				secretsEnabled,
 				workspaceTree: workspaceTreePromise,
+				memoryRootEnabled: memoryBackend.id === "local",
 			});
 
 			if (options.systemPrompt === undefined) {

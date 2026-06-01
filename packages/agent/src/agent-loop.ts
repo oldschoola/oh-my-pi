@@ -968,8 +968,7 @@ async function streamAssistantResponse(
 								});
 								if (
 									(event.type === "text_delta" ||
-										event.type === "thinking_delta" ||
-										event.type === "toolcall_delta") &&
+										event.type === "thinking_delta") &&
 									maxResponseContentChars !== undefined
 								) {
 									contentCharCounter.count += event.delta.length;
