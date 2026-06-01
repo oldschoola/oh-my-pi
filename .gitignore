@@ -70,3 +70,10 @@ python/robomp/.cache/
 python/robomp/src/robomp/static/
 python/robomp/web/dist/
 python/robomp/.env
+
+# Autoresearch output
+.autoresearch-out/
+*.dump/
+kimi-*.json
+glm-*.json
+packages/typescript-edit-benchmark/fixtures/

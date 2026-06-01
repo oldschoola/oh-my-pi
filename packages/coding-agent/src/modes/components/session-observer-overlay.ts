@@ -14,11 +14,11 @@
  *   - Esc from picker -> close overlay
  *   - Enter on main session -> close overlay (jump back)
  */
-import type { ToolResultMessage } from "@oh-my-pi/pi-ai";
+import type { AssistantMessage, ToolResultMessage } from "@oh-my-pi/pi-ai";
 import { Container, Markdown, type MarkdownTheme, matchesKey } from "@oh-my-pi/pi-tui";
 import { formatDuration, formatNumber, logger } from "@oh-my-pi/pi-utils";
 import type { KeyId } from "../../config/keybindings";
-import { isSilentAbort } from "../../session/messages";
+import { isSilentAbort, sanitizeKimiClassAssistantMessage } from "../../session/messages";
 import type { SessionMessageEntry } from "../../session/session-manager";
 import { parseSessionEntries } from "../../session/session-manager";
 import { PREVIEW_LIMITS, replaceTabs, TRUNCATE_LENGTHS, truncateToWidth } from "../../tools/render-utils";
@@ -303,9 +303,12 @@ export class SessionObserverOverlayComponent extends Container {
 
 		let entryIndex = 0;
 		for (const entry of messageEntries) {
-			const msg = entry.message;
+			let msg = entry.message;
 
 			if (msg.role === "assistant") {
+				// Sanitize vacuous text artifacts (e.g., lone ".") that kimi-class models
+				// emit between thinking blocks and tool calls.
+				msg = sanitizeKimiClassAssistantMessage(msg as AssistantMessage) as typeof msg;
 				// Handle error messages with empty content
 				if (msg.content.length === 0 && msg.errorMessage && !isSilentAbort(msg.errorMessage)) {
 					const startLine = lines.length;
