@@ -81,7 +81,7 @@ export function isGlmModel(m: Model | undefined): boolean {
  * vendor-prefixed `crof/deepseek-v4-pro-precision`) while rejecting hypothetical
  * `deepseekend` or `deepseekery` prefixes.
  */
-const DEEPSEEK_MODEL_REGEX = /(?:^|\/)deepseek(?![a-z])/i;
+const DEEPSEEK_MODEL_REGEX = /(?:^|\.|\/|-)deepseek(?![a-z])/i;
 
 /** True when the given resolved model belongs to the DeepSeek family. */
 export function isDeepseekModel(m: Model | undefined): boolean {

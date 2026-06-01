@@ -5146,6 +5146,7 @@ export class AgentSession {
 
 		this.#clearActiveRetryFallback();
 		this.#setModelWithProviderSessionReset(model);
+		await this.refreshBaseSystemPrompt();
 		this.sessionManager.appendModelChange(`${model.provider}/${model.id}`, role);
 		if (options?.persist) {
 			this.settings.setModelRole(
@@ -5175,6 +5176,7 @@ export class AgentSession {
 
 		this.#clearActiveRetryFallback();
 		this.#setModelWithProviderSessionReset(model);
+		await this.refreshBaseSystemPrompt();
 		this.sessionManager.appendModelChange(`${model.provider}/${model.id}`, "temporary");
 		this.settings.getStorage()?.recordModelUsage(`${model.provider}/${model.id}`);
 
