@@ -967,8 +967,7 @@ async function streamAssistantResponse(
 									message: { ...partialMessage },
 								});
 								if (
-									(event.type === "text_delta" ||
-										event.type === "thinking_delta") &&
+									(event.type === "text_delta" || event.type === "thinking_delta") &&
 									maxResponseContentChars !== undefined
 								) {
 									contentCharCounter.count += event.delta.length;

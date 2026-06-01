@@ -9,6 +9,7 @@ import {
 	type ThinkingLevel,
 } from "@oh-my-pi/pi-agent-core";
 import {
+	type AssistantMessage,
 	type CredentialDisabledEvent,
 	isUsageLimitError,
 	type Message,
@@ -90,10 +91,15 @@ import { discoverAndLoadMCPTools, MCPManager, type MCPToolsLoadResult } from "./
 
 import { resolveMemoryBackend } from "./memory-backend";
 import { getMnemopiSessionState, type MnemopiSessionState } from "./mnemopi/state";
-import { isDeepseekModel, isGlmModel, isKimiClassModel, resolveDeepseekSamplingDefault, resolveKimiClassSamplingDefault } from "./model-families";
-import asyncResultTemplate from "./prompts/tools/async-result.md" with { type: "text" };
+import {
+	isGlmModel,
+	isKimiClassModel,
+	resolveDeepseekSamplingDefault,
+	resolveKimiClassSamplingDefault,
+} from "./model-families";
 import modelBehavioralAddendumTemplate from "./prompts/system/model-behavioral-addendum.md" with { type: "text" };
 import retryDiffReminderTemplate from "./prompts/system/retry-diff-reminder.md" with { type: "text" };
+import asyncResultTemplate from "./prompts/tools/async-result.md" with { type: "text" };
 import { AgentRegistry, MAIN_AGENT_ID } from "./registry/agent-registry";
 import {
 	collectEnvSecrets,
@@ -105,7 +111,7 @@ import {
 import { AgentSession } from "./session/agent-session";
 import { resolveAuthBrokerConfig } from "./session/auth-broker-config";
 import { AuthBrokerClient, AuthStorage, RemoteAuthCredentialStore } from "./session/auth-storage";
-import { type CustomMessage, convertToLlm } from "./session/messages";
+import { type CustomMessage, convertToLlm, sanitizeKimiClassAssistantMessage } from "./session/messages";
 import { SessionManager } from "./session/session-manager";
 import { closeAllConnections } from "./ssh/connection-manager";
 import { unmountAll } from "./ssh/sshfs-mount";
@@ -1671,11 +1677,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				search_tool_bm25: { description: renderSearchToolBm25Description(discoverableToolsForDesc) },
 			});
 			const memoryBackend = resolveMemoryBackend(settings);
-			const memoryInstructions = await memoryBackend.buildDeveloperInstructions(
-				agentDir,
-				settings,
-				session,
-			);
+			const memoryInstructions = await memoryBackend.buildDeveloperInstructions(agentDir, settings, session);
 
 			// Build combined append prompt: memory instructions + MCP server instructions
 			const serverInstructions = mcpManager?.getServerInstructions();
@@ -1917,7 +1919,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					mutated = true;
 					return { ...block, text: next };
 				});
-				return mutated ? { ...msg, content: nextContent } : msg;
+				const nextMsg = mutated ? { ...msg, content: nextContent } : msg;
+				// Also strip stray vacuous text blocks that kimi emits between
+				// thinking blocks and tool calls (e.g., a lone ".").
+				const sanitized = sanitizeKimiClassAssistantMessage(nextMsg as AssistantMessage);
+				return sanitized === nextMsg ? nextMsg : sanitized;
 			});
 		};
 
