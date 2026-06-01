@@ -684,7 +684,6 @@ function buildModelBehavioralAddendum(m: Model | undefined): string | null {
 	if (!isKimiClassModel(m)) return null;
 	const bullets: string[] = [
 		"- Do NOT emit `<thinking>` or `</thinking>` tags in your output. Plan internally; state only conclusions, decisions, and tool calls. Long inline `<thinking>` monologues blow past per-turn budgets.",
-		"- When you receive a `## Retry context` block, your next edit MUST differ structurally from your prior failed attempt. Do not refine the same approach — the verifier already rejected that direction. Pick a different location, variable, or operation.",
 		"- When the retry-context diff shows specific `-` (expected) and `+` (your wrong) lines: the diff is GROUND TRUTH — if it contradicts your reading of the task, follow the diff. Reproduce the `-` lines BYTE-EXACT including blank lines and indentation, and UNDO the `+` content from your prior edit. Do not stack a new edit on top of a rejected one.",
 	];
 	// GLM-specific: the retry-context diff-direction hint empirically helps
