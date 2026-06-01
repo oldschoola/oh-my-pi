@@ -1971,9 +1971,48 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			});
 		};
 
-		// Final convertToLlm: chain block-images filter with <thinking> strip and secret obfuscation
+		// For kimi-class models: inject a compact diff-direction reminder before
+		// the verifier's diff in `## Retry context` user messages. Kimi-class
+		// models systematically flip-flop on diff direction within a single
+		// retry turn — they interpret `+` as "expected content" half the time
+		// and "wrong content" the other half, then anchor to whichever matches
+		// their prior task interpretation. Inline reminder at the diff site is
+		// the closest the prompt can get to ground truth without a full
+		// preprocessor pass.
+		const RETRY_REMINDER =
+			"[DIFF REMINDER]: `-` lines = EXPECTED content (must appear in your file). `+` lines = your PRIOR WRONG edit (must be removed). Follow the diff over any prior task interpretation.\n\n";
+		const annotateRetryText = (text: string): string => {
+			if (!shouldStripThinking) return text;
+			if (!text.includes("## Retry context") || !text.includes("Diff (expected vs actual):")) return text;
+			if (text.includes("[DIFF REMINDER]")) return text;
+			return text.replace("Diff (expected vs actual):", `${RETRY_REMINDER}Diff (expected vs actual):`);
+		};
+		const annotateRetryContext = (messages: Message[]): Message[] => {
+			if (!shouldStripThinking) return messages;
+			return messages.map(msg => {
+				if (msg.role !== "user") return msg;
+				const content = msg.content;
+				if (typeof content === "string") {
+					const next = annotateRetryText(content);
+					return next === content ? msg : { ...msg, content: next };
+				}
+				if (!Array.isArray(content)) return msg;
+				let mutated = false;
+				const nextContent = content.map(block => {
+					if (block.type !== "text") return block;
+					const next = annotateRetryText(block.text);
+					if (next === block.text) return block;
+					mutated = true;
+					return { ...block, text: next };
+				});
+				return mutated ? { ...msg, content: nextContent } : msg;
+			});
+		};
+
+		// Final convertToLlm: chain block-images filter with <thinking> strip,
+		// retry-context annotation, and secret obfuscation
 		const convertToLlmFinal = (messages: AgentMessage[]): Message[] => {
-			const converted = stripThinkingFromMessages(convertToLlmWithBlockImages(messages));
+			const converted = annotateRetryContext(stripThinkingFromMessages(convertToLlmWithBlockImages(messages)));
 			if (!obfuscator?.hasSecrets()) return converted;
 			return obfuscateMessages(obfuscator, converted);
 		};
