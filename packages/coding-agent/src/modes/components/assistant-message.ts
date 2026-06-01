@@ -3,7 +3,7 @@ import { Container, Image, ImageProtocol, Markdown, Spacer, TERMINAL, Text } fro
 import { formatNumber } from "@oh-my-pi/pi-utils";
 import { settings } from "../../config/settings";
 import { getMarkdownTheme, theme } from "../../modes/theme/theme";
-import { isSilentAbort } from "../../session/messages";
+import { isSilentAbort, sanitizeKimiClassAssistantMessage } from "../../session/messages";
 import { resolveImageOptions } from "../../tools/render-utils";
 
 /**
@@ -132,6 +132,11 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	updateContent(message: AssistantMessage): void {
+		// Strip vacuous text artifacts (e.g., lone ".") that kimi-class models emit
+		// between thinking blocks and tool calls. The sanitizer is conservative: it only
+		// removes text blocks that are empty or a single punctuation mark and are
+		// sandwiched between thinking blocks and tool calls.
+		message = sanitizeKimiClassAssistantMessage(message);
 		this.#lastMessage = message;
 
 		// Clear content container
