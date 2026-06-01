@@ -31,6 +31,7 @@ import {
 } from "../../tools/json-tree";
 import { formatExpandHint, replaceTabs, resolveImageOptions, truncateToWidth } from "../../tools/render-utils";
 import { toolRenderers } from "../../tools/renderers";
+import { TODO_WRITE_STRIKE_TOTAL_FRAMES } from "../../tools/todo-write";
 import { renderStatusLine } from "../../tui";
 import { sanitizeWithOptionalSixelPassthrough } from "../../utils/sixel";
 import { renderDiff } from "./diff";
@@ -163,6 +164,8 @@ export class ToolExecutionComponent extends Container {
 	// Spinner animation for partial task results
 	#spinnerFrame?: number;
 	#spinnerInterval?: NodeJS.Timeout;
+	// Todo write completion strikethrough reveal animation
+	#todoStrikeInterval?: NodeJS.Timeout;
 	// Track if args are still being streamed (for edit/write spinner)
 	#argsComplete = false;
 	#renderState: {
@@ -251,12 +254,24 @@ export class ToolExecutionComponent extends Container {
 			effectiveArgs = args;
 		}
 
-		// Coalesce duplicate computes for identical args.
+		// Coalesce duplicate computes for identical args. The key pairs the
+		// streaming flag with a content hash: the final (args-complete) pass
+		// computes an untrimmed diff and must run even when the payload is
+		// byte-identical to the last streamed chunk — only `isStreaming` differs,
+		// and it flips the trailing-line trim. Without the flag a single-line edit
+		// whose trailing payload line never gets a newline stays stuck on the
+		// trimmed "no changes" streaming preview and renders no diff. Hashing keeps
+		// the retained key tiny instead of holding the whole serialized blob.
+		const streamingState = this.#argsComplete ? "final" : "stream";
 		let argsKey: string;
 		try {
-			argsKey = JSON.stringify(effectiveArgs);
+			argsKey = `${streamingState}:${Bun.hash(JSON.stringify(effectiveArgs))}`;
 		} catch {
-			argsKey = String(Date.now());
+			// effectiveArgs isn't JSON-serializable (exotic value in tool args).
+			// The raw streamed JSON is a plain string, so hash that instead of a
+			// timestamp — a deterministic key keeps the dedup cache working
+			// instead of recomputing (and re-reading the file) on every render.
+			argsKey = `${streamingState}:partial:${Bun.hash(partialJson ?? "")}`;
 		}
 		if (argsKey === this.#editDiffLastArgsKey) return;
 		this.#editDiffLastArgsKey = argsKey;
@@ -304,6 +319,7 @@ export class ToolExecutionComponent extends Container {
 			this.#argsComplete = true;
 		}
 		this.#updateSpinnerAnimation();
+		this.#updateTodoStrikeAnimation();
 		this.#updateDisplay();
 		// Convert non-PNG images to PNG for Kitty protocol (async)
 		this.#maybeConvertImagesForKitty();
@@ -379,6 +395,43 @@ export class ToolExecutionComponent extends Container {
 		}
 	}
 
+	#updateTodoStrikeAnimation(): void {
+		if (this.#toolName !== "todo_write" || this.#isPartial || this.#result?.isError) {
+			this.#stopTodoStrikeAnimation();
+			return;
+		}
+		const completedTasks = (this.#result?.details as { completedTasks?: unknown[] } | undefined)?.completedTasks;
+		if (!completedTasks || completedTasks.length === 0) {
+			this.#stopTodoStrikeAnimation();
+			return;
+		}
+		if (this.#todoStrikeInterval) return;
+
+		this.#spinnerFrame = 0;
+		this.#renderState.spinnerFrame = 0;
+		this.#todoStrikeInterval = setInterval(() => {
+			const nextFrame = (this.#spinnerFrame ?? 0) + 1;
+			if (nextFrame > TODO_WRITE_STRIKE_TOTAL_FRAMES) {
+				this.#stopTodoStrikeAnimation();
+			} else {
+				this.#spinnerFrame = nextFrame;
+				this.#renderState.spinnerFrame = nextFrame;
+			}
+			this.#ui.requestRender();
+		}, 65);
+	}
+
+	#stopTodoStrikeAnimation(): void {
+		if (this.#todoStrikeInterval) {
+			clearInterval(this.#todoStrikeInterval);
+			this.#todoStrikeInterval = undefined;
+		}
+		if (!this.#spinnerInterval) {
+			this.#spinnerFrame = undefined;
+			this.#renderState.spinnerFrame = undefined;
+		}
+	}
+
 	/**
 	 * Stop spinner animation and cleanup resources.
 	 */
@@ -388,6 +441,7 @@ export class ToolExecutionComponent extends Container {
 			this.#spinnerInterval = undefined;
 			this.#spinnerFrame = undefined;
 		}
+		this.#stopTodoStrikeAnimation();
 		this.#editDiffAbort?.abort();
 		this.#editDiffAbort = undefined;
 	}
@@ -428,6 +482,11 @@ export class ToolExecutionComponent extends Container {
 			const inline = Boolean((tool as { inline?: boolean }).inline);
 			this.#contentBox.setBgFn(inline ? undefined : bgFn);
 			this.#contentBox.clear();
+			// Mirror the built-in renderer branch so custom renderers (notably the
+			// task tool, whose live instance routes through here) receive the same
+			// render context — e.g. the `hasResult` flag that suppresses the task
+			// call preview once result lines exist.
+			this.#renderState.renderContext = this.#buildRenderContext();
 
 			// Render call component
 			const shouldRenderCall = !this.#result || !mergeCallAndResult;
@@ -696,6 +755,11 @@ export class ToolExecutionComponent extends Container {
 			context.output = output;
 			context.expanded = this.#expanded;
 			context.previewLines = EVAL_DEFAULT_PREVIEW_LINES;
+		} else if (this.#toolName === "task") {
+			// Once a result snapshot exists the task renderer's `renderResult`
+			// draws every dispatched agent as a progress/result line, so tell
+			// `renderCall` to drop its duplicate streaming preview list.
+			context.hasResult = Boolean(this.#result);
 		} else if (isEditLikeToolName(this.#toolName)) {
 			context.editMode = this.#editMode;
 			const previews = this.#editDiffPreview;

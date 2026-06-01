@@ -1,16 +1,10 @@
 #!/usr/bin/env bun
-import { APP_NAME, MIN_BUN_VERSION, procmgr, VERSION } from "@oh-my-pi/pi-utils";
-
-// Strip macOS malloc-stack-logging env vars before any subprocess is spawned.
-// Otherwise every child bun process (subagents, plugin installs, ptree spawns,
-// etc.) prints a `MallocStackLogging: can't turn off …` warning to stderr.
-procmgr.scrubProcessEnv();
-
 /**
  * CLI entry point — registers all commands explicitly and delegates to the
  * lightweight CLI runner from pi-utils.
  */
 import { type CliConfig, run } from "@oh-my-pi/pi-utils/cli";
+import { APP_NAME, MIN_BUN_VERSION, VERSION } from "@oh-my-pi/pi-utils/dirs";
 import { commands, isSubcommand } from "./cli-commands";
 
 if (Bun.semver.order(Bun.version, MIN_BUN_VERSION) < 0) {
@@ -32,20 +26,20 @@ async function showHelp(config: CliConfig): Promise<void> {
 	}
 }
 /**
- * Smoke-test entry. Spawns the stats sync worker, pings it, exits.
+ * Smoke-test entry. Spawns bundled workers, pings them, exits.
  *
  * Purpose: catch the silent worker-load regressions that hit compiled
- * binaries (issues #1011 and #1027). Neither `--version` nor
- * `stats --summary` actually spawns a Worker on a fresh install — the
- * sync path early-returns when no session files exist. This probe is the
- * minimal end-to-end test that proves `new Worker(...)` resolves and the
- * bundled worker module evaluates successfully. Wired into
- * `scripts/install-tests/run-ci.sh` so binary / source-link / tarball
- * installs all exercise it on every CI run.
+ * binaries (issues #1011 and #1027). Version/help paths do not spawn worker
+ * modules on a fresh install, so this probe is the minimal end-to-end test
+ * that proves `new Worker(...)` resolves and bundled worker modules evaluate.
+ * Wired into `scripts/install-tests/run-ci.sh` so binary / source-link /
+ * tarball installs all exercise it on every CI run.
  */
 async function runSmokeTest(): Promise<void> {
 	const { smokeTestSyncWorker } = await import("@oh-my-pi/omp-stats");
+	const { smokeTestTinyTitleWorker } = await import("./tiny/title-client");
 	await smokeTestSyncWorker();
+	await smokeTestTinyTitleWorker();
 	process.stdout.write("smoke-test: ok\n");
 }
 

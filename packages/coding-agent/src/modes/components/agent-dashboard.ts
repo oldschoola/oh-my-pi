@@ -49,7 +49,7 @@ import { discoverAgents } from "../../task/discovery";
 import type { AgentDefinition, AgentSource } from "../../task/types";
 import { shortenPath } from "../../tools/render-utils";
 import { theme } from "../theme/theme";
-import { matchesAppInterrupt } from "../utils/keybinding-matchers";
+import { matchesAppInterrupt, matchesSelectDown, matchesSelectUp } from "../utils/keybinding-matchers";
 import { DynamicBorder } from "./dynamic-border";
 
 type SourceTabId = "all" | AgentSource;
@@ -121,7 +121,7 @@ function matchAgent(agent: DashboardAgent, query: string): boolean {
 function extractAssistantText(messages: AgentMessage[]): string | null {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i];
-		if (!message || message.role !== "assistant") continue;
+		if (message?.role !== "assistant") continue;
 		const blocks = message.content;
 		if (!Array.isArray(blocks)) continue;
 		const text = blocks
@@ -1073,11 +1073,11 @@ export class AgentDashboard extends Container {
 			return;
 		}
 
-		if (matchesKey(data, "up") || data === "k") {
+		if (matchesSelectUp(data) || data === "k") {
 			this.#moveSelection(-1);
 			return;
 		}
-		if (matchesKey(data, "down") || data === "j") {
+		if (matchesSelectDown(data) || data === "j") {
 			this.#moveSelection(1);
 			return;
 		}

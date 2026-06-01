@@ -147,6 +147,9 @@ import type { Goal, GoalModeState } from "../goals/state";
 import type { HindsightSessionState } from "../hindsight/state";
 import { type LocalProtocolOptions, resolveLocalUrlToPath } from "../internal-urls";
 import { resolveMemoryBackend } from "../memory-backend";
+import { getMnemosyneSessionState, type MnemosyneSessionState, setMnemosyneSessionState } from "../mnemosyne/state";
+import { isKimiClassModel } from "../model-families";
+import { containsOrchestrate, ORCHESTRATE_NOTICE } from "../modes/orchestrate";
 import { getCurrentThemeName, theme } from "../modes/theme/theme";
 import { containsUltrathink, ULTRATHINK_NOTICE } from "../modes/ultrathink";
 import type { PlanModeState } from "../plan-mode/state";
@@ -164,6 +167,7 @@ import { type AgentRegistry, MAIN_AGENT_ID } from "../registry/agent-registry";
 import { deobfuscateSessionContext, type SecretObfuscator } from "../secrets/obfuscator";
 import { invalidateHostMetadata } from "../ssh/connection-manager";
 import { resolveThinkingLevelForModel, toReasoningEffort } from "../thinking";
+import { shutdownTinyTitleClient } from "../tiny/title-client";
 import {
 	buildDiscoverableToolSearchIndex,
 	collectDiscoverableTools,
@@ -385,6 +389,22 @@ export interface RoleModelCycleResult {
 	role: string;
 }
 
+/** A configured role resolved to a concrete model, used by role cycling and
+ *  the plan-approval model slider. */
+export interface ResolvedRoleModel {
+	role: string;
+	model: Model;
+	thinkingLevel?: ThinkingLevel;
+	explicitThinkingLevel: boolean;
+}
+
+/** The set of resolvable role models plus the index of the currently active
+ *  one within {@link ResolvedRoleModel.role} order. */
+export interface RoleModelCycle {
+	models: ResolvedRoleModel[];
+	currentIndex: number;
+}
+
 /** Session statistics for /session command */
 export interface SessionStats {
 	sessionFile: string | undefined;
@@ -461,6 +481,20 @@ export function resolveToolCallBatchCapForModel(model: Model | undefined): numbe
 	return model.provider === "anthropic" && CLAUDE_OPUS_4_8_MODEL_ID.test(model.id)
 		? ANTHROPIC_TOOL_CALL_BATCH_CAP
 		: undefined;
+}
+
+/**
+ * Per-response content-char cap for kimi/glm/qwen models that emit verbose inline
+ * `<thinking>` monologues. Forces the loop to advance to the next turn after the
+ * model has done some work but before per-attempt wall-clock budgets expire.
+ * Cap chosen so a typical edit-tool response (≤2 K tokens of text + DSL ≤ ~8 KB
+ * chars) fits comfortably, while runaway monologues (~80 KB chars at peak) trip
+ * the abort. Tunable via the new `Agent.maxResponseContentChars` setter.
+ */
+export const KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS = 12000;
+
+export function resolveMaxResponseContentCharsForModel(model: Model | undefined): number | undefined {
+	return isKimiClassModel(model) ? KIMI_CLASS_MAX_RESPONSE_CONTENT_CHARS : undefined;
 }
 
 /**
@@ -1004,6 +1038,7 @@ export class AgentSession {
 
 	#syncToolCallBatchCap(model: Model | undefined = this.model): void {
 		this.agent.maxToolCallsPerTurn = resolveToolCallBatchCapForModel(model);
+		this.agent.maxResponseContentChars = resolveMaxResponseContentCharsForModel(model);
 	}
 
 	#flushPendingAgentEnd(): void {
@@ -1238,6 +1273,10 @@ export class AgentSession {
 		const previous = this.#hindsightSessionState;
 		this.#hindsightSessionState = state;
 		return previous;
+	}
+
+	getMnemosyneSessionState(): MnemosyneSessionState | undefined {
+		return getMnemosyneSessionState(this);
 	}
 
 	/** TTSR manager for time-traveling stream rules */
@@ -2787,10 +2826,24 @@ export class AgentSession {
 		this.getHindsightSessionState()?.setSessionId(sid);
 	}
 
+	#rekeyMnemosyneMemoryForCurrentSessionId(): void {
+		if (resolveMemoryBackend(this.settings).id !== "mnemosyne") return;
+		const sid = this.agent.sessionId;
+		if (!sid) return;
+		this.getMnemosyneSessionState()?.setSessionId(sid);
+	}
+
 	/** New session file: reset auto-recall / retain-threshold counters for the new transcript. */
 	#resetHindsightConversationTrackingIfHindsight(): void {
 		if (resolveMemoryBackend(this.settings).id !== "hindsight") return;
 		const state = this.getHindsightSessionState();
+		if (!state || state.aliasOf) return;
+		state.resetConversationTracking();
+	}
+
+	#resetMnemosyneConversationTrackingIfMnemosyne(): void {
+		if (resolveMemoryBackend(this.settings).id !== "mnemosyne") return;
+		const state = this.getMnemosyneSessionState();
 		if (!state || state.aliasOf) return;
 		state.resetConversationTracking();
 	}
@@ -2851,12 +2904,15 @@ export class AgentSession {
 			);
 		}
 		await disposeKernelSessionsByOwner(this.#evalKernelOwnerId);
+		await shutdownTinyTitleClient();
 		this.#releasePowerAssertion();
 		await this.sessionManager.close();
 		this.#closeAllProviderSessions("dispose");
 		const hindsightState = this.setHindsightSessionState(undefined);
 		await hindsightState?.flushRetainQueue();
 		hindsightState?.dispose();
+		const mnemosyneState = setMnemosyneSessionState(this, undefined);
+		mnemosyneState?.dispose();
 		this.#disconnectFromAgent();
 		if (this.#unsubscribeAppendOnly) {
 			this.#unsubscribeAppendOnly();
@@ -4012,20 +4068,33 @@ export class AgentSession {
 		// Expand file-based prompt templates if requested
 		const expandedText = expandPromptTemplates ? expandPromptTemplate(text, [...this.#promptTemplates]) : text;
 
-		// "ultrathink" keyword: nudge the model toward careful multi-step reasoning by
-		// appending a hidden notice after the user's message. User-authored prompts only —
-		// synthetic/agent-initiated turns never trigger it.
-		const ultrathinkNotice: CustomMessage | undefined =
-			!options?.synthetic && containsUltrathink(expandedText)
-				? {
-						role: "custom",
-						customType: "ultrathink-notice",
-						content: ULTRATHINK_NOTICE,
-						display: false,
-						attribution: "user",
-						timestamp: Date.now(),
-					}
-				: undefined;
+		// Magic keywords ("ultrathink", "orchestrate"): append hidden system notices after the
+		// user's message that steer this turn. User-authored prompts only — synthetic /
+		// agent-initiated turns never trigger them.
+		const keywordNotices: CustomMessage[] = [];
+		if (!options?.synthetic) {
+			const timestamp = Date.now();
+			if (containsUltrathink(expandedText)) {
+				keywordNotices.push({
+					role: "custom",
+					customType: "ultrathink-notice",
+					content: ULTRATHINK_NOTICE,
+					display: false,
+					attribution: "user",
+					timestamp,
+				});
+			}
+			if (containsOrchestrate(expandedText)) {
+				keywordNotices.push({
+					role: "custom",
+					customType: "orchestrate-notice",
+					content: ORCHESTRATE_NOTICE,
+					display: false,
+					attribution: "user",
+					timestamp,
+				});
+			}
+		}
 
 		// If streaming, queue via steer() or followUp() based on option
 		if (this.isStreaming) {
@@ -4037,9 +4106,9 @@ export class AgentSession {
 			} else {
 				await this.#queueSteer(expandedText, options?.images);
 			}
-			// Steer/follow-up the ultrathink notice alongside the queued user message.
-			if (ultrathinkNotice) {
-				await this.sendCustomMessage(ultrathinkNotice, { deliverAs: options.streamingBehavior });
+			// Steer/follow-up the keyword notices alongside the queued user message.
+			for (const notice of keywordNotices) {
+				await this.sendCustomMessage(notice, { deliverAs: options.streamingBehavior });
 			}
 			return;
 		}
@@ -4069,7 +4138,7 @@ export class AgentSession {
 			await this.#promptWithMessage(message, expandedText, {
 				...options,
 				prependMessages: eagerTodoPrelude ? [eagerTodoPrelude.message] : undefined,
-				appendMessages: ultrathinkNotice ? [ultrathinkNotice] : undefined,
+				appendMessages: keywordNotices.length > 0 ? keywordNotices : undefined,
 			});
 		} finally {
 			// Clean up residual eager-todo directive if the prompt never consumed it
@@ -4866,7 +4935,9 @@ export class AgentSession {
 		this.setTodoPhases([]);
 		this.#syncAgentSessionId();
 		this.#rekeyHindsightMemoryForCurrentSessionId();
+		this.#rekeyMnemosyneMemoryForCurrentSessionId();
 		this.#resetHindsightConversationTrackingIfHindsight();
+		this.#resetMnemosyneConversationTrackingIfMnemosyne();
 		this.#steeringMessages = [];
 		this.#followUpMessages = [];
 		this.#pendingNextTurnMessages = [];
@@ -4961,6 +5032,8 @@ export class AgentSession {
 		// Update agent session ID
 		this.#syncAgentSessionId();
 		this.#rekeyHindsightMemoryForCurrentSessionId();
+		this.#rekeyMnemosyneMemoryForCurrentSessionId();
+		this.#resetMnemosyneConversationTrackingIfMnemosyne();
 
 		// Emit session_switch event with reason "fork" to hooks
 		if (this.#extensionRunner) {
@@ -5046,27 +5119,23 @@ export class AgentSession {
 	}
 
 	/**
-	 * Cycle through configured role models in a fixed order.
-	 * Skips missing roles.
-	 * @param roleOrder - Order of roles to cycle through (e.g., ["slow", "default", "smol"])
-	 * @param options - Optional settings: `temporary` to not persist to settings
+	 * Resolve the configured role models in the given order plus the index of
+	 * the currently active one. Roles that have no configured model, or whose
+	 * configured model is not currently available, are skipped. The `default`
+	 * role falls back to the active model when no explicit assignment exists.
+	 *
+	 * Returns `undefined` only when there is no current model or no available
+	 * models at all; an empty `models` array is never returned (callers should
+	 * still guard on `models.length`).
 	 */
-	async cycleRoleModels(
-		roleOrder: readonly string[],
-		options?: { temporary?: boolean },
-	): Promise<RoleModelCycleResult | undefined> {
+	getRoleModelCycle(roleOrder: readonly string[]): RoleModelCycle | undefined {
 		const availableModels = this.#modelRegistry.getAvailable();
 		if (availableModels.length === 0) return undefined;
 
 		const currentModel = this.model;
 		if (!currentModel) return undefined;
 		const matchPreferences = { usageOrder: this.settings.getStorage()?.getModelUsageOrder() };
-		const roleModels: Array<{
-			role: string;
-			model: Model;
-			thinkingLevel?: ThinkingLevel;
-			explicitThinkingLevel: boolean;
-		}> = [];
+		const models: ResolvedRoleModel[] = [];
 
 		for (const role of roleOrder) {
 			const roleModelStr =
@@ -5082,7 +5151,7 @@ export class AgentSession {
 			});
 			if (!resolved.model) continue;
 
-			roleModels.push({
+			models.push({
 				role,
 				model: resolved.model,
 				thinkingLevel: resolved.thinkingLevel,
@@ -5090,25 +5159,49 @@ export class AgentSession {
 			});
 		}
 
-		if (roleModels.length <= 1) return undefined;
+		if (models.length === 0) return undefined;
 
 		const lastRole = this.sessionManager.getLastModelChangeRole();
-		let currentIndex = lastRole ? roleModels.findIndex(entry => entry.role === lastRole) : -1;
+		let currentIndex = lastRole ? models.findIndex(entry => entry.role === lastRole) : -1;
 		if (currentIndex === -1) {
-			currentIndex = roleModels.findIndex(entry => modelsAreEqual(entry.model, currentModel));
+			currentIndex = models.findIndex(entry => modelsAreEqual(entry.model, currentModel));
 		}
 		if (currentIndex === -1) currentIndex = 0;
 
-		const nextIndex = (currentIndex + 1) % roleModels.length;
-		const next = roleModels[nextIndex];
+		return { models, currentIndex };
+	}
+
+	/**
+	 * Apply a resolved role model as the active model, persisting the choice to
+	 * settings under its role. Mirrors the non-temporary branch of
+	 * {@link cycleRoleModels} and is shared with the plan-approval model slider.
+	 */
+	async applyRoleModel(entry: ResolvedRoleModel): Promise<void> {
+		await this.setModel(entry.model, entry.role);
+		if (entry.explicitThinkingLevel && entry.thinkingLevel !== undefined) {
+			this.setThinkingLevel(entry.thinkingLevel);
+		}
+	}
+
+	/**
+	 * Cycle through configured role models in a fixed order.
+	 * Skips missing roles.
+	 * @param roleOrder - Order of roles to cycle through (e.g., ["slow", "default", "smol"])
+	 * @param options - Optional settings: `temporary` to not persist to settings
+	 */
+	async cycleRoleModels(
+		roleOrder: readonly string[],
+		options?: { temporary?: boolean },
+	): Promise<RoleModelCycleResult | undefined> {
+		const cycle = this.getRoleModelCycle(roleOrder);
+		if (!cycle || cycle.models.length <= 1) return undefined;
+
+		const next = cycle.models[(cycle.currentIndex + 1) % cycle.models.length];
 
 		if (options?.temporary) {
 			await this.setModelTemporary(next.model, next.explicitThinkingLevel ? next.thinkingLevel : undefined);
 		} else {
-			await this.setModel(next.model, next.role);
-			if (next.explicitThinkingLevel && next.thinkingLevel !== undefined) {
-				this.setThinkingLevel(next.thinkingLevel);
-			}
+			await this.applyRoleModel(next);
 		}
 
 		return { model: next.model, thinkingLevel: this.thinkingLevel, role: next.role };
@@ -5712,7 +5805,9 @@ export class AgentSession {
 			this.agent.reset();
 			this.#syncAgentSessionId();
 			this.#rekeyHindsightMemoryForCurrentSessionId();
+			this.#rekeyMnemosyneMemoryForCurrentSessionId();
 			this.#resetHindsightConversationTrackingIfHindsight();
+			this.#resetMnemosyneConversationTrackingIfMnemosyne();
 			this.#steeringMessages = [];
 			this.#followUpMessages = [];
 			this.#pendingNextTurnMessages = [];
@@ -6184,7 +6279,7 @@ export class AgentSession {
 
 	#closeCodexProviderSessionsForHistoryRewrite(): void {
 		const currentModel = this.model;
-		if (!currentModel || currentModel.api !== "openai-codex-responses") return;
+		if (currentModel?.api !== "openai-codex-responses") return;
 		this.#closeProviderSessionsForModelSwitch(currentModel, currentModel);
 	}
 
@@ -8183,6 +8278,7 @@ export class AgentSession {
 			await this.sessionManager.setSessionFile(sessionPath);
 			this.#syncAgentSessionId();
 			this.#rekeyHindsightMemoryForCurrentSessionId();
+			this.#rekeyMnemosyneMemoryForCurrentSessionId();
 
 			const sessionContext = this.buildDisplaySessionContext();
 			const didReloadConversationChange =
@@ -8255,6 +8351,7 @@ export class AgentSession {
 
 			if (switchingToDifferentSession) {
 				this.#resetHindsightConversationTrackingIfHindsight();
+				this.#resetMnemosyneConversationTrackingIfMnemosyne();
 			}
 			this.#reconnectToAgent();
 			return true;
@@ -8262,6 +8359,7 @@ export class AgentSession {
 			this.sessionManager.restoreState(previousSessionState);
 			this.#syncAgentSessionId(previousSessionState.sessionId);
 			this.#rekeyHindsightMemoryForCurrentSessionId();
+			this.#rekeyMnemosyneMemoryForCurrentSessionId();
 			let restoreMcpError: unknown;
 			try {
 				await this.#restoreMCPSelectionsForSessionContext(previousSessionContext, {
@@ -8320,7 +8418,7 @@ export class AgentSession {
 		const previousSessionFile = this.sessionFile;
 		const selectedEntry = this.sessionManager.getEntry(entryId);
 
-		if (!selectedEntry || selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
+		if (selectedEntry?.type !== "message" || selectedEntry.message.role !== "user") {
 			throw new Error("Invalid entry ID for branching");
 		}
 
@@ -8357,7 +8455,9 @@ export class AgentSession {
 		this.#syncTodoPhasesFromBranch();
 		this.#syncAgentSessionId();
 		this.#rekeyHindsightMemoryForCurrentSessionId();
+		this.#rekeyMnemosyneMemoryForCurrentSessionId();
 		this.#resetHindsightConversationTrackingIfHindsight();
+		this.#resetMnemosyneConversationTrackingIfMnemosyne();
 
 		// Reload messages from entries (works for both file and in-memory mode)
 		const sessionContext = this.buildDisplaySessionContext();

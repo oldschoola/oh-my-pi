@@ -22,6 +22,7 @@ import {
 	readSseEvents,
 } from "@oh-my-pi/pi-utils";
 import {
+	disablesParallelToolUse,
 	hasOpus47ApiRestrictions,
 	mapEffortToAnthropicAdaptiveEffort,
 	supportsMidConversationSystemMessages,
@@ -89,6 +90,30 @@ export type AnthropicHeaderOptions = {
 	modelHeaders?: Record<string, string>;
 	isCloudflareAiGateway?: boolean;
 };
+
+/**
+ * Widened idle timeout floor for slow GLM-5 reasoning models served via the
+ * Anthropic-compatible endpoint (zai/glm-5*, zhipu's anthropic mount). The
+ * openai-completions transport already widens to 600s for the same family —
+ * see `getOpenAICompletionsStreamIdleTimeoutFallbackMs` in
+ * `openai-completions.ts`. Without this, z.ai's /v1/messages can stall past
+ * the 100s first-event default (cold start + reasoning), producing 0-token
+ * "ghost" runs that look like agent failures.
+ */
+const ANTHROPIC_GLM_STREAM_IDLE_TIMEOUT_MS = 600_000;
+const ANTHROPIC_GLM_MODEL_PATTERN = /^glm-5(?:[.-]|$)/i;
+
+export function getAnthropicStreamIdleTimeoutFallbackMs(model: Model<"anthropic-messages">): number | undefined {
+	if (!ANTHROPIC_GLM_MODEL_PATTERN.test(model.id)) return undefined;
+	if (model.provider === "zai" || model.provider === "zhipu-coding-plan") {
+		return ANTHROPIC_GLM_STREAM_IDLE_TIMEOUT_MS;
+	}
+	const baseUrl = model.baseUrl.toLowerCase();
+	if (baseUrl.includes("api.z.ai") || baseUrl.includes("open.bigmodel.cn")) {
+		return ANTHROPIC_GLM_STREAM_IDLE_TIMEOUT_MS;
+	}
+	return undefined;
+}
 
 export function normalizeAnthropicBaseUrl(baseUrl?: string): string | undefined {
 	const trimmed = baseUrl?.trim();
@@ -1205,7 +1230,8 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 				| TextContent
 				| (ToolCall & { partialJson: string })
 			) & { index: number };
-			const idleTimeoutMs = options?.streamIdleTimeoutMs ?? getStreamIdleTimeoutMs();
+			const idleTimeoutMs =
+				options?.streamIdleTimeoutMs ?? getStreamIdleTimeoutMs(getAnthropicStreamIdleTimeoutFallbackMs(model));
 			const firstEventTimeoutMs = options?.streamFirstEventTimeoutMs ?? getStreamFirstEventTimeoutMs(idleTimeoutMs);
 			const requestTimeoutMs =
 				firstEventTimeoutMs !== undefined && firstEventTimeoutMs > 0 ? firstEventTimeoutMs : undefined;
@@ -1774,7 +1800,7 @@ function disableThinkingIfToolChoiceForced(params: MessageCreateParamsStreaming)
 
 function ensureMaxTokensForThinking(params: MessageCreateParamsStreaming, model: Model<"anthropic-messages">): void {
 	const thinking = params.thinking;
-	if (!thinking || thinking.type !== "enabled") return;
+	if (thinking?.type !== "enabled") return;
 
 	const budgetTokens = thinking.budget_tokens ?? 0;
 	if (budgetTokens <= 0) return;
@@ -2130,6 +2156,21 @@ function buildParams(
 			};
 		} else {
 			params.tool_choice = options.toolChoice;
+		}
+	}
+
+	// Claude Opus 4.8 must emit at most one tool call per turn. Force
+	// `disable_parallel_tool_use` onto the outgoing tool_choice (synthesizing an
+	// `auto` choice when none is set). Gated on tools being present: Anthropic
+	// rejects `tool_choice` without `tools`, and parallelism is moot otherwise.
+	// `none` rejects the field, so leave it untouched. A fresh object is built
+	// rather than mutated so the caller's `options.toolChoice` is never aliased.
+	if (disablesParallelToolUse(model.id) && params.tools && params.tools.length > 0) {
+		const current = params.tool_choice;
+		if (!current) {
+			params.tool_choice = { type: "auto", disable_parallel_tool_use: true };
+		} else if (current.type !== "none") {
+			params.tool_choice = { ...current, disable_parallel_tool_use: true };
 		}
 	}
 

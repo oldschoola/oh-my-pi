@@ -47,6 +47,15 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	maxToolCallsPerTurn?: number;
 
 	/**
+	 * Maximum cumulative content characters (text + thinking + tool-call deltas) per
+	 * single streamed assistant response before the provider stream is force-aborted.
+	 * Used to bound wall-clock for model families that emit very long inline reasoning
+	 * monologues (kimi/glm/qwen with `<thinking>` tags). The abort uses the same
+	 * graceful-finalize path as `maxToolCallsPerTurn`. Undefined disables the cap.
+	 */
+	maxResponseContentChars?: number;
+
+	/**
 	 * Optional session identifier forwarded to LLM providers.
 	 * Used by providers that support session-based caching (e.g., OpenAI Codex).
 	 */

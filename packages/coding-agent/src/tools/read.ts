@@ -16,6 +16,7 @@ import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import { InternalUrlRouter } from "../internal-urls";
 import { parseInternalUrl } from "../internal-urls/parse";
 import type { InternalUrl } from "../internal-urls/types";
+import { isKimiClassModelString } from "../model-families";
 import { getLanguageFromPath, type Theme } from "../modes/theme/theme";
 import readDescription from "../prompts/tools/read.md" with { type: "text" };
 import type { ToolSession } from "../sdk";
@@ -248,16 +249,31 @@ function formatSummaryElisionFooter(
 	readPath: string,
 	elidedRanges: ReadonlyArray<ElidedRange>,
 	elidedLines: number,
+	options: { kimiClass?: boolean } = {},
 ): string {
 	if (elidedRanges.length === 0) return "";
 	const lineWord = elidedLines === 1 ? "line" : "lines";
 	const sampleCount = Math.min(elidedRanges.length, FOOTER_RANGE_SAMPLES);
-	const selector = elidedRanges
+	// For kimi-class, prefer the largest elided ranges in the e.g. sample so
+	// the model has a pointer to the biggest hidden region. Otherwise glm-5.1
+	// in particular reads the file in many small chunks of small top-level
+	// functions before discovering the big body it needs, blowing past
+	// max-turns. Sort copy; do not mutate the source.
+	const orderedRanges = options.kimiClass
+		? [...elidedRanges].sort((a, b) => b.end - b.start - (a.end - a.start))
+		: elidedRanges;
+	const selector = orderedRanges
 		.slice(0, sampleCount)
 		.map(r => `${r.start}-${r.end}`)
 		.join(",");
 	const example = `${readPath}:${selector}`;
 	const tail = elidedRanges.length > sampleCount ? `, e.g. ${example}` : ` with ${example}`;
+	// Kimi-class models otherwise compulsively re-read every elided range. The
+	// summary above is usually sufficient context to act; reserve `re-read`
+	// suggestion for cases where the agent truly needs the hidden body.
+	if (options.kimiClass) {
+		return `[${elidedLines} ${lineWord} elided. The visible structural summary usually has enough context to act. Only re-read elided ranges if your fix truly depends on hidden content${tail}]`;
+	}
 	return `[${elidedLines} ${lineWord} elided; re-read needed ranges${tail}]`;
 }
 const READ_CHUNK_SIZE = 8 * 1024;
@@ -1359,10 +1375,19 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 			if (lineCount > MAX_SUMMARY_LINES) return null;
 			if (lineCount < this.session.settings.get("read.summarize.minTotalLines")) return null;
 
+			// For kimi/glm/qwen models that ramble through structural summaries, use
+			// a tighter inline-body threshold so summaries stay compact and the model
+			// doesn't trip on extra inline code while ruminating. Other models keep
+			// the larger default optimal for their faster decisions on bigger contexts.
+			const activeModel = this.session.getActiveModelString?.() ?? "";
+			const isKimiClass = isKimiClassModelString(activeModel);
+			const minBodyLines = isKimiClass
+				? Math.min(4, this.session.settings.get("read.summarize.minBodyLines"))
+				: this.session.settings.get("read.summarize.minBodyLines");
 			const result = summarizeCode({
 				code,
 				path: absolutePath,
-				minBodyLines: this.session.settings.get("read.summarize.minBodyLines"),
+				minBodyLines,
 				minCommentLines: this.session.settings.get("read.summarize.minCommentLines"),
 				unfoldUntilLines: this.session.settings.get("read.summarize.unfoldUntil"),
 				unfoldLimitLines: this.session.settings.get("read.summarize.unfoldLimit"),
@@ -1732,10 +1757,13 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				const summary = await this.#trySummarize(absolutePath, fileSize, signal);
 				if (summary?.parsed && summary.elided) {
 					const renderedSummary = this.#renderSummary(summary);
+					const activeModel = this.session.getActiveModelString?.() ?? "";
+					const isKimiClass = isKimiClassModelString(activeModel);
 					const footer = formatSummaryElisionFooter(
 						localReadPath,
 						renderedSummary.elidedRanges,
 						renderedSummary.elidedLines,
+						{ kimiClass: isKimiClass },
 					);
 					const summaryHashContext = displayMode.hashLines
 						? await readHashlineHeaderContext(this.session, absolutePath, this.session.cwd)

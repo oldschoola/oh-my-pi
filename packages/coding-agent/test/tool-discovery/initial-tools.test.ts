@@ -26,10 +26,9 @@ const allToolsSettings = Settings.isolated({
 	"web_search.enabled": true,
 	"browser.enabled": true,
 	"checkpoint.enabled": true,
-	"irc.enabled": true,
 	"recipe.enabled": true,
 	"todo.enabled": true,
-	"memory.backend": "hindsight",
+	"memory.backend": "mnemosyne",
 	"tools.discoveryMode": "all",
 });
 

@@ -45,6 +45,25 @@ class WrappingLinesComponent implements Component {
 	}
 }
 
+class FocusedInputComponent implements Component, Focusable {
+	focused = false;
+	#onInput: () => void;
+
+	constructor(onInput: () => void) {
+		this.#onInput = onInput;
+	}
+
+	handleInput(): void {
+		this.#onInput();
+	}
+
+	invalidate(): void {}
+
+	render(): string[] {
+		return [this.focused ? `prompt>${CURSOR_MARKER}` : "prompt>"];
+	}
+}
+
 class UnknownViewportTerminal extends VirtualTerminal {
 	isNativeViewportAtBottom(): undefined {
 		return undefined;
@@ -1149,91 +1168,93 @@ describe("TUI terminal-state regressions", () => {
 			}
 		});
 
-		it("treats unknown WSL Windows Terminal viewport state as scrolled", async () => {
+		it("keeps the unknown Windows viewport guard on ordinary focused input", async () => {
 			const originalPlatform = process.platform;
-			const originalWtSession = Bun.env.WT_SESSION;
-			const originalWslDistroName = Bun.env.WSL_DISTRO_NAME;
-			const originalWslInterop = Bun.env.WSL_INTEROP;
-			Object.defineProperty(process, "platform", { configurable: true, value: "linux" });
-			Bun.env.WT_SESSION = "wt-test";
-			Bun.env.WSL_DISTRO_NAME = "Ubuntu";
-			delete Bun.env.WSL_INTEROP;
-
+			Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
 			const term = new UnknownViewportTerminal(32, 5);
 			const tui = new TUI(term);
-			const component = new MutableLinesComponent(rows("line-", 12));
-			tui.addChild(component);
+			const transcript = new MutableLinesComponent(rows("line-", 12));
+			const input = new FocusedInputComponent(() => {
+				transcript.setLines([...rows("line-", 6), "typed-token", ...rows("line-", 12).slice(6)]);
+			});
+			tui.addChild(transcript);
+			tui.addChild(input);
+			tui.setFocus(input);
 
 			try {
 				tui.start();
 				await settle(term);
 				term.scrollLines(-2);
 				const before = term.getBufferPosition();
+				const beforeViewport = visible(term).map(line => line.trim());
 				expect(before.viewportY).toBeGreaterThan(0);
 
-				component.setLines(rows("line-", 8));
-				tui.requestRender();
+				term.sendInput("x");
 				await settle(term);
 
 				const after = term.getBufferPosition();
 				expect(after.viewportY).toBe(before.viewportY);
-				expect(visible(term).map(line => line.trim())).toEqual(["line-5", "line-6", "line-7", "", ""]);
-				expect(tui.refreshNativeScrollbackIfDirty()).toBe(false);
-				expect(term.getBufferPosition().viewportY).toBe(before.viewportY);
+				expect(visible(term).map(line => line.trim())).toEqual(beforeViewport);
+				expect(term.getScrollBuffer().join("\n")).not.toContain("typed-token");
 			} finally {
 				Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
-				if (originalWtSession === undefined) delete Bun.env.WT_SESSION;
-				else Bun.env.WT_SESSION = originalWtSession;
-				if (originalWslDistroName === undefined) delete Bun.env.WSL_DISTRO_NAME;
-				else Bun.env.WSL_DISTRO_NAME = originalWslDistroName;
-				if (originalWslInterop === undefined) delete Bun.env.WSL_INTEROP;
-				else Bun.env.WSL_INTEROP = originalWslInterop;
 				tui.stop();
 			}
 		});
-
-		it("refreshes unknown WSL Windows Terminal scrollback at a submit checkpoint", async () => {
+		it("renders streaming row inserts on WSL Windows Terminal even when viewport probe is unavailable", async () => {
 			const originalPlatform = process.platform;
-			const originalWtSession = Bun.env.WT_SESSION;
-			const originalWslDistroName = Bun.env.WSL_DISTRO_NAME;
-			const originalWslInterop = Bun.env.WSL_INTEROP;
 			Object.defineProperty(process, "platform", { configurable: true, value: "linux" });
-			Bun.env.WT_SESSION = "wt-test";
-			Bun.env.WSL_DISTRO_NAME = "Ubuntu";
-			delete Bun.env.WSL_INTEROP;
-
-			const term = new UnknownViewportTerminal(32, 5);
-			const tui = new TUI(term);
-			const component = new MutableLinesComponent(rows("line-", 12));
-			tui.addChild(component);
-
 			try {
-				tui.start();
-				await settle(term);
-				term.scrollLines(-2);
+				await withEnvPatch(
+					{ WT_SESSION: "wt-test", WSL_DISTRO_NAME: "Ubuntu", WSL_INTEROP: undefined },
+					async () => {
+						// Simulate WSL: native viewport probe returns undefined unconditionally
+						// (kernel32.dll FFI cannot bind from a Linux user-space process).
+						const term = new UnknownViewportTerminal(32, 5);
+						const tui = new TUI(term);
+						// Bottom-anchored footer (prompt area) with streaming assistant rows above it.
+						// Seed the transcript so the viewport is already saturated — the footer pins
+						// to the last viewport row and streamed rows must appear above it.
+						const transcript = new MutableLinesComponent(rows("seed-", 4));
+						const footer = new MutableLinesComponent(["prompt>"]);
+						tui.addChild(transcript);
+						tui.addChild(footer);
 
-				component.setLines(rows("line-", 8));
-				tui.requestRender();
-				await settle(term);
-				term.scrollLines(999);
+						try {
+							tui.start();
+							await settle(term);
+							expect(visible(term).map(line => line.trim())).toEqual([
+								"seed-0",
+								"seed-1",
+								"seed-2",
+								"seed-3",
+								"prompt>",
+							]);
 
-				expect(tui.refreshNativeScrollbackIfDirty({ allowUnknownViewport: true })).toBe(true);
-				await settle(term);
+							// Stream tokens row-by-row. Each frame inserts a new row above the footer,
+							// mimicking an assistant response materializing during a turn.
+							for (let i = 0; i < 4; i++) {
+								transcript.setLines([...rows("seed-", 4), ...rows("token-", i + 1)]);
+								tui.requestRender();
+								await settle(term);
 
-				const position = term.getBufferPosition();
-				expect(position.viewportY).toBe(position.baseY);
-				expect(visible(term).map(line => line.trim())).toEqual(["line-3", "line-4", "line-5", "line-6", "line-7"]);
+								const viewport = visible(term).map(line => line.trim());
+								// The most recently streamed token MUST land in the viewport without the
+								// user resizing the window. Pre-fix the viewport stayed frozen at the
+								// initial seed because deferredMutation returned a no-op render.
+								expect(viewport).toContain(`token-${i}`);
+								expect(viewport[viewport.length - 1]).toBe("prompt>");
+							}
+						} finally {
+							tui.stop();
+						}
+					},
+				);
 			} finally {
 				Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
-				if (originalWtSession === undefined) delete Bun.env.WT_SESSION;
-				else Bun.env.WT_SESSION = originalWtSession;
-				if (originalWslDistroName === undefined) delete Bun.env.WSL_DISTRO_NAME;
-				else Bun.env.WSL_DISTRO_NAME = originalWslDistroName;
-				if (originalWslInterop === undefined) delete Bun.env.WSL_INTEROP;
-				else Bun.env.WSL_INTEROP = originalWslInterop;
-				tui.stop();
 			}
 		});
+
 		it("refreshes deferred native scrollback when the native viewport reaches bottom", async () => {
 			const term = new VirtualTerminal(32, 5);
 			const tui = new TUI(term);
