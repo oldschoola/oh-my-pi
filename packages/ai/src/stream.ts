@@ -266,6 +266,7 @@ const serviceProviderMap: Record<string, KeyResolver> = {
 	venice: "VENICE_API_KEY",
 	vllm: "VLLM_API_KEY",
 	xiaomi: "XIAOMI_API_KEY",
+	xiaomimimo: () => $pickenv("XIAOMIMIMO_API_KEY", "XIAOMI_API_KEY"),
 };
 
 /**

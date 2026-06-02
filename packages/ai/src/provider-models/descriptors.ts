@@ -44,6 +44,7 @@ import {
 	xaiModelManagerOptions,
 	xaiOAuthModelManagerOptions,
 	xiaomiModelManagerOptions,
+	xiaomimimoModelManagerOptions,
 	zenmuxModelManagerOptions,
 	zhipuCodingPlanModelManagerOptions,
 } from "./openai-compat";
@@ -311,6 +312,12 @@ export const PROVIDER_DESCRIPTORS: readonly ProviderDescriptor[] = [
 		"mimo-v2-flash",
 		config => xiaomiModelManagerOptions(config),
 		catalog("Xiaomi", ["XIAOMI_API_KEY"]),
+	),
+	catalogDescriptor(
+		"xiaomimimo",
+		"mimo-v2-flash",
+		config => xiaomimimoModelManagerOptions(config),
+		catalog("Xiaomi MiMo", ["XIAOMIMIMO_API_KEY", "XIAOMI_API_KEY"]),
 	),
 	catalogDescriptor(
 		"zenmux",

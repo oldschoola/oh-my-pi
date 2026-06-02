@@ -1961,6 +1961,39 @@ export function xiaomiModelManagerOptions(
 	};
 }
 // ---------------------------------------------------------------------------
+// 20.5 Xiaomi MiMo (xiaomimimo)
+// ---------------------------------------------------------------------------
+export interface XiaomimimoModelManagerConfig {
+	apiKey?: string;
+	baseUrl?: string;
+}
+export function xiaomimimoModelManagerOptions(config?: XiaomimimoModelManagerConfig): ModelManagerOptions<"openai-completions"> {
+	const apiKey = config?.apiKey;
+	const baseUrl = config?.baseUrl ?? "https://api.xiaomimimo.com/v1";
+	const references = createBundledReferenceMap<"openai-completions">("xiaomimimo");
+	return {
+		providerId: "xiaomimimo",
+		...(apiKey && {
+			fetchDynamicModels: () =>
+				fetchOpenAICompatibleModels({
+					api: "openai-completions",
+					provider: "xiaomimimo",
+					baseUrl,
+					apiKey,
+					filterModel: (_entry, model) => !model.id.includes("-tts"),
+					mapModel: (entry, defaults) => {
+						const reference = references.get(defaults.id);
+						const base = reference ? mapWithBundledReference(entry, defaults, reference) : defaults;
+						return {
+							...base,
+							name: toModelName(entry.display_name, base.name),
+						};
+					},
+				}),
+		}),
+	};
+}
+// ---------------------------------------------------------------------------
 // 21. LiteLLM
 // ---------------------------------------------------------------------------
 
@@ -2667,6 +2700,18 @@ const MODELS_DEV_PROVIDER_DESCRIPTORS_CODING_PLANS: readonly ModelsDevProviderDe
 	anthropicMessagesDescriptor("zai-coding-plan", "zai", "https://api.z.ai/api/anthropic"),
 	// --- Xiaomi ---
 	openAiCompletionsDescriptor("xiaomi", "xiaomi", "https://api.xiaomimimo.com/v1", {
+		defaultContextWindow: 262144,
+		defaultMaxTokens: 8192,
+		compat: {
+			supportsStore: false,
+			thinkingFormat: "zai",
+			reasoningContentField: "reasoning_content",
+			requiresReasoningContentForToolCalls: true,
+			allowsSyntheticReasoningContentForToolCalls: false,
+		},
+	}),
+	// --- Xiaomi MiMo (xiaomimimo) ---
+	openAiCompletionsDescriptor("xiaomi", "xiaomimimo", "https://api.xiaomimimo.com/v1", {
 		defaultContextWindow: 262144,
 		defaultMaxTokens: 8192,
 		compat: {

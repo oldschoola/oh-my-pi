@@ -103,6 +103,11 @@ const builtInOAuthProviders: OAuthProviderInfo[] = [
 		available: true,
 	},
 	{
+		id: "xiaomimimo",
+		name: "Xiaomi MiMo (xiaomimimo)",
+		available: true,
+	},
+	{
 		id: "firepass",
 		name: "Fire Pass (Fireworks Kimi K2.6 Turbo subscription)",
 		available: true,
@@ -364,6 +369,7 @@ export async function refreshOAuthToken(
 		case "ollama":
 		case "ollama-cloud":
 		case "xiaomi":
+		case "xiaomimimo":
 		case "zai":
 		case "zhipu-coding-plan":
 		case "qianfan":

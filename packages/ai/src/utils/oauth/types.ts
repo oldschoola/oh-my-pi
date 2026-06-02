@@ -53,6 +53,7 @@ export type OAuthProvider =
 	| "vllm"
 	| "xai-oauth"
 	| "xiaomi"
+	| "xiaomimimo"
 	| "zenmux"
 	| "zai"
 	| "zhipu-coding-plan";

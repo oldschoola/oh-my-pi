@@ -1751,7 +1751,8 @@ export class AuthStorage {
 				await saveApiKeyCredential(apiKey);
 				return;
 			}
-			case "xiaomi": {
+			case "xiaomi":
+			case "xiaomimimo": {
 				const { loginXiaomi } = await import("./utils/oauth/xiaomi");
 				const apiKey = await loginXiaomi(ctrl);
 				await saveApiKeyCredential(apiKey);

@@ -142,6 +142,7 @@ export type KnownProvider =
 	| "venice"
 	| "vllm"
 	| "xiaomi"
+	| "xiaomimimo"
 	| "wafer-pass"
 	| "wafer-serverless"
 	| "zenmux"
