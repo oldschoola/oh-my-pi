@@ -1808,6 +1808,8 @@ export async function resolveResumableSession(
 	return { session: globalMatch, scope: "global" };
 }
 interface SessionManagerStateSnapshot {
+	cwd: string;
+	sessionDir: string;
 	sessionId: string;
 	sessionName: string | undefined;
 	titleSource: "auto" | "user" | undefined;
@@ -1837,6 +1839,12 @@ export class SessionManager {
 		premiumRequests: 0,
 		cost: 0,
 	} satisfies UsageStatistics;
+	/** Per-turn output-token budget set by a `+Nk` directive (total null when none this turn). */
+	#turnBudget: { total: number | null; hard: boolean } = { total: null, hard: false };
+	/** Cumulative `output` snapshot captured when the current turn budget window opened. */
+	#turnBaselineOutput = 0;
+	/** Output tokens consumed by eval-spawned subagents in the current turn window. */
+	#turnEvalOutput = 0;
 	#persistWriter: NdjsonFileWriter | undefined;
 	#persistWriterPath: string | undefined;
 	#persistChain: Promise<void> = Promise.resolve();
@@ -1874,6 +1882,8 @@ export class SessionManager {
 
 	captureState(): SessionManagerStateSnapshot {
 		return {
+			cwd: this.cwd,
+			sessionDir: this.sessionDir,
 			sessionId: this.#sessionId,
 			sessionName: this.#sessionName,
 			titleSource: this.#titleSource,
@@ -1887,6 +1897,8 @@ export class SessionManager {
 	}
 
 	restoreState(snapshot: SessionManagerStateSnapshot): void {
+		this.cwd = snapshot.cwd;
+		this.sessionDir = snapshot.sessionDir;
 		this.#sessionId = snapshot.sessionId;
 		this.#sessionName = snapshot.sessionName;
 		this.#titleSource = snapshot.titleSource;
@@ -1931,6 +1943,18 @@ export class SessionManager {
 			this.#sessionId = header?.id ?? createSessionId();
 			this.#sessionName = header?.title;
 			this.#titleSource = header?.titleSource;
+
+			// Adopt the loaded session's own working directory. Sessions are stored in
+			// a directory keyed by their cwd, so resuming a session from another
+			// project (e.g. global review in the picker) must re-point cwd/sessionDir
+			// at that project. Same-cwd resumes and in-place reloads are a no-op; old
+			// sessions with no recorded cwd keep the current cwd.
+			const headerCwd = header?.cwd ? path.resolve(header.cwd) : undefined;
+			if (headerCwd && headerCwd !== this.cwd) {
+				this.cwd = headerCwd;
+				this.sessionDir = path.resolve(this.#sessionFile, "..");
+				writeTerminalBreadcrumb(this.cwd, this.#sessionFile);
+			}
 
 			this.#needsFullRewriteOnNextPersist = migrateToCurrentVersion(this.#fileEntries);
 
@@ -2395,6 +2419,32 @@ export class SessionManager {
 	/** Get usage statistics across all assistant messages in the session. */
 	getUsageStatistics(): UsageStatistics {
 		return this.#usageStatistics;
+	}
+
+	/**
+	 * Open a new per-turn budget window: snapshot the cumulative output baseline,
+	 * reset the eval-subagent counter, and set the (optional) ceiling. Called once
+	 * per real user message; `total` is null when no `+Nk` directive was present.
+	 */
+	beginTurnBudget(total: number | null, hard: boolean): void {
+		this.#turnBudget = { total, hard };
+		this.#turnBaselineOutput = this.#usageStatistics.output;
+		this.#turnEvalOutput = 0;
+	}
+
+	/** Record output tokens consumed by an eval-spawned subagent in the current turn. */
+	recordEvalSubagentOutput(output: number): void {
+		if (Number.isFinite(output) && output > 0) this.#turnEvalOutput += output;
+	}
+
+	/**
+	 * Current turn budget for the eval `budget` helper: the ceiling (null = none),
+	 * output tokens spent this turn (main loop + eval-spawned subagents, no
+	 * double-count), and whether the ceiling is hard.
+	 */
+	getTurnBudget(): { total: number | null; spent: number; hard: boolean } {
+		const mainDelta = Math.max(0, this.#usageStatistics.output - this.#turnBaselineOutput);
+		return { total: this.#turnBudget.total, spent: mainDelta + this.#turnEvalOutput, hard: this.#turnBudget.hard };
 	}
 
 	getSessionDir(): string {
