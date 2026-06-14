@@ -1,0 +1,22 @@
+packages/coding-agent/src/config/settings-schema.ts
+  s_76b72b04d1f07f::t_6b0a56e8dea4d9 2273-2383
+  s_76b72b04d1f07f::t_0931ec41b1d167 112
+packages/coding-agent/src/modes/components/settings-defs.ts
+  s_76b72b04d1f07f::t_a10d8193c59261 93-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "99128de78e82a4b39fe6223ccb4841e282b25c12",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}
