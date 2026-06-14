@@ -1,0 +1,26 @@
+packages/coding-agent/src/session/agent-session.ts
+  s_76b72b04d1f07f::t_c88515d0b5902c 3875,3877-3890,3892-3897,3899,3901-3902
+packages/coding-agent/src/okf/state.ts
+  s_76b72b04d1f07f::t_0f2c94601967f0 20,127,251
+  s_76b72b04d1f07f::t_b075c7e2f62034 1-19,21-126,128-250,252-255
+packages/coding-agent/src/sdk.ts
+  s_76b72b04d1f07f::t_acd6308da03df0 2118-2122,2129-2131
+  s_76b72b04d1f07f::t_3b8af12a628e16 102
+  s_76b72b04d1f07f::t_80f773c6290c45 2682-2699
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "17980149cc6c1f865f76b332fd3415ea7cc685cc",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}
