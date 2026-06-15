@@ -1,0 +1,26 @@
+packages/coding-agent/test/okf/state.test.ts
+  s_4e427aa81e3c93::t_2c62309073d5bd 92-103
+  s_4e427aa81e3c93::t_a7258827b347f3 2-3
+packages/coding-agent/src/okf/store/store-resolve.ts
+  s_4e427aa81e3c93::t_d011f2b37795fd 62-64
+  s_4e427aa81e3c93::t_dee88a29d45295 18
+packages/coding-agent/src/okf/state.ts
+  s_4e427aa81e3c93::t_cf38dabd77f867 22
+  s_4e427aa81e3c93::t_05bb5fd8c1a8ed 66-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "0abc2b7086888f87bae22b59b0744e4d1ca76fe5",
+  "prompts": {},
+  "sessions": {
+    "s_4e427aa81e3c93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "20894d4e-5477-495c-9c55-2df7b8b07c69",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}
