@@ -1,0 +1,48 @@
+packages/coding-agent/test/okf/protocol.test.ts
+  s_76b72b04d1f07f::t_8ddbe71357eb05 1,4,6,8-9,11-14,16,27-86
+  s_76b72b04d1f07f::t_a3dbf4ff2e8a4d 7,10,15,18,23
+  s_76b72b04d1f07f::t_84b91846664d92 2-3,5,17,19-22,24-26
+packages/coding-agent/src/internal-urls/okf-protocol.ts
+  s_76b72b04d1f07f::t_57e0f54dc7b30a 1-162
+packages/coding-agent/src/internal-urls/router.ts
+  s_76b72b04d1f07f::t_252d2c224337da 15
+  s_76b72b04d1f07f::t_beb090558a314e 41
+packages/coding-agent/test/okf/document.test.ts
+  s_76b72b04d1f07f::t_2e0386c1cd4c07 7,9
+  s_76b72b04d1f07f::t_4cf0d650eaa30c 1-6,8,10-202
+packages/coding-agent/src/okf/bundle.ts
+  s_76b72b04d1f07f::t_be26b2ee97edb1 122-123,125-127,129
+  s_76b72b04d1f07f::t_8e1deb1a70c52f 14,16,109-112,232-234,248,412,437,457,481,483,486
+  s_76b72b04d1f07f::t_1c871b6a3be9fe 231,326
+  s_76b72b04d1f07f::t_c26849365745cf 17-35
+  s_76b72b04d1f07f::t_62793f214b190e 1-13,15,36-108,113-121,124,128,130-230,235-247,249-325,327-411,413-436,438-456,458-480,482,484-485,487-558
+packages/coding-agent/src/okf/document.ts
+  s_76b72b04d1f07f::t_ce6c890384d35a 184
+  s_76b72b04d1f07f::t_eb726f4e896dc8 76
+  s_76b72b04d1f07f::t_e6ff7aee552038 252,254,257,264,267,272
+  s_76b72b04d1f07f::t_59e3481f6072d7 88,148-151,198,222,379
+  s_76b72b04d1f07f::t_21ff8dbd4b021c 1-75,77-87,89-147,152-183,185-197,199-200,202-221,223-251,253,255-256,258-263,265-266,268-271,273-378,380-407
+  s_76b72b04d1f07f::t_9ef3af7a8e72fc 201
+packages/coding-agent/test/okf/bundle.test.ts
+  s_76b72b04d1f07f::t_8176d13cf54250 2-3
+  s_76b72b04d1f07f::t_98db00eab8e65c 232-234,238-240
+  s_76b72b04d1f07f::t_a3405d96ae92f2 1,4-62,66-201,203-231,235-237,241-242
+  s_76b72b04d1f07f::t_e02002646c6069 63-65
+  s_76b72b04d1f07f::t_8fd12fca82a5de 202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "811f0db6ae6d01b0bae72e9ba4a291cda595d14a",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

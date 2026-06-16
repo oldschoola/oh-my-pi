@@ -1,0 +1,29 @@
+packages/coding-agent/src/internal-urls/okf-protocol.ts
+  s_76b72b04d1f07f::t_38d12c2f992cc6 18
+  s_76b72b04d1f07f::t_2d694ad71888f3 83-86,88-91
+  s_76b72b04d1f07f::t_ddcf7ffdc79381 24
+packages/coding-agent/src/okf/store/store-sqlite.ts
+  s_76b72b04d1f07f::t_f27ffa830ca7bb 14-15,24-25
+packages/coding-agent/src/okf/bundle.ts
+  s_76b72b04d1f07f::t_9ae5db4470fee3 84-88
+packages/coding-agent/src/slash-commands/okf-command.ts
+  s_76b72b04d1f07f::t_7a9f304f262006 8,11,13
+  s_76b72b04d1f07f::t_a0aa06f9c66e79 36-40
+  s_76b72b04d1f07f::t_258e5540e250ce 91-94,113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "a12a2015ab9cd76beebac588942c039748fe4fe6",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

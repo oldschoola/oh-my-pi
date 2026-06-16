@@ -1,0 +1,37 @@
+packages/coding-agent/test/okf/protocol.test.ts
+  s_76b72b04d1f07f::t_190577a2270ff2 69-73
+packages/coding-agent/src/slash-commands/okf-command.ts
+  s_76b72b04d1f07f::t_a0dc207ec8c330 125-127
+  s_76b72b04d1f07f::t_08fdd4af599c32 124,128-129
+packages/coding-agent/src/okf/state.ts
+  s_76b72b04d1f07f::t_a0dc207ec8c330 21-22,251-354
+  s_76b72b04d1f07f::t_c61fb9cf1868b9 111-112
+  s_76b72b04d1f07f::t_c6a39d8e0a6f33 120
+  s_76b72b04d1f07f::t_208b64e5ab382e 160
+  s_76b72b04d1f07f::t_e00ee165f8e459 140-142,145-148,150
+  s_76b72b04d1f07f::t_a57fd62f041d0a 235,239-250,355-367
+  s_76b72b04d1f07f::t_c6d66a4fbf2f6c 116
+packages/coding-agent/src/session/agent-session.ts
+  s_76b72b04d1f07f::t_dda6032ef56d28 188
+  s_76b72b04d1f07f::t_ecd149e71ba416 3225
+packages/coding-agent/src/prompts/okf/okf-instructions.md
+  s_76b72b04d1f07f::t_8b5fdd03881e54 1-9
+packages/coding-agent/src/prompts/okf/okf-recall-snippet.md
+  s_76b72b04d1f07f::t_e08a9cc535ea00 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "2be2597d6723502c78a117c1d039333bce152634",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

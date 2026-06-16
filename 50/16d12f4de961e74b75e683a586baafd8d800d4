@@ -1,0 +1,577 @@
+crates/pi-shell/src/minimizer/plan.rs
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 206-213,425-436
+packages/agent/src/agent-loop.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 18,711,921-924,992,1021-1070,1087-1094,1179-1199,1806-1898
+packages/coding-agent/src/config/model-registry.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 27-29,31,87-90,111-115,119-123,137,909-920,929-930,960-965,1227-1233,1238-1239,1277,1319-1321,1426-1435,1438-1439
+packages/natives/native/index.js
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 26-27
+packages/catalog/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 7,30-44,55-73,82-104
+packages/coding-agent/test/session-manager/signature-persistence.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 199
+packages/coding-agent/src/stt/asr-protocol.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-65
+packages/coding-agent/src/modes/controllers/extension-ui-controller.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 20,495-499
+Cargo.toml
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 7
+packages/coding-agent/test/mcp-render-status.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 17,121,132
+bunfig.toml
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 20-25
+packages/coding-agent/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4,38,83-84
+packages/coding-agent/src/stt/recorder.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5-7,19,24-25,41,45,58,61,63,79,83,94,119-120,263-265,281-354,356-358,361-362,364-372,375,400-537
+crates/pi-shell/src/shell.rs
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2214-2239,2540,2557,2577,2768-2771,2773
+packages/tui/src/tui.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 191-203,206-208,213,232-235,575,632-640,763-771,781,905,927,933,952-961,982-984,1014,2312,2347,2353-2356,2367-2378,2390,2392,2394,2412-2413,2433,2435,2496,2512,2525,2528,2536-2557
+packages/stats/src/db.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 41,779-780
+packages/coding-agent/src/session/history-storage.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 89-90
+docs/settings.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 505-507
+crates/pi-shell/src/process.rs
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 808,935,1050,1138,1291-1297,1367
+docs/rpc.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 48-50,71-72,159-182,374-375
+packages/ai/src/registry/oauth/gitlab-duo.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 43-46,69-72
+packages/coding-agent/src/utils/tools-manager.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 19-28,85-92,110
+packages/natives/test/windows-staging.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 23-24,26-31,136-150
+packages/coding-agent/test/core/python-executor-lifecycle.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 103-122
+packages/catalog/src/model-manager.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 36-37,112,119,166,176,178
+packages/coding-agent/src/extensibility/extensions/wrapper.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 124-149,152-153,164-176
+packages/coding-agent/src/priority.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 13,40-43
+packages/coding-agent/test/tools/gh.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 903,914-916,933
+packages/coding-agent/src/memory-backend/local-backend.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5,13-16,32-34,39,41-42
+packages/collab-web/src/components/shell/Composer.tsx
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 71-75,84,94
+packages/coding-agent/test/skills.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 255-288
+packages/coding-agent/src/tools/plan-mode-guard.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 3,11,35-65,69-80,83-85,94-96,99-100
+packages/coding-agent/test/agent-session-eager-todo.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 17,94,104,106,174-181,193-200,215-216,299-315
+crates/pi-iso/src/projfs.rs
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 556-565,611-617
+packages/stats/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 9-13,16-17,21,23,25-27,42,63,115,118
+packages/coding-agent/test/tools/ask.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 220,262,363,1032
+packages/collab-web/src/app.tsx
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 80-99,180-191,196-206
+packages/coding-agent/test/agent-session-eager-task.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-324
+packages/utils/src/fetch-retry.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 132-139
+scripts/fix-changelogs.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 26-46
+packages/coding-agent/test/sdk-model-selection.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 246-247,274
+packages/coding-agent/src/modes/rpc/rpc-mode.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 83,85-88,105,107-218,396-397,654-656,693-695,714-721,723,729-739
+packages/coding-agent/src/discovery/builtin.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 9,293-306,315-320
+packages/coding-agent/src/tools/learn.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-144
+packages/coding-agent/test/issue-970-custom-provider-discovery.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 6-7,176-471
+packages/utils/src/temp.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2,17,34,40,79-129
+packages/coding-agent/src/eval/__tests__/helpers-local-roots.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 3
+packages/catalog/test/generated-policies.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 129-163
+packages/coding-agent/src/tts/tts-worker.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-497
+packages/ai/src/providers/google-shared.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 612,652-663
+packages/coding-agent/src/tools/manage-skill.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-104
+packages/agent/test/agent-loop.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1713-1833
+packages/coding-agent/src/config/models-config.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 53,59
+packages/tui/test/editor.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2398-2449
+packages/coding-agent/src/tts/downloader.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-64
+packages/ai/test/issue-1203-repro.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 126-193
+python/robomp/tests/test_queue_shutdown.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 163-164,166-173,234-235,237,239-249,266
+packages/coding-agent/src/config/keybindings.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 215-216
+packages/coding-agent/src/task/executor.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2008
+packages/coding-agent/test/autolearn-managed-skills.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-250
+packages/coding-agent/src/modes/components/transcript-container.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 438-445,490-493,585,758-766
+packages/coding-agent/test/system-prompt-math.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-47
+crates/pi-iso/src/windows_block_clone.rs
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 114,165-171
+packages/wire/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 11,13,15-17,19-21
+packages/coding-agent/src/modes/controllers/event-controller.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5,24,98-99,436-474,476,605-615
+scripts/fix-changelogs.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 428-431,440,471-474,537
+packages/ai/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+.github/actions/setup-system-deps/action.yml
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-26
+packages/catalog/src/provider-models/descriptors.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 71,75,180,222,250,256,274,406
+packages/coding-agent/test/sdk-autolearn-active-tools.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-89
+packages/coding-agent/src/stt/transcriber.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-4,15,17-20,29-40,42-54,56-58
+packages/catalog/test/identity-family.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 10,154-181
+packages/coding-agent/src/extensibility/plugins/loader.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 175-195,198-202,207,217,227,233
+packages/snapcompact/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+packages/coding-agent/src/discovery/claude-plugins.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 127-163,179,192-193,197,199-201
+packages/coding-agent/src/cli.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 59-60,76-77,85-86,119-128,133-140,142-144,146,161,164,173-174,184-194
+packages/coding-agent/src/memories/index.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 8,13,161,163,165-166,168-180,183-184,995-1000,1140-1256
+packages/ai/test/issue-2424-repro.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 126-141
+packages/coding-agent/test/mnemopi-bank-derivation.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 103,113-118
+packages/coding-agent/test/xiaomi-tp-discovery-merge.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 77-107
+packages/coding-agent/src/stt/index.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-2,4,6-7
+packages/mnemopi/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5,7-8,12,14-21,25,30-33,37-39,51-56,58,60,62,64,66,68,70,72,74,76-80
+packages/coding-agent/test/sdk-mcp-auto-discovery.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 109,124,145,153
+packages/ai/src/provider-details.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 21
+packages/coding-agent/src/prompts/system/eager-todo.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2,5,8-9,11-17
+packages/coding-agent/src/stt/asr-client.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-520
+packages/coding-agent/test/acp-builtins.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2-3,483-485,488-489
+packages/coding-agent/test/autolearn-controller.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-254
+packages/coding-agent/test/tool-choice-queue.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 172-207
+packages/coding-agent/src/modes/runtime-init.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 26-29,42-49,56-64,69-75
+packages/coding-agent/test/task/render-nested-live.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 163-185
+packages/ai/src/auth-storage.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 453
+packages/ai/test/google-empty-response-retry.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4,58-70,117-210,237-281
+packages/catalog/src/identity/family.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 10-17,103-124
+packages/coding-agent/test/theme-islight.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-6,8,32-34,64-97
+packages/coding-agent/test/rpc-prompt-result.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-332
+docs/extensions.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 154,161-176
+packages/coding-agent/src/web/search/index.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 118-126,174-176
+packages/coding-agent/test/model-registry.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 632-687
+packages/coding-agent/test/sdk-tool-activation.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 200
+packages/hashline/src/input.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 91,93
+packages/ai/src/providers/openai-completions.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 702-709,717-723
+packages/coding-agent/src/config/models-config-schema.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 48,128,197
+packages/coding-agent/src/mcp/startup-events.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-21
+packages/coding-agent/src/stt/stt-controller.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 6,8-16,25-26,29,32-34,41,43-46,49-55,66-69,74,77,83-88,94-218,220,223-249,264,321-327
+packages/catalog/test/descriptors.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 8,15
+python/omp-rpc/tests/test_protocol.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 39-42,90-97,197-213
+packages/ai/src/providers/google-gemini-cli.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 10,31,106,371-386,393,398,470,507-518,887
+packages/coding-agent/src/modes/components/tool-execution.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 627-638
+packages/ai/src/providers/anthropic-client.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 60-61
+packages/mnemopi/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+packages/ai/src/providers/ollama.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 21,529-544,554,557
+packages/ai/src/providers/anthropic.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2308-2312,2319-2322,2346,2381,2398,2412,2431
+python/robomp/src/config.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 70-80,311-344
+packages/ai/src/providers/openai-codex-responses.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 275,694,991,3025-3026,3038-3052,3057,3062
+scripts/ci-concurrency.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-328
+packages/catalog/src/provider-models/openai-compat.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2378-2379,2392,2407
+packages/coding-agent/test/autolearn-discovery.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-129
+packages/coding-agent/test/cli-unknown-flag.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 69-87
+packages/coding-agent/test/discovery/claude-plugins.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 12,359-425
+packages/coding-agent/src/prompts/system/autolearn-guidance.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-7
+packages/coding-agent/test/modes/theme/shimmer.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1,3
+packages/coding-agent/test/tools/plan-mode-guard-local.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 62-84,130-156,158,162
+packages/coding-agent/src/modes/rpc/rpc-types.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 129-134,172
+packages/coding-agent/src/prompts/system/eager-task.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-7
+packages/coding-agent/test/autolearn-tools-gating.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-300
+packages/coding-agent/src/config/model-discovery.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 396-398,404-405,416-417,470,506-508
+scripts/ci-test-ts.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-345
+packages/coding-agent/src/modes/utils/hotkeys-markdown.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 52
+packages/utils/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+packages/ai/src/providers/amazon-bedrock.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 34,286-301,306,308
+packages/coding-agent/src/extensibility/plugins/manager.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2,15-16,80-107,207-288,333-334,336-339,341-354,356-363,368-382,384-393,395-412,415-418,421-430,432-443,445-456
+python/robomp/tests/test_retry.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-218
+packages/coding-agent/test/extensibility/legacy-pi-bunfs-root.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 3-6,42-64
+packages/coding-agent/test/memory-backend-resolve.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 32,43
+packages/coding-agent/test/extensions-discovery.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 132-180
+packages/coding-agent/src/cli/setup-model-picker.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-43
+packages/natives/native/loader-state.js
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 180-210,519-538,572-573,631,651-652
+packages/agent/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 8-9,13,31-37,39,41-52,56-66,78-85,89,93,95,97,99,101,103,105,107,109,111,113,115,117,119,121,123,125,658
+packages/hashline/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 8,12-13,17-21,25-27,30-32,36-38,45-48,50,52,54,56,58,60,62,64,66,68,70,79,115,174,190
+packages/coding-agent/src/tts/player.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-137
+packages/catalog/src/models.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 28552,28794
+packages/coding-agent/test/autolearn-learn-local.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-265
+packages/coding-agent/src/modes/theme/theme.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2101-2105,2558-2590,2598,2601-2607,2658
+packages/coding-agent/src/tts/runtime.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-21
+packages/coding-agent/src/web/search/providers/searxng.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 284-295,298
+.github/workflows/ci.yml
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 15-22,24-25,30-33,47,90,99,190,214,243,246,259-413,416,427-430,432-504,528,561,570-578,625-626,629,638,644,685,699-700,706,712,771-772,775,783,794,821,823,829
+packages/coding-agent/src/extensibility/plugins/legacy-pi-compat.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 33-34,36-37,40-54,116-137,149,241
+packages/coding-agent/src/modes/components/custom-editor.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-96
+scripts/release.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 371-374,376
+packages/mnemopi/src/core/beam/recall.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5,104-128,204-232,1119,1123,1131,1133-1172
+packages/coding-agent/src/autolearn/managed-skills.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-257
+packages/coding-agent/test/issue-2375-repro.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 17,21-34,41,43-48,59,63-64,74,96,109,131-175
+packages/natives/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 3
+packages/coding-agent/src/prompts/system/system-prompt.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 53,106-114
+packages/ai/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5-6,8,11-17
+packages/coding-agent/test/write-acp-fs.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 103-133
+packages/tui/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+packages/utils/src/runtime-install.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 245-246,286,293
+packages/catalog/test/minimax-bundled-catalog.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-20
+packages/coding-agent/test/sdk-mcp-discovery.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 162-258
+packages/coding-agent/src/modes/controllers/input-controller.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 350-355,1119-1147,1156-1158,1177-1187,1203
+package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 27-38,106-107,121-122,131-139,190-194
+crates/pi-natives/src/lib.rs
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 56,62,66,71,76,79-80,82,89,94-98,103-107,131-139,175,179-189,193-223
+python/robomp/tests/test_queue_cancel.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 12,88-105,171,202
+packages/coding-agent/src/extensibility/extensions/types.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 59,297-322,340-341,640-657,825-827,998-999
+packages/coding-agent/src/tts/vocalizer.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-162
+packages/coding-agent/test/model-discovery.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 610-683
+packages/coding-agent/src/tts/models.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-137
+packages/coding-agent/src/commands/say.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-102
+packages/coding-agent/src/extensibility/extensions/model-api.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-41
+packages/catalog/scripts/generated-policies.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 215-219
+packages/coding-agent/test/config-spacing.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5,7,10,14,21-26
+.github/actions/build-native/action.yml
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 39-44
+packages/swarm-extension/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+packages/coding-agent/src/tools/index.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 49-50,89-90,446-447,528-542,576-582
+packages/coding-agent/src/prompts/system/autolearn-guidance-learn.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1
+packages/coding-agent/src/stt/asr-worker.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-790
+packages/coding-agent/src/tools/write.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 38,822,827-835
+packages/coding-agent/test/interactive-mode-mcp-connecting.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-121
+packages/coding-agent/test/tools/web-search-searxng.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 8,232-253
+packages/coding-agent/src/internal-urls/local-protocol.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 29-42,125-126,129-133,136,139-144,146
+packages/coding-agent/test/goals/goal-mode-integration.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 228-251
+packages/ai/src/utils/openai-http.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 82-85
+packages/ai/test/google-gemini-cli-alignment.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4,12,226-227,229,258-379
+packages/coding-agent/test/task/task-progress-render.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 3,101-106
+packages/snapcompact/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5,7-8,12,32-39,49-58
+packages/catalog/test/issue-2558-repro.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-96
+packages/ai/test/openai-responses-stream-terminal.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 337-358
+packages/coding-agent/test/internal-urls/local-protocol.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 93-115
+packages/mnemopi/test/beam-recall-unit.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 240-393
+packages/collab-web/src/components/transcript/transcript.css
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 6,26,392-408
+packages/coding-agent/src/autolearn/controller.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-139
+AGENTS.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 240
+packages/collab-web/src/components/shell/HeaderBar.tsx
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 45-46
+packages/catalog/src/compat/anthropic.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 37-42,47
+packages/coding-agent/test/extensibility/ext-model-query.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-84
+packages/coding-agent/test/tools/web-scrapers/git-hosting.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 248-272
+packages/coding-agent/src/tts/wav.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-58
+packages/coding-agent/src/mnemopi/config.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 186-189,216,221,226-233
+packages/collab-web/src/components/shell/shell.css
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 7-13,57-60,153,178,187,273,371-372,403,409-410,465-467,471-472,543-602
+packages/tui/src/components/editor.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1603-1681
+packages/coding-agent/src/config/settings.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 755-764
+packages/coding-agent/test/extensions-runner.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 15,924-1198
+packages/coding-agent/src/session/agent-session.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 169,191,443-446,1001,1304,4648,4652-4653,4666,4668-4676,4683,4961,5242-5247,5252,5276,5285,5292,5295,5305,5311,5314,5325,7121-7140,7142,7177-7189,7192-7216,7218-7223
+packages/hashline/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+python/omp-rpc/src/omp_rpc/protocol.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 14,52-53,55,702-708,1138-1176,1217
+packages/coding-agent/src/commands/setup.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 10
+packages/coding-agent/test/tool-discovery/initial-tools.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 31
+python/robomp/tests/test_worker.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 73
+packages/catalog/test/zenmux-provider.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 28,30
+packages/coding-agent/test/extensibility/legacy-pi-inplace-load.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 106-126
+packages/coding-agent/test/plugin-install-validation.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-281
+packages/coding-agent/src/tts/tts-protocol.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-60
+packages/tui/test/streaming-scrollback-defer.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 66-83,537-604
+packages/coding-agent/src/extensibility/skills.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4-8,62-76,143-151,155-158,166,214-216,310-366
+packages/coding-agent/src/prompts/memories/read-path.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 10,13-17
+packages/coding-agent/test/streaming-preview-height.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1,167,293,297-304,380
+packages/coding-agent/src/cli/setup-cli.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 7,10,12-16,18,28,123-124,158-169,171-237,239-247,249-258,263-272,275-294,299-304,319,328-329
+packages/coding-agent/test/agent-session-empty-stop-guard.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 84
+python/omp-rpc/src/omp_rpc/__init__.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 53,118
+packages/coding-agent/test/status-line-settings-cache.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1,6,10-11,13-14,16-17,24-26,30
+packages/coding-agent/src/stt/models.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-150
+packages/collab-web/src/components/agents/agents.css
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 163-179,406-409
+packages/swarm-extension/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 6,8-9
+packages/ai/src/providers/openai-responses-shared.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 937-940
+packages/coding-agent/src/session/tool-choice-queue.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 13,20,65,120,129-131,136-140,163-164,169,182,184-190
+docs/keybindings.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 20,43
+packages/coding-agent/src/prompts/tools/manage-skill.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-9
+docs/tui-core-renderer.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 44-55,57-63,67-71,136-147,153-154,178-185
+packages/coding-agent/src/tts/streaming-player.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-266
+packages/coding-agent/src/tools/ask.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 26,490-495
+packages/stats/test/behavior-backfill.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 84,109
+packages/coding-agent/src/tools/tts.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 2-4,9,12-14,32,47-227,232,236-240,255-262
+packages/agent/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+packages/collab-web/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 7-11,19-22,35-50,53-61
+packages/coding-agent/test/helpers/settings-test-state.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-73
+packages/coding-agent/src/task/render.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 50-55,696-697,870-878,1003-1004,1109-1122,1126,1451-1457,1460-1472,1476,1478,1494-1495,1499-1507,1513,1515,1523-1535,1538
+python/robomp/src/queue.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 304-322
+packages/coding-agent/src/tts/index.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-8
+packages/coding-agent/src/discovery/helpers.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 494-529,559,566-567,569-570
+packages/coding-agent/src/extensibility/extensions/runner.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 9,13,212,485,910-911
+packages/coding-agent/test/settings-reload-cwd.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 7,10-20,90,107,144
+packages/stats/test/user-metrics.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 49-56
+packages/coding-agent/test/interactive-mode-prompt-template-autocomplete.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 164-184
+packages/coding-agent/src/tts/tts-client.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-647
+packages/wire/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+packages/utils/test/runtime-install.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5,138-162
+packages/catalog/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+packages/coding-agent/src/modes/components/custom-editor.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 6,65-72,181,183,187-194,198-199,201,256-265,269-274,332-393,423-424
+packages/utils/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 7,9,17-22,30,34-37,41-43,50,52,54,56,58,60,62,64,66,68,70,72,74
+packages/coding-agent/test/rpc-skill-command.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 33
+python/robomp/src/db.py
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 122-126,249-250,308,316,328-329,372,625,633,638-653
+packages/natives/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 11-12,19-22,26-27,29,33-44,46-50,52,54,56,58,60,62,64,66,68,70,72,745
+packages/coding-agent/src/prompts/system/autolearn-nudge.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-3
+packages/coding-agent/src/stt/endpointer.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-259
+crates/pi-ast/src/block.rs
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 80-90,92-93,387-412
+packages/natives/native/index.d.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 122-139,158
+packages/agent/src/agent.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 660-661
+packages/collab-web/src/styles/base.css
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 12-18,24-27,40-41,44-45
+packages/catalog/src/wire/gemini-headers.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 23-24
+packages/coding-agent/src/cli-commands.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 32
+packages/coding-agent/test/autocomplete-max-visible.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 9,12-13,18,27-30,32
+packages/coding-agent/src/system-prompt.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 388-391,434-435,619-620
+packages/coding-agent/test/web/search/abort-and-timeout.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 163-166,169,183,186,202,214-241
+packages/tui/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 5-9,12,16-17,34-73,77-81,100-113,117-138,223-241,245-246,249,251,253,255,257,259,261,263,265,267,269,271,273,275,277,279,281,283,285,287,289,291,293,295,297,299,301-321,1211
+packages/coding-agent/CHANGELOG.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4-26,39-48,56-76,95-116,118,144,342-494,1068,10657
+packages/coding-agent/src/modes/interactive-mode.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 72,101,542-550,857-869,973-980,1004,1014,1023,2383-2385,2387-2388,3423,3425-3427
+packages/coding-agent/src/cli/args.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 84,89-97,254-262
+packages/coding-agent/src/mcp/transports/stdio.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 592-593
+packages/coding-agent/src/prompts/tools/learn.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-7
+packages/coding-agent/src/stt/wav.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-173
+packages/coding-agent/src/web/scrapers/github.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 10,60-64,242-322,737-741
+docs/models.md
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 644-670
+packages/coding-agent/test/agent-session-bash-detach.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 149
+packages/coding-agent/test/mcp-startup-events.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-62
+packages/coding-agent/test/settings-manager.test.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 16,19-20,25,33,55-58,60,419-443
+packages/natives/native/loader-state.d.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 58-64
+packages/stats/package.json
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 4
+packages/coding-agent/src/stt/downloader.ts
+  s_76b72b04d1f07f::t_2040cb7ba2bcf7 1-7,16,20,22-39,41-60,63-69,71,73-111,113,119-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "5016d12f4de961e74b75e683a586baafd8d800d4",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

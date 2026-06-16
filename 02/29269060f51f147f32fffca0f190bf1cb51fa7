@@ -1,0 +1,23 @@
+packages/coding-agent/test/okf/viewer.test.ts
+  s_76b72b04d1f07f::t_312d4e76d864cc 3
+  s_76b72b04d1f07f::t_400252be80a11b 1-2,4-82
+packages/coding-agent/src/okf/viewer/generator.ts
+  s_76b72b04d1f07f::t_ffb6a66e07d0a6 1-59,61-367
+  s_76b72b04d1f07f::t_e75bf7adf3dab0 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "0229269060f51f147f32fffca0f190bf1cb51fa7",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+packages/coding-agent/src/hindsight/bank.ts
+  s_4e427aa81e3c93::t_f6cc37a29055f8 71
+packages/coding-agent/CHANGELOG.md
+  s_4e427aa81e3c93::t_c111281ed57919 7
+packages/coding-agent/src/okf/store/store-resolve.ts
+  s_4e427aa81e3c93::t_30a46ae3b331d4 15,29-47,70
+  s_4e427aa81e3c93::t_37fc18ac3b5260 17
+packages/coding-agent/test/okf/store-resolve.test.ts
+  s_4e427aa81e3c93::t_da9ae906910a52 2-97
+  s_4e427aa81e3c93::t_37fc18ac3b5260 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "84186399ccdcef3469fc5cbc3b56808b2299dcf6",
+  "prompts": {},
+  "sessions": {
+    "s_4e427aa81e3c93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "20894d4e-5477-495c-9c55-2df7b8b07c69",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

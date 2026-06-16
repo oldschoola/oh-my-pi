@@ -1,0 +1,46 @@
+packages/coding-agent/src/tools/index.ts
+  s_4e427aa81e3c93::t_1d97f6a04463fb 216-222
+packages/coding-agent/test/okf/protocol.test.ts
+  s_4e427aa81e3c93::t_f2e861729d10b2 140-174
+packages/coding-agent/src/sdk.ts
+  s_4e427aa81e3c93::t_3e013b3b2b5923 1507
+packages/coding-agent/src/tools/write.ts
+  s_4e427aa81e3c93::t_0b53e0b5734d6d 852
+packages/coding-agent/src/internal-urls/types.ts
+  s_4e427aa81e3c93::t_7580e4f01f8bec 116-117
+  s_4e427aa81e3c93::t_ae1b5be0f07f7a 93-99
+packages/coding-agent/CHANGELOG.md
+  s_4e427aa81e3c93::t_6255655639d11d 7
+packages/coding-agent/src/okf/state.ts
+  s_4e427aa81e3c93::t_acba82b5ead033 63-65
+  s_4e427aa81e3c93::t_d4c6daf0bf82ef 160-170
+packages/coding-agent/src/session/agent-session.ts
+  s_4e427aa81e3c93::t_c40d6ebd80ae4b 3156-3164
+  s_4e427aa81e3c93::t_54b4f5b66bcfe7 5580,5677,6755,9916,10031
+packages/coding-agent/test/okf/bundle.test.ts
+  s_4e427aa81e3c93::t_f831a53a6828a9 136-156
+packages/coding-agent/test/okf/state.test.ts
+  s_4e427aa81e3c93::t_281034a0ae2cce 89-109
+packages/coding-agent/src/okf/bundle.ts
+  s_4e427aa81e3c93::t_b250a28337debd 311-314
+packages/coding-agent/src/internal-urls/okf-protocol.ts
+  s_4e427aa81e3c93::t_4166e0bda94e9b 88-95
+packages/coding-agent/src/tools/read.ts
+  s_4e427aa81e3c93::t_7a0c6078bc4177 2540
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "0df3a82b1f10e2204e156784332682a048c6d47f",
+  "prompts": {},
+  "sessions": {
+    "s_4e427aa81e3c93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "20894d4e-5477-495c-9c55-2df7b8b07c69",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

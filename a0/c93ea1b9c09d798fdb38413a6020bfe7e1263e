@@ -1,0 +1,21 @@
+docs/memory.md
+  s_76b72b04d1f07f::t_cad251477e0a4c 99-102
+docs/okf.md
+  s_76b72b04d1f07f::t_b48d1ad1683297 1-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "a0c93ea1b9c09d798fdb38413a6020bfe7e1263e",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

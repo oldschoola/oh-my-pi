@@ -1,0 +1,50 @@
+packages/coding-agent/src/okf/bundle.ts
+  s_76b72b04d1f07f::t_8c4f739978aae9 16
+  s_76b72b04d1f07f::t_3f7bd3d4fce004 223,318
+  s_76b72b04d1f07f::t_bbd9aa787cb0a2 474,478-482
+  s_76b72b04d1f07f::t_e297f5b9e91864 195
+  s_76b72b04d1f07f::t_1bea278aafe0b1 20
+  s_76b72b04d1f07f::t_0fd0d33398af52 203
+packages/coding-agent/src/slash-commands/okf-command.ts
+  s_76b72b04d1f07f::t_24f944f7bdcc22 8-12
+  s_76b72b04d1f07f::t_817dc85410ac43 4,7,43,53
+packages/coding-agent/CHANGELOG.md
+  s_76b72b04d1f07f::t_da1beafeb375c4 7
+packages/coding-agent/src/sdk.ts
+  s_76b72b04d1f07f::t_f4ee89ab5dcd2b 103
+  s_76b72b04d1f07f::t_24488d1c33bcf0 498-499
+packages/coding-agent/src/session/agent-session.ts
+  s_76b72b04d1f07f::t_24f944f7bdcc22 188
+packages/coding-agent/test/okf/document.test.ts
+  s_76b72b04d1f07f::t_113970cef09ce7 50
+  s_76b72b04d1f07f::t_0e637f93c5d06f 113
+  s_76b72b04d1f07f::t_ed12f15ea126e9 121
+packages/coding-agent/src/okf/store/store-sqlite.ts
+  s_76b72b04d1f07f::t_b74c9beb85d1b1 87
+packages/coding-agent/src/okf/state.ts
+  s_76b72b04d1f07f::t_a8cbf177e5f8da 222,225
+  s_76b72b04d1f07f::t_486c73927a1012 31
+  s_76b72b04d1f07f::t_3366b7b3aa6dba 21-22
+  s_76b72b04d1f07f::t_8c4f739978aae9 19
+packages/coding-agent/src/okf/store/store-resolve.ts
+  s_76b72b04d1f07f::t_8c4f739978aae9 13
+  s_76b72b04d1f07f::t_11872189085010 70
+packages/coding-agent/src/okf/enrichment/session.ts
+  s_76b72b04d1f07f::t_ae707e3d168593 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "7451942f364686aa93b48af8f84a04c7145ed96c",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+packages/coding-agent/src/slash-commands/okf-command.ts
+  s_76b72b04d1f07f::t_1e74b74848ff0f 44,92
+  s_76b72b04d1f07f::t_55ee9dc8194f67 1-43,45-91,93-128
+packages/coding-agent/src/slash-commands/builtin-registry.ts
+  s_76b72b04d1f07f::t_1e74b74848ff0f 1368
+  s_76b72b04d1f07f::t_10f97b9613bbe8 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "3d2720ff113e6e5842052cbb5a95b4d28a573c13",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

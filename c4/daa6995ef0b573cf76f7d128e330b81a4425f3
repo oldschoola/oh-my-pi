@@ -1,0 +1,26 @@
+packages/coding-agent/src/okf/store/store-sqlite.ts
+  s_76b72b04d1f07f::t_b75eb92d63bafa 1-41,43-124,126-185,187-200,202-203
+  s_76b72b04d1f07f::t_aaeed839e1b461 42
+  s_76b72b04d1f07f::t_8dd1a3a557000e 125,186,201
+packages/coding-agent/test/okf/store-sqlite.test.ts
+  s_76b72b04d1f07f::t_33e6a85b86be50 3-5,7-10,18-140
+  s_76b72b04d1f07f::t_d2f4bb8db5d36f 1-2,6,11-17
+packages/coding-agent/src/okf/store/types.ts
+  s_76b72b04d1f07f::t_905be4940584f8 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "c4daa6995ef0b573cf76f7d128e330b81a4425f3",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}

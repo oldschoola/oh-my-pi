@@ -1,0 +1,21 @@
+packages/coding-agent/src/internal-urls/okf-protocol.ts
+  s_76b72b04d1f07f::t_57e0f54dc7b30a 141
+packages/coding-agent/src/okf/bundle.ts
+  s_76b72b04d1f07f::t_9ae5db4470fee3 86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "9bb6e049e2fc36a1e8be3c86b5da19bfd933e8fb",
+  "prompts": {},
+  "sessions": {
+    "s_76b72b04d1f07f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5346abd1-321d-4b7f-ba35-c19d874003f9",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}
