@@ -1,0 +1,19 @@
+packages/coding-agent/CHANGELOG.md
+  s_4e427aa81e3c93::t_51940e018c11d9 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "251d7dbb86b3e2ab35e9e00ab34041a9b76e737f",
+  "prompts": {},
+  "sessions": {
+    "s_4e427aa81e3c93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "20894d4e-5477-495c-9c55-2df7b8b07c69",
+        "model": "glm-5.2"
+      },
+      "human_author": "oldschoola <f0rm4tm3@gmail.com>"
+    }
+  }
+}
