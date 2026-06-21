@@ -16,6 +16,9 @@
 ### Fixed
 
 - Fixed streamed tool-call previews freezing on their placeholder body (`$ …`, `Write: …`, an empty args tree) even after the tool finished: the pending card was created while arguments streamed, but when the closing full-arguments `message_update` never arrived (smooth-streaming disabled leaving the throttled arguments stale, an owned-dialect projector, or a superseded/aborted turn that still ran the call) nothing re-applied the final args. `tool_execution_start` — the one event every execution path emits with validated full arguments right before the result — now reconciles them onto the existing pending card and cancels any in-flight reveal so a late tick can't re-truncate the body.
+### Added
+
+- Added an opt-in FastContext adapter for the bundled `explore` subagent, with `fastContext.enabled`, `fastContext.baseUrl`, and `fastContext.model` settings for local OpenAI-compatible Chat Completions endpoints. The adapter has two modes: `hint` (default, ~2-3s) — one LLM turn expands the query into keywords/globs/grep patterns, then native ripgrep/glob executes them in parallel; and `agent` — full multi-turn FastContext agentic loop with `Read`/`Glob`/`Grep` tool names and `<final_answer>` citation validation.
 
 ## [16.1.9] - 2026-06-21
 

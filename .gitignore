@@ -63,7 +63,12 @@ python/omp-rpc/src/omp_rpc.egg-info/
 # parallel-agent worktrees
 .wt/
 CPU*.md
+autoresearch.sh
+packages/coding-agent/scripts/bench-fast-context-*.ts
+packages/coding-agent/scripts/eval-fast-context-*.ts
+packages/coding-agent/scripts/fast-context-perf-analysis.md
 packages/coding-agent/binaries/
+packages/coding-agent/omp-config-cli-*/
 
 # robomp runtime state
 python/robomp/data/

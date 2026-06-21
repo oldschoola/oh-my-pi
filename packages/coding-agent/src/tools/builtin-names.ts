@@ -8,6 +8,7 @@ export const BUILTIN_TOOL_NAMES = [
 	"debug",
 	"eval",
 	"ssh",
+	"fast_context",
 	"github",
 	"find",
 	"search",

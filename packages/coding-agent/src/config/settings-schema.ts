@@ -119,7 +119,7 @@ export const TAB_GROUPS: Record<SettingTab, readonly string[]> = {
 		"Agent",
 		"Git",
 	],
-	context: ["General", "Compaction", "Rules (TTSR)", "Experimental"],
+	context: ["General", "Fast Context", "Compaction", "Rules (TTSR)", "Experimental"],
 	memory: ["General", "Auto-Learn", "Mnemopi", "Hindsight"],
 	files: ["Editing", "Reading", "Read Summaries", "LSP"],
 	shell: ["Bash", "Eval & Python"],
@@ -1647,6 +1647,45 @@ export const SETTINGS_SCHEMA = {
 			group: "General",
 			label: "Auto-Promote Context",
 			description: "Promote to a larger-context model on context overflow instead of compacting",
+		},
+	},
+
+	// FastContext repository exploration
+	"fastContext.enabled": {
+		type: "boolean",
+		default: false,
+		ui: {
+			tab: "context",
+			group: "Fast Context",
+			label: "Enable FastContext",
+			description:
+				"Allow the explore subagent to call a local FastContext model through a read-only adapter before falling back to normal search.",
+		},
+	},
+
+	"fastContext.baseUrl": {
+		type: "string",
+		default: "http://127.0.0.1:8080",
+		ui: {
+			tab: "context",
+			group: "Fast Context",
+			label: "FastContext URL",
+			description:
+				"Base URL for the locally served FastContext OpenAI-compatible chat completions endpoint, for example llama.cpp at http://127.0.0.1:8080.",
+			condition: "fastContextEnabled",
+		},
+	},
+
+	"fastContext.model": {
+		type: "string",
+		default: undefined,
+		ui: {
+			tab: "context",
+			group: "Fast Context",
+			label: "FastContext Model",
+			description:
+				"Optional model id for FastContext. Leave blank to use the first model returned by the local endpoint's /v1/models response.",
+			condition: "fastContextEnabled",
 		},
 	},
 
@@ -4632,6 +4671,12 @@ export type Personality = SettingValue<"personality">;
 // Typed Group Definitions
 // ═══════════════════════════════════════════════════════════════════════════
 
+export interface FastContextSettings {
+	enabled: boolean;
+	baseUrl: string | undefined;
+	model: string | undefined;
+}
+
 export interface CompactionSettings {
 	enabled: boolean;
 	strategy: "context-full" | "handoff" | "shake" | "snapcompact" | "off";
@@ -4786,6 +4831,7 @@ export interface CodexResetsSettings {
 export interface GroupTypeMap {
 	compaction: CompactionSettings;
 	contextPromotion: ContextPromotionSettings;
+	fastContext: FastContextSettings;
 	retry: RetrySettings;
 	memories: MemoriesSettings;
 	branchSummary: BranchSummarySettings;

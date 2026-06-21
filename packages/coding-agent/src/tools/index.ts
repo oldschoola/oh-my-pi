@@ -42,6 +42,7 @@ import { type CheckpointState, CheckpointTool, RewindTool } from "./checkpoint";
 import { DebugTool } from "./debug";
 import { EvalTool } from "./eval";
 import { resolveEvalBackends } from "./eval-backends";
+import { FastContextTool } from "./fast-context";
 import { FindTool } from "./find";
 import { GithubTool } from "./gh";
 import { InspectImageTool } from "./inspect-image";
@@ -80,6 +81,7 @@ export * from "./checkpoint";
 export * from "./debug";
 export * from "./eval";
 export * from "./eval-backends";
+export * from "./fast-context";
 export * from "./find";
 export * from "./gh";
 export * from "./image-gen";
@@ -438,6 +440,7 @@ export const BUILTIN_TOOLS: Record<BuiltinToolName, ToolFactory> = {
 	eval: s => new EvalTool(s),
 	ssh: loadSshTool,
 	github: GithubTool.createIf,
+	fast_context: FastContextTool.createIf,
 	find: s => new FindTool(s),
 	search: s => new SearchTool(s),
 	lsp: LspTool.createIf,
@@ -570,6 +573,8 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		if (name === "eval") return allowEval;
 		if (name === "debug") return session.settings.get("debug.enabled");
 		if (name === "todo") return !includeYield && session.settings.get("todo.enabled");
+		if (name === "fast_context")
+			return session.settings.get("fastContext.enabled") && requestedTools?.includes("fast_context") === true;
 		if (name === "find") return session.settings.get("find.enabled");
 		if (name === "search") return session.settings.get("search.enabled");
 		if (name === "github") return session.settings.get("github.enabled");

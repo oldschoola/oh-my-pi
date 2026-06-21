@@ -501,6 +501,11 @@ read:
 contextPromotion:
   enabled: true
 
+fastContext:
+  enabled: false
+  baseUrl: http://127.0.0.1:8080  # normalized to /v1 for Chat Completions
+  model: ""                       # optional; defaults to first /v1/models result
+
 compaction:
   enabled: true
   strategy: snapcompact     # context-full, handoff, shake, snapcompact, off
@@ -515,6 +520,9 @@ memory:
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `contextPromotion.enabled` | boolean | `true` | Promote relevant earlier context. |
+| `fastContext.enabled` | boolean | `false` | Enables the `fast_context` read-only adapter for the bundled `explore` subagent. The adapter calls a local FastContext model and returns only validated file-line citations; citation-free output is treated as a fallback signal. See [FastContext setup](./fast-context.md) for installation and usage. |
+| `fastContext.baseUrl` | string | `http://127.0.0.1:8080` | Local FastContext OpenAI-compatible endpoint. Root and `/v1` forms are accepted; requests use Chat Completions at `/v1/chat/completions`. |
+| `fastContext.model` | string | unset | Optional model id. When unset, OMP uses the first id from `/v1/models`. |
 | `compaction.enabled` | boolean | `true` | Automatic conversation compaction. |
 | `compaction.strategy` | enum | `snapcompact` | `context-full`, `handoff`, `shake`, `snapcompact`, `off`. |
 | `compaction.thresholdPercent` | number | `-1` | Percent-of-context trigger; `-1` = reserve-based default. |

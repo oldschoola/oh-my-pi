@@ -27,10 +27,12 @@ describe("task agent capability descriptions", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("classifies bundled explore as the only read-only delegated agent", () => {
+	it("classifies bundled explore with FastContext as the only read-only delegated agent", () => {
 		const agents = loadBundledAgents();
 
-		expect(isReadOnlyAgent(agentByName(agents, "explore"))).toBe(true);
+		const explore = agentByName(agents, "explore");
+		expect(isReadOnlyAgent(explore)).toBe(true);
+		expect(explore.tools).toContain("fast_context");
 		for (const name of ["task", "quick_task", "plan", "reviewer", "oracle", "designer"]) {
 			expect(isReadOnlyAgent(agentByName(agents, name))).toBe(false);
 		}

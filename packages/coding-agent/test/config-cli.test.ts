@@ -80,6 +80,46 @@ describe("config CLI schema coverage", () => {
 		expect(parsed.type).toBe("array");
 		expect(parsed.value).toEqual(["claude-opus-4-6", "gpt-5.3-codex"]);
 	});
+
+	it("sets and gets FastContext settings through schema-driven config", async () => {
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+		await runConfigCommand({ action: "set", key: "fastContext.enabled", value: "true", flags: { json: true } });
+		await runConfigCommand({
+			action: "set",
+			key: "fastContext.baseUrl",
+			value: "http://127.0.0.1:8080",
+			flags: { json: true },
+		});
+		await runConfigCommand({
+			action: "set",
+			key: "fastContext.model",
+			value: "FastContext-1.0-4B-RL-Q4_K_M",
+			flags: { json: true },
+		});
+		await runConfigCommand({ action: "get", key: "fastContext.enabled", flags: { json: true } });
+		await runConfigCommand({ action: "get", key: "fastContext.baseUrl", flags: { json: true } });
+		await runConfigCommand({ action: "get", key: "fastContext.model", flags: { json: true } });
+
+		const enabledPayload = logSpy.mock.calls.at(-3)?.[0];
+		const baseUrlPayload = logSpy.mock.calls.at(-2)?.[0];
+		const modelPayload = logSpy.mock.calls.at(-1)?.[0];
+		expect(JSON.parse(String(enabledPayload))).toMatchObject({
+			key: "fastContext.enabled",
+			type: "boolean",
+			value: true,
+		});
+		expect(JSON.parse(String(baseUrlPayload))).toMatchObject({
+			key: "fastContext.baseUrl",
+			type: "string",
+			value: "http://127.0.0.1:8080",
+		});
+		expect(JSON.parse(String(modelPayload))).toMatchObject({
+			key: "fastContext.model",
+			type: "string",
+			value: "FastContext-1.0-4B-RL-Q4_K_M",
+		});
+	});
 	it("sets numeric idle compaction settings from CLI values", async () => {
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 		await runConfigCommand({
