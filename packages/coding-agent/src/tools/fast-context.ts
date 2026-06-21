@@ -393,9 +393,22 @@ function queryKeywords(query: string): string[] {
 	return [...new Set([...words, ...identifiers])];
 }
 
-/** Return only the identifier-derived keywords (UPPER_SNAKE_CASE, ≥5 chars). */
+/**
+ * Extract identifier-derived keywords from the query:
+ * - UPPER_SNAKE_CASE (≥5 chars): READ_ONLY_TOOL_NAMES → read_only_tool_names
+ * - CamelCase (≥4 chars, ≥1 internal capital): FastContext → fastcontext,
+ *   GrepOutputMode → grepoutputmode. These are far more distinctive than
+ *   generic words — a file defining `class FastContextTool` is the target,
+ *   not a file mentioning "fast" and "context" separately.
+ *
+ * Both forms are lowercased for matching against lowercased file content.
+ */
 function identifierKeywords(query: string): Set<string> {
-	return new Set((query.match(/\b[A-Z][A-Z0-9_]{4,}\b/g) ?? []).map(id => id.toLowerCase()));
+	const upperSnake = (query.match(/\b[A-Z][A-Z0-9_]{4,}\b/g) ?? []).map(id => id.toLowerCase());
+	// CamelCase: starts uppercase, has ≥1 internal uppercase, ≥4 chars total.
+	// Avoids matching single-word capitals like "The" or "Find".
+	const camelCase = (query.match(/\b[A-Z][a-z]+(?:[A-Z][a-z0-9]*)+\b/g) ?? []).map(id => id.toLowerCase());
+	return new Set([...upperSnake, ...camelCase]);
 }
 
 async function citationMatchesQuery(
@@ -908,11 +921,6 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 				});
 				const topCandidateFiles = [...topByPath, ...matchedNotInTop];
 				const topCandidates = topCandidateFiles.map(f => pathScored.find(e => e.file === f)!).filter(Boolean);
-				// Content scoring: scan full file text for keyword density.
-				// Full-file scan catches identifiers deep in the file (e.g.
-				// READ_ONLY_TOOL_NAMES at byte 5004 in task/index.ts) that the
-				// previous 1000-char preview missed. At ~1ms for 30 files in
-				// parallel, this is faster than the old slice approach.
 				const contentScored = await Promise.all(
 					topCandidates.map(async entry => {
 						let contentScore = 0;
@@ -936,6 +944,27 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 								(bonus, kw) => bonus + (lowerBasename.includes(kw) ? 2 : 0),
 								0,
 							);
+							// Definition-site boost (semble_rs-inspired): files that
+							// DEFINE the queried identifier outrank files that merely
+							// reference it. When a query mentions "FastContext tool
+							// class" or "GrepOutputMode enum", the file containing
+							// `class FastContextTool` or `enum GrepOutputMode` is the
+							// definition site. This distinguishes definition files
+							// from files that just mention the name more often.
+							if (identifierSet.size > 0) {
+								const defKeywords =
+									"(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))";
+								for (const id of identifierSet) {
+									const defPattern = new RegExp(
+										`${defKeywords}\\s+[a-z_]*${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+										"i",
+									);
+									if (defPattern.test(lower)) {
+										contentScore += 5;
+										break;
+									}
+								}
+							}
 						} catch {}
 						return {
 							file: entry.file,
