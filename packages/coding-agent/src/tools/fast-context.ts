@@ -946,11 +946,22 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 						(/\.md$/.test(normalizedPath) && !/\/(prompts|agents)\//.test(normalizedPath));
 					const isInfra = /\/(\.github|infra)\//.test(normalizedPath);
 					const isScript = /\/scripts\//.test(normalizedPath);
-					// Scripts get a mild penalty (-1): utility/benchmark scripts are
-					// often noise, but legitimate script targets (e.g. generate-models.ts
-					// with 4 path keyword matches) still rank well.
+					// Pre-sort uses the strong additive penalty (-100) so test/doc
+					// files stay out of the top-30 content-scoring pool. The graduated
+					// multiplier (semble_rs-inspired) is applied to the FINAL score
+					// after content scoring — test files that enter via the
+					// grep/glob-matched path aren't completely zeroed out.
+					// - STRONG 0.3x: test, docs, .github/infra
+					// - MODERATE 0.5x: type-def stubs (.d.ts), compat/legacy dirs
+					// - MILD 0.7x: scripts
+					const isTypeDef = /\.d\.ts$/.test(normalizedPath);
+					const isCompat = /\/(compat|_compat|legacy)\//.test(normalizedPath);
+					let typeMultiplier = 1;
+					if (isTest || isDoc || isInfra) typeMultiplier = 0.3;
+					else if (isTypeDef || isCompat) typeMultiplier = 0.5;
+					else if (isScript) typeMultiplier = 0.7;
 					const typePenalty = isTest || isDoc || isInfra ? -100 : isScript ? -1 : 0;
-					return { file: f, pathScore: pathMatches + typePenalty };
+					return { file: f, pathScore: pathMatches + typePenalty, typeMultiplier, rawPathScore: pathMatches };
 				});
 				pathScored.sort((a, b) => b.pathScore - a.pathScore);
 				// Top 30 by path score, PLUS any grep/glob-matched files not in
@@ -1028,7 +1039,13 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 						} catch {}
 						return {
 							file: entry.file,
-							score: entry.pathScore + contentScore,
+							// Apply graduated penalty multiplier to the final score
+							// (semble_rs-inspired): uses rawPathScore (without the -100
+							// pre-sort penalty) so test/doc files that enter via the
+							// grep/glob-matched path get 0.3x instead of being nuked.
+							// A test file with rawPathScore=2 and contentScore=5 gets
+							// (2+5)*0.3 = 2.1, vs a source file with (1+3)*1 = 4.
+							score: (entry.rawPathScore + contentScore) * entry.typeMultiplier,
 							contentScore,
 						};
 					}),
