@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Improved FastContext hint-mode fallback ranking: CamelCase identifier extraction, definition-site boost (+8), identifier segment globs, glob-before-grep merge order, graduated multiplicative penalties, and programming keyword stop words. Precision@5 improved from 0.75 (grade B) to 1.0 (grade A) on the non-FC baseline benchmark. FC vs non-FC delta improved from 0.60 to 0.85.
+
 ## [16.1.10] - 2026-06-21
 
 ### Added
