@@ -927,12 +927,20 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 			.sort((a, b) => b.length - a.length)
 			.slice(0, 3)
 			.map(seg => `**/*${seg}*`);
-		// Segment globs (from identifier stems) come BEFORE generic keyword
-		// globs — they're more targeted (definition-site filename matches)
-		// and must survive the 200-file dedup cap. Generic keyword globs like
-		// `**/*function*` can match 100+ files and drown segment globs like
-		// `**/*stream*` that point at the actual definition file.
-		const allSupplementaryGlobs = [...segmentGlobs, ...supplementaryGlobs];
+		// Prefix globs for longer segments (≥6 chars): "aborted" → prefix
+		// "abort" → glob `**/*abort*` → matches abortable.ts. Generated
+		// separately from main segment globs so they're independent of the
+		// slice(0, 3) limit. This catches definition files where the filename
+		// contains a prefix of the identifier segment but not the full segment.
+		const prefixGlobs = [...identifierSegments]
+			.filter(seg => seg.length >= 6)
+			.map(seg => seg.slice(0, 5))
+			.filter((seg, i, arr) => arr.indexOf(seg) === i)
+			.map(seg => `**/*${seg}*`);
+		// Segment globs + prefix globs come BEFORE generic keyword globs —
+		// they're more targeted (definition-site filename matches) and must
+		// survive the 200-file dedup cap.
+		const allSupplementaryGlobs = [...segmentGlobs, ...prefixGlobs, ...supplementaryGlobs];
 		const allGrepCandidates = [...effectivePlan.keywords, ...queryKws]
 			.filter(kw => kw.length >= 5)
 			.sort(byIdentifierThenLength);
@@ -1100,15 +1108,16 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							}, 0);
 							// Definition-site boost (semble_rs-inspired): files that
 							// DEFINE the queried identifier outrank files that merely
-							// reference it. Only "strong" identifiers (UPPER_SNAKE_CASE
-							// and uppercase-first CamelCase) trigger this boost —
-							// lowercase-first camelCase (streamSimple, fastContext) are
-							// often function calls or property accesses, not definitions.
-							const strongIds = strongIdentifierKeywords(params.query);
-							if (strongIds.size > 0) {
+							// reference it. Uses the full identifierSet (which includes
+							// filtered lowerCamelCase — untilAborted passes dot and verb
+							// filters, so its definition `function untilAborted` gets
+							// boosted). The three filters on identifierKeywords ensure
+							// property accessors and call-site references don't
+							// trigger false boosts.
+							if (identifierSet.size > 0) {
 								const defKeywords =
 									"(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))";
-								for (const id of strongIds) {
+								for (const id of identifierSet) {
 									const defPattern = new RegExp(
 										`${defKeywords}\\s+[a-z_]*${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
 										"i",
