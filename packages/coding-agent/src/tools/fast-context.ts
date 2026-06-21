@@ -379,6 +379,17 @@ const CITATION_STOP_WORDS = new Set([
 	"should",
 	"into",
 	"about",
+	// Programming language keywords that appear in nearly every source
+	// file — they don't distinguish the target file. The definition-site
+	// boost uses the identifier directly (not via query keywords), so
+	// filtering these doesn't affect it.
+	"function",
+	"class",
+	"enum",
+	"interface",
+	"struct",
+	"const",
+	"export",
 ]);
 
 function queryKeywords(query: string): string[] {
@@ -848,7 +859,12 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 			.sort((a, b) => b.length - a.length)
 			.slice(0, 3)
 			.map(seg => `**/*${seg}*`);
-		const allSupplementaryGlobs = [...supplementaryGlobs, ...segmentGlobs];
+		// Segment globs (from identifier stems) come BEFORE generic keyword
+		// globs — they're more targeted (definition-site filename matches)
+		// and must survive the 200-file dedup cap. Generic keyword globs like
+		// `**/*function*` can match 100+ files and drown segment globs like
+		// `**/*stream*` that point at the actual definition file.
+		const allSupplementaryGlobs = [...segmentGlobs, ...supplementaryGlobs];
 		const allGrepCandidates = [...effectivePlan.keywords, ...queryKws]
 			.filter(kw => kw.length >= 5)
 			.sort(byIdentifierThenLength);
