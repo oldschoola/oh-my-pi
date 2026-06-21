@@ -419,6 +419,73 @@ function identifierKeywords(query: string): Set<string> {
 	// CamelCase: starts uppercase, has ≥1 internal uppercase, ≥4 chars total.
 	// Avoids matching single-word capitals like "The" or "Find".
 	const camelCase = (query.match(/\b[A-Z][a-z]+(?:[A-Z][a-z0-9]*)+\b/g) ?? []).map(id => id.toLowerCase());
+	// Lower-camelCase: starts lowercase, has ≥1 internal uppercase (e.g.
+	// streamSimple, isEnoent, untilAborted). These get 3x content weighting
+	// and segment globs but do NOT trigger the definition-site boost (see
+	// strongIdentifierKeywords). Two filters prevent false positives:
+	// 1. Property-access filter: skip identifiers followed by `.` (e.g.
+	//    `fastContext.enabled` — fastContext is a qualifier, not the target)
+	// 2. Verb-position filter: skip identifiers followed by an action verb
+	//    (e.g. `applyGeneratedModelPolicies sets` — the identifier is being
+	//    called, not searched for). Identifiers followed by a noun (function,
+	//    helper, error) are the search target.
+	const actionVerbs = new Set([
+		"sets",
+		"calls",
+		"uses",
+		"returns",
+		"creates",
+		"handles",
+		"manages",
+		"produces",
+		"triggers",
+		"invokes",
+		"executes",
+		"runs",
+		"starts",
+		"stops",
+		"updates",
+		"deletes",
+		"adds",
+		"removes",
+		"loads",
+		"saves",
+		"reads",
+		"writes",
+		"sends",
+		"receives",
+		"processes",
+		"parses",
+		"validates",
+	]);
+	const lowerCamelCase = (query.match(/\b[a-z]+(?:[A-Z][a-z0-9]*)+\b/g) ?? [])
+		.filter(id => id.length >= 6)
+		.filter(id => {
+			const idx = query.indexOf(id);
+			const nextChar = query[idx + id.length];
+			const prevChar = idx > 0 ? query[idx - 1] : "";
+			// Filter 1: property access — identifier preceded or followed by '.'
+			// (fastContext.enabled, fastContext.baseUrl). These are qualifiers,
+			// not search targets.
+			if (nextChar === "." || prevChar === ".") return false;
+			// Filter 2: followed by action verb (applyGeneratedModelPolicies sets)
+			const rest = query.slice(idx + id.length).trim();
+			const nextWord = rest.split(/\s+/)[0]?.toLowerCase();
+			if (nextWord && actionVerbs.has(nextWord)) return false;
+			return true;
+		})
+		.map(id => id.toLowerCase());
+	return new Set([...upperSnake, ...camelCase, ...lowerCamelCase]);
+}
+
+/**
+ * Return only "strong" identifiers (UPPER_SNAKE_CASE + uppercase-first CamelCase)
+ * for the definition-site boost. Lowercase-first camelCase identifiers are excluded
+ * because they're often function calls or property accesses, not definitions.
+ */
+function strongIdentifierKeywords(query: string): Set<string> {
+	const upperSnake = (query.match(/\b[A-Z][A-Z0-9_]{4,}\b/g) ?? []).map(id => id.toLowerCase());
+	const camelCase = (query.match(/\b[A-Z][a-z]+(?:[A-Z][a-z0-9]*)+\b/g) ?? []).map(id => id.toLowerCase());
 	return new Set([...upperSnake, ...camelCase]);
 }
 
@@ -847,6 +914,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		const rawIdentifiers = [
 			...(params.query.match(/\b[A-Z][A-Z0-9_]{4,}\b/g) ?? []),
 			...(params.query.match(/\b[A-Z][a-z]+(?:[A-Z][a-z0-9]*)+\b/g) ?? []),
+			...(params.query.match(/\b[a-z]+(?:[A-Z][a-z0-9]*)+\b/g) ?? []).filter(id => id.length >= 6),
 		];
 		for (const id of rawIdentifiers) {
 			const segments = id
@@ -1032,16 +1100,15 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							}, 0);
 							// Definition-site boost (semble_rs-inspired): files that
 							// DEFINE the queried identifier outrank files that merely
-							// reference it. When a query mentions "FastContext tool
-							// class" or "GrepOutputMode enum", the file containing
-							// `class FastContextTool` or `enum GrepOutputMode` is the
-							// definition site. Boost is large (+8) because definition
-							// files often have fewer keyword mentions than files that
-							// merely reference the identifier many times.
-							if (identifierSet.size > 0) {
+							// reference it. Only "strong" identifiers (UPPER_SNAKE_CASE
+							// and uppercase-first CamelCase) trigger this boost —
+							// lowercase-first camelCase (streamSimple, fastContext) are
+							// often function calls or property accesses, not definitions.
+							const strongIds = strongIdentifierKeywords(params.query);
+							if (strongIds.size > 0) {
 								const defKeywords =
 									"(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))";
-								for (const id of identifierSet) {
+								for (const id of strongIds) {
 									const defPattern = new RegExp(
 										`${defKeywords}\\s+[a-z_]*${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
 										"i",
