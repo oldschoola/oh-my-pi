@@ -804,18 +804,54 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 			grep_paths: [],
 			description: "",
 		};
-		// Derive query keywords once (used by both fallback and supplementary)
 		const queryKws = queryKeywords(params.query);
-
+		// Identifier keywords (UPPER_SNAKE_CASE + CamelCase from the query) are
+		// far more distinctive than generic words — prioritize them in
+		// supplementary grep/glob so definition files enter the candidate pool.
+		// Without this, "tempdir" loses to "directories"/"temporary" by length,
+		// and temp.ts (which defines `class TempDir` but doesn't mention
+		// "temporary" or "directories") never gets grep'd.
+		const queryIdentifierSet = identifierKeywords(params.query);
+		const byIdentifierThenLength = (a: string, b: string) => {
+			const aId = queryIdentifierSet.has(a) ? 1 : 0;
+			const bId = queryIdentifierSet.has(b) ? 1 : 0;
+			return bId - aId || b.length - a.length;
+		};
 		// Build supplementary search patterns (query-derived, independent of plan)
 		const supplementaryGlobs = queryKws
 			.filter(kw => kw.length >= 4)
-			.sort((a, b) => b.length - a.length)
+			.sort(byIdentifierThenLength)
 			.slice(0, HINT_MAX_GLOBS)
 			.map(kw => `**/*${kw}*`);
+		// Identifier-segment globs: split CamelCase identifiers into word
+		// segments and glob for each ≥4-char segment. This catches definition
+		// files whose basename is a stem of the queried identifier (e.g.
+		// "TempDir" → segment "temp" → glob `**/*temp*` → matches temp.ts).
+		// Without this, temp.ts never enters the candidate pool because the
+		// grep for "tempdir" returns 200+ files that import TempDir, and the
+		// 200-result cap excludes temp.ts itself.
+		// Extract from the ORIGINAL query (pre-lowercase) so CamelCase
+		// boundaries are preserved: "TempDir" → ["Temp", "Dir"].
+		const identifierSegments = new Set<string>();
+		const rawIdentifiers = [
+			...(params.query.match(/\b[A-Z][A-Z0-9_]{4,}\b/g) ?? []),
+			...(params.query.match(/\b[A-Z][a-z]+(?:[A-Z][a-z0-9]*)+\b/g) ?? []),
+		];
+		for (const id of rawIdentifiers) {
+			const segments = id
+				.split(/(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|[_\s]+/g)
+				.filter(s => s.length >= 4)
+				.map(s => s.toLowerCase());
+			for (const seg of segments) identifierSegments.add(seg);
+		}
+		const segmentGlobs = [...identifierSegments]
+			.sort((a, b) => b.length - a.length)
+			.slice(0, 3)
+			.map(seg => `**/*${seg}*`);
+		const allSupplementaryGlobs = [...supplementaryGlobs, ...segmentGlobs];
 		const allGrepCandidates = [...effectivePlan.keywords, ...queryKws]
 			.filter(kw => kw.length >= 5)
-			.sort((a, b) => b.length - a.length);
+			.sort(byIdentifierThenLength);
 		const supplementaryGrepKws = allGrepCandidates.slice(0, 2);
 
 		// Execute plan + supplementary searches in ONE batch (saves ~150-200ms
@@ -828,8 +864,8 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 			effectivePlan.grep_patterns.length > 0
 				? Promise.all(effectivePlan.grep_patterns.map(p => this.#nativeGrep(p, effectivePlan.grep_paths, signal)))
 				: Promise.resolve([[]] as string[][]),
-			supplementaryGlobs.length > 0
-				? Promise.all(supplementaryGlobs.map(g => this.#nativeGlob(g, this.#session.cwd, signal)))
+			allSupplementaryGlobs.length > 0
+				? Promise.all(allSupplementaryGlobs.map(g => this.#nativeGlob(g, this.#session.cwd, signal)))
 				: Promise.resolve([[]] as string[][]),
 			supplementaryGrepKws.length > 0
 				? Promise.all(supplementaryGrepKws.map(p => this.#nativeGrep(p, ["."], signal)))
@@ -847,7 +883,12 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		const suppGlobFiles = suppGlobResults.flat();
 		if (suppGrepFiles.length > 0 || suppGlobFiles.length > 0) {
 			effectiveKeywords = [...new Set([...effectivePlan.keywords, ...queryKws])];
-			allFiles = [...new Set([...suppGrepFiles, ...suppGlobFiles, ...allFiles])].slice(0, 200);
+			// Glob-matched files (filename matches) are more likely to be definition
+			// sites than grep-matched files (content mentions). Put glob results
+			// first so they survive the 200-file cap — without this, a grep for
+			// "tempdir" returns 200+ importing files and pushes temp.ts (matched
+			// only by the segment glob `**/*temp*`) past the cap.
+			allFiles = [...new Set([...suppGlobFiles, ...suppGrepFiles, ...allFiles])].slice(0, 200);
 			for (const f of suppGrepFiles) grepFileSet.add(f);
 			for (const f of suppGlobFiles) globMatchedSet.add(f);
 		}
@@ -858,14 +899,17 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 			effectiveKeywords = queryKws;
 			const fallbackGreps = queryKws
 				.filter(kw => kw.length >= 4)
-				.sort((a, b) => b.length - a.length)
+				.sort(byIdentifierThenLength)
 				.slice(0, HINT_MAX_GREPS);
 			const fallbackResults = await Promise.all(fallbackGreps.map(p => this.#nativeGrep(p, ["."], signal)));
-			const fallbackGlobPatterns = queryKws
-				.filter(kw => kw.length >= 3)
-				.sort((a, b) => b.length - a.length)
-				.slice(0, HINT_MAX_GLOBS)
-				.map(kw => `**/*${kw}*`);
+			const fallbackGlobPatterns = [
+				...queryKws
+					.filter(kw => kw.length >= 3)
+					.sort(byIdentifierThenLength)
+					.slice(0, HINT_MAX_GLOBS)
+					.map(kw => `**/*${kw}*`),
+				...segmentGlobs,
+			];
 			const fallbackGlobResults = await Promise.all(
 				fallbackGlobPatterns.map(g => this.#nativeGlob(g, this.#session.cwd, signal)),
 			);
@@ -938,19 +982,35 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							// Basename boost: if a query keyword appears in the
 							// filename itself (e.g. "grep" in grep.rs, "explore"
 							// in explore.md), that's a strong signal. +2 per
-							// basename-keyword match.
+							// basename-keyword match. Also match identifier stems:
+							// "tempdir" → basename "temp" (semble_rs stem_matches).
 							const lowerBasename = path.basename(entry.file).toLowerCase();
-							contentScore += lowerKeywords.reduce(
-								(bonus, kw) => bonus + (lowerBasename.includes(kw) ? 2 : 0),
-								0,
-							);
+							const basenameNoExt = lowerBasename.replace(/\.[^.]+$/, "");
+							contentScore += lowerKeywords.reduce((bonus, kw) => {
+								if (lowerBasename.includes(kw)) return bonus + 2;
+								// Identifier stem match: if the identifier (stripped
+								// of underscores) starts with the basename, or vice
+								// versa, treat as a match. "tempdir" → "temp".
+								if (identifierSet.has(kw)) {
+									const kwNorm = kw.replace(/_/g, "");
+									if (
+										kwNorm.length >= 4 &&
+										basenameNoExt.length >= 3 &&
+										(kwNorm.startsWith(basenameNoExt) || basenameNoExt.startsWith(kwNorm))
+									) {
+										return bonus + 2;
+									}
+								}
+								return bonus;
+							}, 0);
 							// Definition-site boost (semble_rs-inspired): files that
 							// DEFINE the queried identifier outrank files that merely
 							// reference it. When a query mentions "FastContext tool
 							// class" or "GrepOutputMode enum", the file containing
 							// `class FastContextTool` or `enum GrepOutputMode` is the
-							// definition site. This distinguishes definition files
-							// from files that just mention the name more often.
+							// definition site. Boost is large (+8) because definition
+							// files often have fewer keyword mentions than files that
+							// merely reference the identifier many times.
 							if (identifierSet.size > 0) {
 								const defKeywords =
 									"(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))";
@@ -960,7 +1020,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 										"i",
 									);
 									if (defPattern.test(lower)) {
-										contentScore += 5;
+										contentScore += 8;
 										break;
 									}
 								}
