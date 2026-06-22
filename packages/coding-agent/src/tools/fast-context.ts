@@ -803,7 +803,13 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		return untilAborted(signal, async () => {
 			const apiBaseUrl = normalizeFastContextBaseUrl(this.#session.settings.get("fastContext.baseUrl"));
 			const backend = await this.#resolveBackend(apiBaseUrl, signal);
-			const mode = params.mode ?? this.#session.settings.get("fastContext.mode") ?? "hint";
+			// Honor an explicit non-default mode; but a reflexive `mode: "hint"` (what
+			// callers pass because it's documented as the default) yields to the user's
+			// configured fastContext.mode so the setting actually wins.
+			const mode =
+				params.mode && params.mode !== "hint"
+					? params.mode
+					: (this.#session.settings.get("fastContext.mode") ?? "hint");
 			return mode === "hint"
 				? this.#executeHint(backend, params, signal)
 				: this.#executeAgent(backend, params, signal);
@@ -1367,8 +1373,16 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 			}
 		}
 
-		const includeSnippets = params.include_snippets ?? true;
-		const snippetLines = Math.min(Math.max(params.snippet_lines ?? HINT_DEFAULT_SNIPPET_LINES, 3), 30);
+		const includeSnippets = this.#session.settings.get("fastContext.snippets") ?? params.include_snippets ?? true;
+		const snippetLines = Math.min(
+			Math.max(
+				this.#session.settings.get("fastContext.snippetLines") ??
+					params.snippet_lines ??
+					HINT_DEFAULT_SNIPPET_LINES,
+				3,
+			),
+			30,
+		);
 		const maxResultTokens = Math.max(
 			100,
 			Math.min(params.max_result_tokens ?? HINT_DEFAULT_MAX_RESULT_TOKENS, 16000),
@@ -1843,13 +1857,14 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		if (!stat.isFile()) return `Read Tool: ${args.path} is not a file.`;
 		const rawLines = splitFileLines(await Bun.file(filePath).text());
 		if (rawLines.length === 0) return "File is empty.";
+		const maxReadLines = this.#session.settings.get("fastContext.maxReadLines") ?? MAX_READ_LINES;
 		let offset = Number.isFinite(args.offset) && (args.offset ?? 0) > 0 ? Math.floor(args.offset ?? 1) : 1;
 		if (offset > rawLines.length) offset = rawLines.length;
 		let endLine = rawLines.length;
 		if (Number.isFinite(args.limit) && (args.limit ?? 0) > 0) {
-			endLine = Math.min(rawLines.length, offset + Math.floor(args.limit ?? MAX_READ_LINES) - 1);
+			endLine = Math.min(rawLines.length, offset + Math.floor(args.limit ?? maxReadLines) - 1);
 		}
-		endLine = Math.min(endLine, offset + MAX_READ_LINES - 1);
+		endLine = Math.min(endLine, offset + maxReadLines - 1);
 		const lines = rawLines.slice(offset - 1, endLine);
 		if (signal?.aborted) throw new Error("Read Tool: aborted.");
 		return formatReadOutput(filePath, offset, endLine, lines);
@@ -2027,7 +2042,8 @@ export const fastContextToolRenderer = {
 		const mode = details?.mode ?? args?.mode ?? "hint";
 		const header = renderStatusLine(
 			{
-				icon: fileCount > 0 ? "success" : "warning",
+				icon: fileCount > 0 ? undefined : "warning",
+				iconOverride: fileCount > 0 ? uiTheme.styledSymbol("icon.fast", "accent") : undefined,
 				title: "FastContext",
 				titleColor: "toolTitle",
 				description: `${model} · ${mode}`,

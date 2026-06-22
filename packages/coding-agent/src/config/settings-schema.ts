@@ -1707,6 +1707,64 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
+	"fastContext.snippets": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "context",
+			group: "Fast Context",
+			label: "FastContext Snippets",
+			description:
+				"Include short code snippets alongside the ranked file list (hint mode). Turn off for a compact file-only shortlist.",
+			condition: "fastContextEnabled",
+		},
+	},
+
+	"fastContext.snippetLines": {
+		type: "number",
+		default: 10,
+		ui: {
+			tab: "context",
+			group: "Fast Context",
+			label: "FastContext Snippet Lines",
+			description: "Lines of context per code snippet in hint mode (when snippets are on).",
+			condition: "fastContextEnabled",
+			options: [
+				{ value: "3", label: "3 lines" },
+				{ value: "5", label: "5 lines" },
+				{ value: "8", label: "8 lines" },
+				{ value: "10", label: "10 lines" },
+				{ value: "15", label: "15 lines" },
+				{ value: "20", label: "20 lines" },
+				{ value: "30", label: "30 lines" },
+			],
+		},
+	},
+
+	"fastContext.maxReadLines": {
+		type: "number",
+		default: 200,
+		ui: {
+			tab: "context",
+			group: "Fast Context",
+			label: "FastContext Max Read Lines",
+			description:
+				"Agent mode: max lines read per file in the FastContext Read/Glob/Grep loop. Higher = more context per file but slower.",
+			condition: "fastContextEnabled",
+			options: [
+				{ value: "100", label: "100 lines" },
+				{ value: "200", label: "200 lines" },
+				{ value: "300", label: "300 lines" },
+				{ value: "400", label: "400 lines" },
+				{ value: "500", label: "500 lines" },
+				{ value: "750", label: "750 lines" },
+				{ value: "1000", label: "1000 lines" },
+				{ value: "1500", label: "1500 lines" },
+				{ value: "2000", label: "2000 lines" },
+			],
+		},
+	},
+
 	// Compaction
 	"compaction.enabled": {
 		type: "boolean",
@@ -4726,6 +4784,9 @@ export interface FastContextSettings {
 	baseUrl: string | undefined;
 	model: string | undefined;
 	mode: "hint" | "agent";
+	snippets: boolean;
+	snippetLines: number;
+	maxReadLines: number;
 }
 
 export interface CompactionSettings {
