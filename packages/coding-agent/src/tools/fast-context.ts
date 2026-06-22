@@ -1273,6 +1273,8 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 								}
 								return bonus;
 							}, 0);
+							const defKeywords =
+								"(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))";
 							// Definition-site boost (semble_rs-inspired): files that
 							// DEFINE the queried identifier outrank files that merely
 							// reference it. Uses the full identifierSet (which includes
@@ -1282,8 +1284,6 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							// property accessors and call-site references don't
 							// trigger false boosts.
 							if (identifierSet.size > 0) {
-								const defKeywords =
-									"(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))";
 								for (const id of identifierSet) {
 									const defPattern = new RegExp(
 										`${defKeywords}\\s+[a-z_]*${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
@@ -1293,6 +1293,23 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 										contentScore += 8;
 										break;
 									}
+								}
+							}
+							// Plan-symbol definition boost: the model plan's
+							// grep_patterns carry exact symbol names (toolResult,
+							// declareWorkerHostEntry) absent from natural-language
+							// queries. Boost files that DECLARE them with the symbol
+							// at the START of the name (function toolResult, class
+							// ToolResultBuilder). The start anchor is precise — it
+							// avoids the substring over-match of [a-z_]*id (which
+							// fired on duplicateToolResults). All-lowercase patterns
+							// (mcp, transport, approval) are excluded as too generic.
+							for (const sym of effectivePlan.grep_patterns) {
+								if (!/^[A-Za-z][A-Za-z0-9_]{3,}$/.test(sym) || /^[a-z]+$/.test(sym)) continue;
+								const escSym = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+								if (new RegExp(`${defKeywords}\\s+${escSym}[a-z0-9_]*\\b`, "i").test(lower)) {
+									contentScore += 8;
+									break;
 								}
 							}
 							// Barrel boost: index.ts/index.js files whose parent
