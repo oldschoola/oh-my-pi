@@ -1773,7 +1773,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Fast Context",
 			label: "FastContext Fast Tools",
 			description:
-				"Force fast_context into agent mode — SWE-grep-style parallel retrieval (up to 8 parallel Read/Glob/Grep calls per turn, ≤4 turns, snippets on) that returns thorough file:line citations. Overrides the mode setting; turn on for deep retrieval that shouldn't need re-searching.",
+				"Force fast_context into agent mode — SWE-grep-style parallel retrieval (up to 8 parallel Read/Glob/Grep calls per turn, ≤4 turns) that returns thorough file:line citations. Overrides the mode setting; turn on for deep retrieval that shouldn't need re-searching.",
 			condition: "fastContextEnabled",
 		},
 	},
