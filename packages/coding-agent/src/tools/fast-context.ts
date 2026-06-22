@@ -1312,6 +1312,23 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 									break;
 								}
 							}
+							// Path-aligned class-name boost: when a query keyword (≥6 chars)
+							// both appears in the file's path AND names a class defined in
+							// the file (`class Settings`, `class Changelog`), boost it. This
+							// catches definition files for natural-language queries whose
+							// keywords aren't CamelCase (so the identifier/plan-symbol boosts
+							// miss them). The path-alignment requirement is the discriminator
+							// — without it, every file defining `class Context` or `class
+							// Version` would be boosted for a generic keyword.
+							const lowerPath = entry.file.replace(/\\/g, "/").toLowerCase();
+							for (const kw of lowerKeywords) {
+								if (kw.length < 8 || CITATION_STOP_WORDS.has(kw)) continue;
+								if (!lowerPath.includes(kw)) continue;
+								if (new RegExp(`(?:export\\s+)?class\\s+${kw}\\b`, "i").test(lower)) {
+									contentScore += 8;
+									break;
+								}
+							}
 							// Barrel boost: index.ts/index.js files whose parent
 							// directory name contains a query keyword get +3. Barrel
 							// files have almost no content (just `export * from`),
