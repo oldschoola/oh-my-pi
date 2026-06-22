@@ -1204,7 +1204,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 						/\/docs\//.test(normalizedPath) ||
 						(/\.md$/.test(normalizedPath) && !/\/(prompts|agents)\//.test(normalizedPath));
 					const isInfra = /\/(\.github|infra)\//.test(normalizedPath);
-					const isScript = /\/scripts\//.test(normalizedPath);
+					const isScript = /\/(scripts|examples|bench)\//.test(normalizedPath);
 					// Pre-sort uses the strong additive penalty (-100) so test/doc
 					// files stay out of the top-30 content-scoring pool. The graduated
 					// multiplier (semble_rs-inspired) is applied to the FINAL score
