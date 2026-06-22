@@ -1352,10 +1352,14 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 				const remaining = pathScored.filter(e => !topSet.has(e.file)).map(e => e.file);
 				// Boost files found by supplementary grep or glob — grep matched
 				// content keywords; glob matched a query keyword in the filename.
-				// Within the boosted set, sort by content score (identifier-weighted)
-				// then path score as tiebreaker. When 275 files all grep-match the
-				// same identifier, the file that defines it should rank above files
-				// that merely reference it.
+				// Within the boosted set, sort by the final multiplied score
+				// (content + path, WITH the graduated test/doc/script type
+				// penalty), then path score as tiebreaker. Using raw
+				// contentScore here would bypass the 0.3x penalty — a test file
+				// mentioning the identifier many times would outrank the source
+				// definition file. When many files grep-match the same
+				// identifier, the file that defines it (source, 1.0x) must rank
+				// above files that merely reference it (test/doc, 0.3x).
 				const isMatched = (f: string) => {
 					const norm = f.replace(/\\/g, "/");
 					return grepFileSet.has(f) || grepFileSet.has(norm) || globMatchedSet.has(f) || globMatchedSet.has(norm);
@@ -1365,9 +1369,9 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 				const boostedSorted = pathScored
 					.filter(e => boosted.includes(e.file))
 					.sort((a, b) => {
-						const ca = contentByFile.get(a.file)?.contentScore ?? 0;
-						const cb = contentByFile.get(b.file)?.contentScore ?? 0;
-						return cb - ca || b.pathScore - a.pathScore;
+						const sa = contentByFile.get(a.file)?.score ?? 0;
+						const sb = contentByFile.get(b.file)?.score ?? 0;
+						return sb - sa || b.pathScore - a.pathScore;
 					})
 					.map(e => e.file);
 				const nonBoosted = rankedTop.filter(f => !boosted.includes(f));
