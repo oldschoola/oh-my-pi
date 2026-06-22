@@ -14,8 +14,13 @@
 
 - `fast_context` is now a first-class tool available to the **main agent** (and any agent that requests it), not just the `explore` subagent. When `fastContext.enabled` is on, the main agent can call `fast_context` directly for broad repository retrieval — a ranked file shortlist via the configured model (e.g. `devin/swe-1-6-fast`) — instead of only reaching it through explore. The `search` and `ast_grep` tool guidance now points to `fast_context` first for open-ended / cross-subsystem retrieval. Previously the tool gate required the caller to explicitly request `fast_context` (only `explore` did), so the main agent never used it.
 - The main-agent system prompt now makes `fast_context` the **first action** for any codebase-retrieval question (where / find / is-there / list X, dead code, unused refs) — a forceful directive in the Exploration section, ahead of `find`/`search`/`read`/`bash`. It is conditioned on `fast_context` being active (`{{#has tools "fast_context"}}`), so it never fires for agents that don't have it (e.g. librarian/plan/reviewer, or when FastContext is disabled) — verified by a rendering test.
+- `fast_context` results now render **inline** in the chat like the `find` tool — a framed file/citation list (`FastContext · {model} · {mode} · {N} files` + the list), with no collapsed ctrl+o window. It has a registered renderer (`fastContextToolRenderer`, `inline` + `mergeCallAndResult`) in the `toolRenderers` map, so it no longer falls through to the generic collapsing renderer.
 - FastContext model selection is now a picker instead of a free-text field. `fastContext.model` renders as a dropdown listing provider models from your logged-in providers (e.g. `devin/swe-1-6-fast`, `zai/glm-5-turbo`) plus a "Local llama.cpp server" option; a `local` sentinel explicitly selects the local server and auto-discovers its model via `/v1/models`.
 - The `fastContext.baseUrl` (local server URL) field is now hidden whenever a provider model is in use — there is no reason to configure a local OpenAI-compatible endpoint when FastContext routes through a provider. It only appears for the local-server backend (the "Local llama.cpp server" picker choice, a bare model id, or an unset model with no logged-in provider default).
+
+### Fixed
+
+- FastContext agent mode no longer leaks raw `<final_answer>…</final_answer>` tags into the chat. The result text is run through `extractFinalAnswer` at the source (the normal-completion path previously rendered the raw model content), so both the model-facing and TUI-facing text are tag-free.
 
 ## [16.1.14] - 2026-06-22
 

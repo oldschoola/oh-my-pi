@@ -7,16 +7,22 @@ import type { Api, AssistantMessage, Context, Message, Model, TextContent, Tool,
 import { completeSimple } from "@oh-my-pi/pi-ai";
 import type { GrepMatch } from "@oh-my-pi/pi-natives";
 import { GrepOutputMode, glob, grep } from "@oh-my-pi/pi-natives";
+import type { Component } from "@oh-my-pi/pi-tui";
+import { replaceTabs, Text } from "@oh-my-pi/pi-tui";
 import { prompt, untilAborted } from "@oh-my-pi/pi-utils";
 import { type } from "arktype";
 import { expandRoleAlias, getModelMatchPreferences, resolveModelFromString } from "../config/model-resolver";
+import type { RenderResultOptions } from "../extensibility/custom-tools/types";
+import type { Theme } from "../modes/theme/theme";
 import fastContextDescription from "../prompts/tools/fast-context.md" with { type: "text" };
 import citationRetryPrompt from "../prompts/tools/fast-context-citation-retry.md" with { type: "text" };
 import finalTurnPrompt from "../prompts/tools/fast-context-final.md" with { type: "text" };
 import hintSystemPrompt from "../prompts/tools/fast-context-hint-system.md" with { type: "text" };
 import fastContextSystemPrompt from "../prompts/tools/fast-context-system.md" with { type: "text" };
+import { Ellipsis, fileHyperlink, renderStatusLine, renderTreeList, truncateToWidth } from "../tui";
 import type { ToolSession } from ".";
 import type { OutputMeta } from "./output-meta";
+import { createCachedComponent, formatErrorMessage, PREVIEW_LIMITS } from "./render-utils";
 import { toolResult } from "./tool-result";
 
 const fastContextSchema = type({
@@ -881,7 +887,11 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 				}
 			}
 			if (response.toolCalls.length === 0) {
-				finalText = response.message.content ?? "";
+				// Strip <final_answer> wrapper so both the TUI-facing result text
+				// and parseCitations receive clean content (the early-termination
+				// path at ~L878 already uses extractFinalAnswer). The LLM consumes
+				// this via the tool-result text too, so tag-free is correct for both.
+				finalText = extractFinalAnswer(response.message.content ?? "");
 				const { citations, lowConfidenceCitations } = await parseCitations(
 					finalText,
 					this.#session.cwd,
@@ -1925,4 +1935,148 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		}
 		return formatContentMatches(result.matches, searchPath, args["-n"] ?? true, limit);
 	}
+}
+
+// =============================================================================
+// TUI Renderer
+// =============================================================================
+
+/** Render args for fast_context (subset of {@link FastContextToolInput}). */
+interface FastContextRenderArgs {
+	query?: string;
+	mode?: "hint" | "agent";
+}
+
+/** Cap displayed citations in collapsed mode; expanded shows all. */
+const FC_COLLAPSED_CITATIONS = PREVIEW_LIMITS.COLLAPSED_ITEMS;
+
+/**
+ * Parse a `path:line` / `path:line-line` citation into the file path and an
+ * optional leading line number for OSC 8 hyperlinking. The path may be
+ * relative (fileHyperlink resolves it against the process cwd) or absolute.
+ */
+function parseCitationTarget(citation: string): { filePath: string; line?: number } {
+	const colon = citation.lastIndexOf(":");
+	if (colon <= 0) return { filePath: citation };
+	const pathPart = citation.slice(0, colon);
+	const rangePart = citation.slice(colon + 1);
+	const firstNum = Number.parseInt(rangePart.split("-")[0] ?? "", 10);
+	return {
+		filePath: pathPart,
+		line: Number.isFinite(firstNum) && firstNum > 0 ? firstNum : undefined,
+	};
+}
+
+/**
+ * Inline renderer for the `fast_context` tool result.
+ *
+ * Mirrors `findToolRenderer` (not `readToolRenderer`): fast_context returns a
+ * file/citation shortlist, so the output shape is a list, not file content.
+ * `inline: true` keeps the block inline (no collapsed ctrl+o window) and
+ * `mergeCallAndResult: true` fuses the call + result into one card — the same
+ * shape `find` uses. The citation list comes from structured
+ * `FastContextToolDetails.citations`, NEVER from parsing `<final_answer>` text.
+ */
+export const fastContextToolRenderer = {
+	inline: true,
+	renderCall(args: FastContextRenderArgs, _options: RenderResultOptions, uiTheme: Theme): Component {
+		const text = renderStatusLine(
+			{
+				icon: "pending",
+				title: "FastContext",
+				titleColor: "toolTitle",
+				description: args.query || (args.mode ? `${args.mode} mode` : ""),
+				meta: args.mode && args.mode !== "hint" ? [args.mode] : undefined,
+			},
+			uiTheme,
+		);
+		return new Text(text, 1, 0);
+	},
+
+	renderResult(
+		result: {
+			content: Array<{ type: string; text?: string }>;
+			details?: FastContextToolDetails;
+			isError?: boolean;
+		},
+		options: RenderResultOptions,
+		uiTheme: Theme,
+		args?: FastContextRenderArgs,
+	): Component {
+		const details = result.details;
+
+		// Error case: error-styled inline block.
+		if (result.isError || details?.error) {
+			const errorText = details?.error || result.content?.find(c => c.type === "text")?.text || "Unknown error";
+			return new Text(formatErrorMessage(errorText, uiTheme), 1, 0);
+		}
+
+		// Structured citations are the source of truth — do NOT parse result text.
+		let citations = details?.citations ?? [];
+
+		// Fallback only when citations are empty: pull file lines out of the
+		// `[FC hint: N files]\n\nFiles:\n…` hint-mode packet, never from
+		// <final_answer> text.
+		if (citations.length === 0) {
+			const rawText = result.content?.find(c => c.type === "text")?.text ?? "";
+			citations = extractHintFileList(rawText);
+		}
+
+		const fileCount = citations.length;
+		const model = details?.model ?? "fast-context";
+		const mode = details?.mode ?? args?.mode ?? "hint";
+		const header = renderStatusLine(
+			{
+				icon: fileCount > 0 ? "success" : "warning",
+				title: "FastContext",
+				titleColor: "toolTitle",
+				description: `${model} · ${mode}`,
+				meta: [fileCount === 1 ? "1 file" : `${fileCount} files`],
+			},
+			uiTheme,
+		);
+
+		if (fileCount === 0) {
+			const lines = [header, uiTheme.fg("dim", "(no files found)")];
+			return new Text(lines.join("\n"), 1, 0);
+		}
+
+		return createCachedComponent(
+			() => options.expanded,
+			width => {
+				const listLines = renderTreeList(
+					{
+						items: citations,
+						expanded: options.expanded,
+						maxCollapsed: FC_COLLAPSED_CITATIONS,
+						itemType: "file",
+						renderItem: (citation: string) => {
+							const safe = replaceTabs(citation);
+							const target = parseCitationTarget(citation);
+							return fileHyperlink(target.filePath, safe, target.line ? { line: target.line } : undefined);
+						},
+					},
+					uiTheme,
+				);
+				return [header, ...listLines].map(l => truncateToWidth(l, width, Ellipsis.Omit));
+			},
+			{ paddingX: 1 },
+		);
+	},
+	mergeCallAndResult: true,
+};
+
+/**
+ * Fallback parser for hint-mode result packets shaped
+ * `[FC hint: N files]\n\nFiles:\n<path>\n<path>\n...`. Used only when
+ * `details.citations` is empty (e.g. a result reconstructed without details).
+ * Returns plain file paths (no line numbers); never inspects `<final_answer>`.
+ */
+function extractHintFileList(text: string): string[] {
+	const filesMatch = text.match(/\nFiles:\n([\s\S]*?)(?:\n\n|\n---|\n\[|$)/);
+	if (!filesMatch) return [];
+	return filesMatch[1]
+		.split("\n")
+		.map(l => l.trim())
+		.filter(l => l.length > 0 && !l.startsWith("["));
 }

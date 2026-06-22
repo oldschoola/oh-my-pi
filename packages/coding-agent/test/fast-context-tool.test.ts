@@ -117,7 +117,12 @@ describe("FastContext tool", () => {
 			expect(result.details?.citations).toEqual([`${targetPath}:1-3`]);
 			expect(result.content[0]?.type).toBe("text");
 			if (result.content[0]?.type === "text") {
-				expect(result.content[0].text).toContain("<final_answer>");
+				// Tag leak fix: the result text is tag-stripped at the source
+				// (extractFinalAnswer), so <final_answer> never reaches the
+				// model-facing or TUI-facing text. The citation still appears.
+				expect(result.content[0].text).not.toContain("<final_answer>");
+				expect(result.content[0].text).not.toContain("</final_answer>");
+				expect(result.content[0].text).toContain(`${targetPath}:1-3`);
 			}
 		} finally {
 			await temp.remove();
