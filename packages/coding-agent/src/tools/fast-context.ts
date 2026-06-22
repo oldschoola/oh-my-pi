@@ -803,13 +803,15 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		return untilAborted(signal, async () => {
 			const apiBaseUrl = normalizeFastContextBaseUrl(this.#session.settings.get("fastContext.baseUrl"));
 			const backend = await this.#resolveBackend(apiBaseUrl, signal);
-			// Honor an explicit non-default mode; but a reflexive `mode: "hint"` (what
-			// callers pass because it's documented as the default) yields to the user's
-			// configured fastContext.mode so the setting actually wins.
+			// Fast Tools forces agent mode (SWE-grep-style parallel retrieval).
+			// Otherwise honor an explicit non-default mode; a reflexive `mode: "hint"`
+			// yields to the user's configured fastContext.mode so the setting wins.
 			const mode =
-				params.mode && params.mode !== "hint"
-					? params.mode
-					: (this.#session.settings.get("fastContext.mode") ?? "hint");
+				this.#session.settings.get("fastContext.fastTools") === true
+					? "agent"
+					: params.mode && params.mode !== "hint"
+						? params.mode
+						: (this.#session.settings.get("fastContext.mode") ?? "hint");
 			return mode === "hint"
 				? this.#executeHint(backend, params, signal)
 				: this.#executeAgent(backend, params, signal);

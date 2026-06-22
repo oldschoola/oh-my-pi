@@ -2,7 +2,7 @@ Call this FIRST for any codebase-retrieval question (where is / find / list / is
 
 Delegates repository exploration to a local FastContext model.
 
-Mode and snippets are set by the `fastContext.mode` (hint | agent) and `fastContext.snippets` settings — OMIT the `mode` and `include_snippets` parameters so your configured settings apply.
+Mode and snippets are set by the `fastContext.mode` (hint | agent) and `fastContext.snippets` settings — OMIT the `mode` and `include_snippets` parameters so your configured settings apply. `fastContext.fastTools` forces agent mode (SWE-grep-style parallel Read/Glob/Grep, ≤4 turns) for thorough retrieval.
 
 Modes:
 - `hint` (default): one model turn → keywords/globs/grep, then native ripgrep/glob (~2-5s). Returns candidate files directly.

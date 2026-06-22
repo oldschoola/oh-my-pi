@@ -1765,6 +1765,19 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
+	"fastContext.fastTools": {
+		type: "boolean",
+		default: false,
+		ui: {
+			tab: "context",
+			group: "Fast Context",
+			label: "FastContext Fast Tools",
+			description:
+				"Force fast_context into agent mode — SWE-grep-style parallel retrieval (up to 8 parallel Read/Glob/Grep calls per turn, ≤4 turns, snippets on) that returns thorough file:line citations. Overrides the mode setting; turn on for deep retrieval that shouldn't need re-searching.",
+			condition: "fastContextEnabled",
+		},
+	},
+
 	// Compaction
 	"compaction.enabled": {
 		type: "boolean",
@@ -4787,6 +4800,7 @@ export interface FastContextSettings {
 	snippets: boolean;
 	snippetLines: number;
 	maxReadLines: number;
+	fastTools: boolean;
 }
 
 export interface CompactionSettings {

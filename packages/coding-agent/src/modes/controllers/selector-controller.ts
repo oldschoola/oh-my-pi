@@ -1298,6 +1298,7 @@ export class SelectorController {
  * are shown; a "Local llama.cpp server" sentinel is always appended. */
 const FAST_CONTEXT_MODEL_CHOICES: ReadonlyArray<{ id: string; label: string }> = [
 	{ id: "devin/swe-1-6-fast", label: "Devin SWE 1.6 Fast" },
+	{ id: "devin/swe-1-6", label: "Devin SWE 1.6" },
 	{ id: "devin/swe-1-6-slow", label: "Devin SWE 1.6 Slow" },
 	{ id: "zai/glm-5-turbo", label: "Z.AI GLM 5 Turbo" },
 	{ id: "pi/smol", label: "Pi Smol" },
