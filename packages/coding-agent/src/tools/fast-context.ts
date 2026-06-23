@@ -1137,6 +1137,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 
 		let grepFileSet = new Set(grepResults.flat());
 		const globMatchedSet = new Set<string>();
+		const planGlobMatchedSet = new Set<string>();
 		// Sort plan glob result arrays by specificity (fewer matches = more
 		// targeted) before flattening. Without this, a broad glob like
 		// `**/utils/**` (100 matches, fills the cap with unrelated files) can
@@ -1145,7 +1146,10 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		// MAX_TOOL_LINES. Specific globs first ensures targeted matches survive.
 		const globResultsBySpec = [...globResults].sort((a, b) => a.length - b.length);
 		const globFlat = globResultsBySpec.flat();
-		for (const f of globFlat) globMatchedSet.add(f);
+		for (const f of globFlat) {
+			globMatchedSet.add(f);
+			planGlobMatchedSet.add(f);
+		}
 		let allFiles = [...new Set([...globFlat, ...grepResults.flat()])].slice(0, MAX_TOOL_LINES);
 		let effectiveKeywords = effectivePlan.keywords;
 		let fallbackUsed = false;
@@ -1447,7 +1451,17 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 					.sort((a, b) => {
 						const sa = contentByFile.get(a.file)?.score ?? 0;
 						const sb = contentByFile.get(b.file)?.score ?? 0;
-						return sb - sa || b.pathScore - a.pathScore;
+						if (sb !== sa) return sb - sa;
+						if (b.pathScore !== a.pathScore) return b.pathScore - a.pathScore;
+						// Third tiebreaker: prefer plan-glob-matched files (the model's
+						// deliberate filename matches) over supplementary-matched files
+						// (query-derived patterns). When scores are tied, the file the
+						// model specifically globbed for is more likely the target.
+						const aPlan =
+							planGlobMatchedSet.has(a.file) || planGlobMatchedSet.has(a.file.replace(/\\/g, "/")) ? 1 : 0;
+						const bPlan =
+							planGlobMatchedSet.has(b.file) || planGlobMatchedSet.has(b.file.replace(/\\/g, "/")) ? 1 : 0;
+						return bPlan - aPlan;
 					})
 					.map(e => e.file);
 				const nonBoosted = rankedTop.filter(f => !boosted.includes(f));
