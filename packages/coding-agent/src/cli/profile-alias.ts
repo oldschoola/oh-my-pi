@@ -198,9 +198,13 @@ export function resolveProfileAliasCommandFromProcess(
 	if (!runtime || !script || !/\.[cm]?[jt]s$/.test(script)) return DEFAULT_ALIAS_COMMAND;
 
 	const scriptPath = path.resolve(cwd, script);
-	const posix = `${quoteForShell(runtime)} ${quoteForShell(scriptPath)}`;
+	// Normalize to forward slashes for POSIX shell fields — bash/zsh/fish
+	// can't resolve backslash-separated paths, even on Windows (Git Bash, WSL).
+	const posixScriptPath = scriptPath.replace(/\\/g, "/");
+	const posixRuntime = runtime.replace(/\\/g, "/");
+	const posix = `${quoteForShell(posixRuntime)} ${quoteForShell(posixScriptPath)}`;
 	return {
-		display: `${runtime} ${scriptPath}`,
+		display: `${posixRuntime} ${posixScriptPath}`,
 		posix,
 		fish: posix,
 		powerShell: `${quoteForPowerShell(runtime)} ${quoteForPowerShell(scriptPath)}`,
@@ -215,20 +219,20 @@ function resolveShellConfigPath(
 ): string {
 	switch (shell) {
 		case "zsh":
-			return path.join(env.ZDOTDIR || homeDir, ".zshrc");
+			return path.posix.join(env.ZDOTDIR || homeDir, ".zshrc");
 		case "bash":
-			return platform === "darwin" ? path.join(homeDir, ".bash_profile") : path.join(homeDir, ".bashrc");
+			return platform === "darwin" ? path.posix.join(homeDir, ".bash_profile") : path.posix.join(homeDir, ".bashrc");
 		case "fish": {
 			// fish sources conf.d from $XDG_CONFIG_HOME/fish (default ~/.config/fish);
 			// a hard-coded ~/.config would be silently ignored when the user relocates
 			// their XDG config root, leaving the alias unsourced after a restart.
-			const configHome = env.XDG_CONFIG_HOME || path.join(homeDir, ".config");
-			return path.join(configHome, "fish", "conf.d", "omp-profiles.fish");
+			const configHome = env.XDG_CONFIG_HOME || path.posix.join(homeDir, ".config");
+			return path.posix.join(configHome, "fish", "conf.d", "omp-profiles.fish");
 		}
 		case "pwsh":
 			return platform === "win32"
 				? path.join(homeDir, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1")
-				: path.join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1");
+				: path.posix.join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1");
 		case "powershell":
 			return path.join(homeDir, "Documents", "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1");
 	}
