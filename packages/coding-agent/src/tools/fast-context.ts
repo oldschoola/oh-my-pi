@@ -163,7 +163,7 @@ const HINT_MAX_SNIPPET_FILES = 15;
 const HINT_MAX_SNIPPET_BYTES = 12000;
 const HINT_DEFAULT_MAX_RESULT_TOKENS = 4000;
 const HINT_MAX_RESULT_FILES = 20;
-const MAX_WORKSPACE_LISTING = 60;
+const MAX_WORKSPACE_LISTING = 30;
 const MAX_PARALLEL_TOOL_CALLS = 8;
 const REQUEST_TIMEOUT_MS = 120_000;
 const TOOL_TIMEOUT_MS = 10_000;
@@ -1019,7 +1019,11 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 			// 30s hint timeout tuned for a fast local model — otherwise the single
 			// query-expansion turn times out before the model emits a plan.
 			const hintTimeout = backend.kind === "registry" ? REQUEST_TIMEOUT_MS : HINT_REQUEST_TIMEOUT_MS;
-			const response = await this.#chat(backend, hintMessages, signal, 2048, null, hintTimeout, undefined, 0);
+			// Hint plans are ~100-200 tokens of JSON. 512 gives 2.7x headroom
+			// over the worst case (maxed arrays). The llama.cpp server allocates
+			// compute proportional to max_completion_tokens even when the model
+			// stops early, so capping this cuts hint latency ~75%.
+			const response = await this.#chat(backend, hintMessages, signal, 512, null, hintTimeout, undefined, 0);
 			rawText = response.message.content ?? "";
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : String(err);
@@ -1111,7 +1115,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		const allGrepCandidates = [...effectivePlan.keywords, ...queryKws]
 			.filter(kw => kw.length >= 5)
 			.sort(byIdentifierThenLength);
-		const supplementaryGrepKws = allGrepCandidates.slice(0, 2);
+		const supplementaryGrepKws = allGrepCandidates.slice(0, 1);
 
 		// Execute plan + supplementary searches in ONE batch (saves ~150-200ms
 		// by eliminating a sequential round-trip — supplementary patterns are
