@@ -1019,7 +1019,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 			// 30s hint timeout tuned for a fast local model — otherwise the single
 			// query-expansion turn times out before the model emits a plan.
 			const hintTimeout = backend.kind === "registry" ? REQUEST_TIMEOUT_MS : HINT_REQUEST_TIMEOUT_MS;
-			const response = await this.#chat(backend, hintMessages, signal, 2048, null, hintTimeout);
+			const response = await this.#chat(backend, hintMessages, signal, 2048, null, hintTimeout, undefined, 0);
 			rawText = response.message.content ?? "";
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : String(err);
@@ -1227,7 +1227,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 						/\/docs\//.test(normalizedPath) ||
 						(/\.md$/.test(normalizedPath) && !/\/(prompts|agents)\//.test(normalizedPath));
 					const isInfra = /\/(\.github|infra)\//.test(normalizedPath);
-					const isScript = /\/(scripts|examples|bench)\//.test(normalizedPath);
+					const isScript = /\/(scripts|examples|bench|prompts)\//.test(normalizedPath);
 					// Pre-sort uses the strong additive penalty (-100) so test/doc
 					// files stay out of the top-30 content-scoring pool. The graduated
 					// multiplier (semble_rs-inspired) is applied to the FINAL score
@@ -1843,6 +1843,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		tools: readonly unknown[] | null = FAST_CONTEXT_TOOLS,
 		timeoutMs: number = REQUEST_TIMEOUT_MS,
 		sessionId?: string,
+		temperature: number = 0.3,
 	): Promise<{ message: ChatMessage; toolCalls: FastContextToolCall[] }> {
 		if (backend.kind === "registry") {
 			// Registry backend: route through the registered provider (e.g. Devin)
@@ -1863,7 +1864,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 				...(sessionId ? { sessionId } : {}),
 				signal: requestSignal(signal, timeoutMs),
 				maxTokens: maxCompletionTokens,
-				temperature: 0.3,
+				temperature,
 				disableReasoning: true,
 				...(ompTools ? { toolChoice: "auto" } : {}),
 			});
@@ -1884,7 +1885,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 				messages,
 				...(tools && tools.length > 0 ? { tools, parallel_tool_calls: true } : {}),
 				max_completion_tokens: maxCompletionTokens,
-				temperature: 0.3,
+				temperature,
 				top_p: 0.9,
 				top_k: 20,
 				chat_template_kwargs: { enable_thinking: false },
