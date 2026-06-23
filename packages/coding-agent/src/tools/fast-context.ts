@@ -1326,11 +1326,19 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							// ToolResultBuilder). The start anchor is precise — it
 							// avoids the substring over-match of [a-z_]*id (which
 							// fired on duplicateToolResults). All-lowercase patterns
-							// (mcp, transport, approval) are excluded as too generic.
+							// The line-start anchor (^ with multiline) prevents false
+							// boosts from comments that mention the symbol name — e.g.
+							// fast-context.ts line 1044 says `class TempDir` in a comment,
+							// which would wrongly boost it above the real definition file.
 							for (const sym of effectivePlan.grep_patterns) {
 								if (!/^[A-Za-z][A-Za-z0-9_]{3,}$/.test(sym) || /^[a-z]+$/.test(sym)) continue;
 								const escSym = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-								if (new RegExp(`${defKeywords}\\s+${escSym}[a-z0-9_]*\\b`, "i").test(lower)) {
+								if (
+									new RegExp(
+										`^\\s*(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))\\s+${escSym}[a-z0-9_]*\\b`,
+										"im",
+									).test(lower)
+								) {
 									contentScore += 8;
 									break;
 								}
