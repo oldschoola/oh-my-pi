@@ -1334,13 +1334,18 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							// flag) prevents matching different-cased variables: `Message`
 							// must not match `const messages`, `TempDir` must not match
 							// `TempDirGuard`. Plan grep_patterns carry exact symbol names
-							// from the model, so case-sensitive is correct.
+							// from the model, so case-sensitive is correct semantics.
+							// Requiring `export` (TS/JS) or `pub` (Rust) before the def
+							// keyword prevents false boosts from LOCAL variables — e.g.
+							// `const gitStatus` inside a method in component.ts matched
+							// and outranked the actual definition file git.ts. Only
+							// exported definitions are public API worth boosting.
 							for (const sym of effectivePlan.grep_patterns) {
 								if (!/^[A-Za-z][A-Za-z0-9_]{3,}$/.test(sym) || /^[a-z]+$/.test(sym)) continue;
 								const escSym = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 								if (
 									new RegExp(
-										`^\\s*(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))\\s+${escSym}[a-z0-9_]*\\b`,
+										`^\\s*(?:export\\s+(?:async\\s+)?(?:function|class|enum|interface|const|struct)|pub\\s+(?:fn|struct|enum))\\s+${escSym}[a-z0-9_]*\\b`,
 										"m",
 									).test(rawText)
 								) {
