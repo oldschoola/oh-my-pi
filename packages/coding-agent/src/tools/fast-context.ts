@@ -1265,7 +1265,8 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							// Size guard: large files get a 4k byte-range read
 							const file = Bun.file(entry.file);
 							const blob = file.size > 100_000 ? file.slice(0, 4000) : file;
-							const lower = (await blob.text()).toLowerCase();
+							const rawText = await blob.text();
+							const lower = rawText.toLowerCase();
 							// Weight identifier matches 3x — a file containing
 							// READ_ONLY_TOOL_NAMES is the definition site; a file
 							// containing generic "read" and "tool" is just noise.
@@ -1325,19 +1326,23 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							// at the START of the name (function toolResult, class
 							// ToolResultBuilder). The start anchor is precise — it
 							// avoids the substring over-match of [a-z_]*id (which
-							// fired on duplicateToolResults). All-lowercase patterns
 							// The line-start anchor (^ with multiline) prevents false
 							// boosts from comments that mention the symbol name — e.g.
 							// fast-context.ts line 1044 says `class TempDir` in a comment,
 							// which would wrongly boost it above the real definition file.
+							// Case-SENSITIVE matching against original-case text (no `i`
+							// flag) prevents matching different-cased variables: `Message`
+							// must not match `const messages`, `TempDir` must not match
+							// `TempDirGuard`. Plan grep_patterns carry exact symbol names
+							// from the model, so case-sensitive is correct.
 							for (const sym of effectivePlan.grep_patterns) {
 								if (!/^[A-Za-z][A-Za-z0-9_]{3,}$/.test(sym) || /^[a-z]+$/.test(sym)) continue;
 								const escSym = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 								if (
 									new RegExp(
 										`^\\s*(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))\\s+${escSym}[a-z0-9_]*\\b`,
-										"im",
-									).test(lower)
+										"m",
+									).test(rawText)
 								) {
 									contentScore += 8;
 									break;
