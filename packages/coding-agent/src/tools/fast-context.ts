@@ -1133,7 +1133,16 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 
 		let grepFileSet = new Set(grepResults.flat());
 		const globMatchedSet = new Set<string>();
-		let allFiles = [...new Set([...globResults.flat(), ...grepResults.flat()])].slice(0, MAX_TOOL_LINES);
+		// Sort plan glob result arrays by specificity (fewer matches = more
+		// targeted) before flattening. Without this, a broad glob like
+		// `**/utils/**` (100 matches, fills the cap with unrelated files) can
+		// displace a specific glob like `**/*temp*` (15 matches, contains the
+		// target definition file) when the combined results are sliced to
+		// MAX_TOOL_LINES. Specific globs first ensures targeted matches survive.
+		const globResultsBySpec = [...globResults].sort((a, b) => a.length - b.length);
+		const globFlat = globResultsBySpec.flat();
+		for (const f of globFlat) globMatchedSet.add(f);
+		let allFiles = [...new Set([...globFlat, ...grepResults.flat()])].slice(0, MAX_TOOL_LINES);
 		let effectiveKeywords = effectivePlan.keywords;
 		let fallbackUsed = false;
 
@@ -1147,7 +1156,21 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 			// first so they survive the 200-file cap — without this, a grep for
 			// "tempdir" returns 200+ importing files and pushes temp.ts (matched
 			// only by the segment glob `**/*temp*`) past the cap.
+			const planGlobFiles = new Set(globFlat);
 			allFiles = [...new Set([...suppGlobFiles, ...suppGrepFiles, ...allFiles])].slice(0, 200);
+			// Re-inject displaced plan-glob-matched files after the cap. Plan
+			// globs are the model's deliberate filename matches — they should
+			// always get content-scored. Without this, broad supplementary
+			// globs (e.g. `**/*file*` = 100+ matches) flood the 200-cap and
+			// displace targeted plan-glob matches like `**/*temp*` → temp.ts.
+			// Only plan GLOB files are re-injected (not grep — grep matches are
+			// content mentions that could be importers, not definition sites).
+			// The ranking pipeline re-sorts by content/path score, so adding
+			// files to the pool doesn't displace existing rankings — it only
+			// gives plan-glob files a fair shot at being scored.
+			for (const f of planGlobFiles) {
+				if (!allFiles.includes(f)) allFiles.push(f);
+			}
 			for (const f of suppGrepFiles) grepFileSet.add(f);
 			for (const f of suppGlobFiles) globMatchedSet.add(f);
 		}
