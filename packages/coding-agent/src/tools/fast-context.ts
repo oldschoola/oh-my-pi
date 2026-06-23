@@ -1104,7 +1104,21 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 		// containing "agent", not files inside an "agent/" directory.
 		// Segments <5 chars (e.g. "tool") are excluded to avoid flooding
 		// (every file in tools/ would match).
-		const dirGlobs = [...identifierSegments].filter(seg => seg.length >= 5).map(seg => `**/${seg}/**/*`);
+		const idDirGlobs = [...identifierSegments].filter(seg => seg.length >= 5).map(seg => `**/${seg}/**/*`);
+		// Keyword-derived directory globs: query keywords like "identity",
+		// "session", "streaming" frequently match directory names containing
+		// the GT file (identity/classify.ts, session/session-context.ts). These
+		// are only generated from keywords ≥6 chars to avoid flooding from
+		// short generic names (e.g. "model" → every file in model/ dirs).
+		// Identifier-segment directory globs (above) already handle CamelCase
+		// query terms; this catches natural-language keywords that aren't
+		// CamelCase identifiers but still correspond to directory names.
+		const kwDirGlobs = queryKws
+			.filter(kw => kw.length >= 6 && !identifierSegments.has(kw))
+			.filter((kw, i, arr) => arr.indexOf(kw) === i)
+			.slice(0, 4)
+			.map(kw => `**/${kw}/**/*`);
+		const dirGlobs = [...idDirGlobs, ...kwDirGlobs];
 		// Directory globs come first (most targeted — files in a named
 		// directory), then segment globs (filename matches), then prefix
 		// globs, then generic keyword globs. All must survive the 200-file
@@ -1135,9 +1149,11 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 				: Promise.resolve([[]] as string[][]),
 		]);
 
-		let grepFileSet = new Set(grepResults.flat());
+		const planGrepFileSet = new Set(grepResults.flat());
+		let grepFileSet = new Set(planGrepFileSet);
 		const globMatchedSet = new Set<string>();
 		const planGlobMatchedSet = new Set<string>();
+		const suppGlobMatchedSet = new Set<string>();
 		// Sort plan glob result arrays by specificity (fewer matches = more
 		// targeted) before flattening. Without this, a broad glob like
 		// `**/utils/**` (100 matches, fills the cap with unrelated files) can
@@ -1180,7 +1196,10 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 				if (!allFiles.includes(f)) allFiles.push(f);
 			}
 			for (const f of suppGrepFiles) grepFileSet.add(f);
-			for (const f of suppGlobFiles) globMatchedSet.add(f);
+			for (const f of suppGlobFiles) {
+				globMatchedSet.add(f);
+				suppGlobMatchedSet.add(f);
+			}
 		}
 
 		// Query-derived fallback when everything above yields nothing
@@ -1236,6 +1255,13 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 						(/\.md$/.test(normalizedPath) && !/\/(prompts|agents)\//.test(normalizedPath));
 					const isInfra = /\/(\.github|infra)\//.test(normalizedPath);
 					const isScript = /\/(scripts|examples|bench|prompts)\//.test(normalizedPath);
+					// Config/data files (JSON, YAML, TOML, theme defaults) are not
+					// code definitions — they match keyword globs/greps but contain
+					// no logic. Penalize at the script tier (0.7x) so they don't
+					// outrank source files via convergence boost.
+					const isConfig = /\.(json|ya?ml|toml|csv|svg)$/.test(normalizedPath);
+					const isTypeDef = /\.d\.ts$/.test(normalizedPath);
+					const isCompat = /\/(compat|_compat|legacy)\//.test(normalizedPath);
 					// Pre-sort uses the strong additive penalty (-100) so test/doc
 					// files stay out of the top-30 content-scoring pool. The graduated
 					// multiplier (semble_rs-inspired) is applied to the FINAL score
@@ -1243,14 +1269,12 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 					// grep/glob-matched path aren't completely zeroed out.
 					// - STRONG 0.3x: test, docs, .github/infra
 					// - MODERATE 0.5x: type-def stubs (.d.ts), compat/legacy dirs
-					// - MILD 0.7x: scripts
-					const isTypeDef = /\.d\.ts$/.test(normalizedPath);
-					const isCompat = /\/(compat|_compat|legacy)\//.test(normalizedPath);
+					// - MILD 0.7x: scripts, config/data files (.json/.yaml/.toml)
 					let typeMultiplier = 1;
 					if (isTest || isDoc || isInfra) typeMultiplier = 0.3;
 					else if (isTypeDef || isCompat) typeMultiplier = 0.5;
-					else if (isScript) typeMultiplier = 0.7;
-					const typePenalty = isTest || isDoc || isInfra ? -100 : isScript ? -1 : 0;
+					else if (isScript || isConfig) typeMultiplier = 0.7;
+					const typePenalty = isTest || isDoc || isInfra ? -100 : isScript || isConfig ? -1 : 0;
 					return { file: f, pathScore: pathMatches + typePenalty, typeMultiplier, rawPathScore: pathMatches };
 				});
 				pathScored.sort((a, b) => b.pathScore - a.pathScore);
@@ -1413,6 +1437,18 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 									contentScore += 2;
 								}
 							}
+							// Multi-signal convergence boost: a file matched by multiple
+							// independent signals (plan glob + plan grep + supplementary
+							// glob) is far more likely to be the GT. Added to contentScore
+							// BEFORE the type multiplier so test/doc files (0.3x) get a
+							// dampened convergence bonus too — without this, a test file
+							// matching all 3 signals would get the same +6 as a source file.
+							const norm = entry.file.replace(/\\/g, "/");
+							let sigCount = 0;
+							if (planGlobMatchedSet.has(entry.file) || planGlobMatchedSet.has(norm)) sigCount++;
+							if (planGrepFileSet.has(entry.file) || planGrepFileSet.has(norm)) sigCount++;
+							if (suppGlobMatchedSet.has(entry.file) || suppGlobMatchedSet.has(norm)) sigCount++;
+							contentScore += Math.max(0, sigCount - 1) * 3;
 						} catch {}
 						return {
 							file: entry.file,
