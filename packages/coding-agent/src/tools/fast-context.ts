@@ -1298,7 +1298,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 								return bonus;
 							}, 0);
 							const defKeywords =
-								"(?:export\\s+)?(?:async\\s+)?(?:function|class|enum|interface|const|struct|pub\\s+(?:fn|struct|enum))";
+								"(?:export\\s+(?:async\\s+)?(?:function|class|enum|interface|const|struct)|pub\\s+(?:fn|struct|enum))";
 							// Definition-site boost (semble_rs-inspired): files that
 							// DEFINE the queried identifier outrank files that merely
 							// reference it. Uses the full identifierSet (which includes
@@ -1307,13 +1307,15 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							// boosted). The three filters on identifierKeywords ensure
 							// property accessors and call-site references don't
 							// trigger false boosts.
+							// Same line-start anchor + case-sensitive + export-required
+							// semantics as the plan-symbol boost below — see comments there.
 							if (identifierSet.size > 0) {
 								for (const id of identifierSet) {
 									const defPattern = new RegExp(
-										`${defKeywords}\\s+[a-z_]*${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
-										"i",
+										`^\\s*${defKeywords}\\s+[a-z_]*${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+										"m",
 									);
-									if (defPattern.test(lower)) {
+									if (defPattern.test(rawText)) {
 										contentScore += 8;
 										break;
 									}
@@ -1343,12 +1345,7 @@ export class FastContextTool implements AgentTool<typeof fastContextSchema, Fast
 							for (const sym of effectivePlan.grep_patterns) {
 								if (!/^[A-Za-z][A-Za-z0-9_]{3,}$/.test(sym) || /^[a-z]+$/.test(sym)) continue;
 								const escSym = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-								if (
-									new RegExp(
-										`^\\s*(?:export\\s+(?:async\\s+)?(?:function|class|enum|interface|const|struct)|pub\\s+(?:fn|struct|enum))\\s+${escSym}[a-z0-9_]*\\b`,
-										"m",
-									).test(rawText)
-								) {
+								if (new RegExp(`^\\s*${defKeywords}\\s+${escSym}[a-z0-9_]*\\b`, "m").test(rawText)) {
 									contentScore += 8;
 									break;
 								}
