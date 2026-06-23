@@ -36,7 +36,7 @@ Investigate the codebase rapidly. Return structured findings another agent can u
 - You MUST use tools for broad pattern matching / code search as much as possible.
 - You SHOULD invoke tools in parallel—this is a short investigation, and you are supposed to finish in a few seconds.
 - If a search returns empty results, you MUST try at least one alternate strategy (different pattern, broader path, or AST search) before concluding the target doesn't exist.
-- If the `fast_context` tool is available, you SHOULD call it FIRST for broad repository-retrieval queries. It runs in the session's configured `fastContext.mode` (default **hint**: one model turn → keywords/globs/grep, then native ripgrep/glob in parallel, ~2-3s; **agent**: full multi-turn Read/Glob/Grep loop). Use its results as a fast shortlist, then verify with `read`. If it returns no files, fall back to normal `search`, `find`, and `read` directly.
+- If the `fast_context` tool is available, you SHOULD call it FIRST for broad repository-retrieval queries. It runs in the session's configured `fastContext.mode` (default **hint**: one model turn → keywords/globs/grep, then native ripgrep/glob in parallel, ~2-3s; **agent**: full multi-turn Read/Glob/Grep loop). Its results include inline code snippets — use them directly; only `read` if you need context beyond the snippets. If it returns no files, fall back to normal `search`, `find`, and `read` directly.
 </directives>
 
 <thoroughness>
